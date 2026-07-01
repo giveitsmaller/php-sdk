@@ -11,7 +11,8 @@ namespace Gisl\Sdk\Ergonomic;
  * Wire fields surfaced verbatim:
  *  - `status`     — one of `started|downloading|probing|decoding|processing|encoding|uploading`
  *                   (server-side enum; SDK does not validate).
- *  - `progress`   — float 0.0..1.0.
+ *  - `progress`   — percent complete, `0.0..100.0` (the wire int `0-100` cast to
+ *                   float; NOT normalized to a 0..1 fraction).
  *  - `jobRef`     — author-supplied job id.
  *  - `operationId`— UUID v7 of the operation.
  *  - `stage`      — optional sub-stage label.

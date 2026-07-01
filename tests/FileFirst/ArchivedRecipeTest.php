@@ -30,6 +30,17 @@ final class ArchivedRecipeTest extends TestCase
 {
     private const WORKFLOW_ID = '01936fb2-0000-7000-8000-0000000000a0';
 
+    public function test_getInputCount_reports_the_number_of_bundled_inputs(): void
+    {
+        // BuflcZvO — TS-parity introspection getter (ArchivedRecipe.inputCount). Archive
+        // is terminal (no post-combine chain), so there is no getStepCount() — parity
+        // with TS, which omits it.
+        $archived = new ArchivedRecipe(
+            [FileInput::path('report.pdf'), FileInput::path('hero.jpg'), FileInput::path('narration.mp3')],
+        );
+        self::assertSame(3, $archived->getInputCount());
+    }
+
     public function test_archive_lowers_to_one_passthrough_src_per_input_plus_an_archive_job(): void
     {
         $archived = new ArchivedRecipe(

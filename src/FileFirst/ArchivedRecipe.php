@@ -51,6 +51,16 @@ final class ArchivedRecipe
     }
 
     /**
+     * The number of inputs being bundled (introspection / tests). Mirrors the TS
+     * `ArchivedRecipe.inputCount` getter. Archive has no post-combine step chain,
+     * so there is no `getStepCount()` (parity with TS, which omits it too).
+     */
+    public function getInputCount(): int
+    {
+        return \count($this->inputs);
+    }
+
+    /**
      * Execute end-to-end: upload every input, create the archive workflow, await
      * a terminal state (SSE with poll fallback), then resolve ONLY the archive
      * output into a {@see RunResult}. Throws {@see GislTimeoutError} on `$maxWait`.

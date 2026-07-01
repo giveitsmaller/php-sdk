@@ -77,7 +77,8 @@ final class FilesRecipe
     }
 
     /**
-     * Change every input's format. `$format` lowers verbatim to the `format` option.
+     * Change every input's format. The `$format` shorthand lowers to the
+     * `output_format` wire option (the convert op's wire key per the contract).
      *
      * @param array<string, mixed> $options
      */

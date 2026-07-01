@@ -28,6 +28,21 @@ use Psr\Http\Message\ResponseInterface;
 #[CoversClass(MergedRecipe::class)]
 final class MergedRecipeTest extends TestCase
 {
+    public function test_getInputCount_and_getStepCount_report_the_recipe_shape(): void
+    {
+        // BuflcZvO — TS-parity introspection getters (MergedRecipe.inputCount/stepCount).
+        $merged = new MergedRecipe(
+            [FileInput::path('a.mp4'), FileInput::path('b.mp4'), FileInput::path('c.mp4')],
+            new MergeOptions(mediaKind: 'video'),
+        );
+        self::assertSame(3, $merged->getInputCount());
+        self::assertSame(0, $merged->getStepCount());
+
+        $chained = $merged->compress()->convert('mp4');
+        self::assertSame(3, $chained->getInputCount());
+        self::assertSame(2, $chained->getStepCount());
+    }
+
     public function test_merge_lowers_to_one_passthrough_src_per_input_plus_a_merge_job(): void
     {
         $merged = new MergedRecipe(

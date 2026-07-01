@@ -117,6 +117,24 @@ final class MergedRecipe
     }
 
     /**
+     * The number of inputs being combined (introspection / tests). Mirrors the TS
+     * `MergedRecipe.inputCount` getter.
+     */
+    public function getInputCount(): int
+    {
+        return \count($this->inputs);
+    }
+
+    /**
+     * The number of post-combine ops chained so far (introspection / tests).
+     * Mirrors the TS `MergedRecipe.stepCount` getter.
+     */
+    public function getStepCount(): int
+    {
+        return \count($this->postSteps);
+    }
+
+    /**
      * Execute end-to-end: upload every input, create the merge workflow, await
      * a terminal state (SSE with poll fallback), then resolve ONLY the merged
      * output into a {@see RunResult}. Throws {@see GislTimeoutError} on `$maxWait`.

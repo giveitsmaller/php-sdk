@@ -105,8 +105,10 @@ final class CapabilitiesOperationTest extends TestCase
                 'compress' => ['accepts' => ['image/jpeg'], 'availability' => 'stable', 'sole_op' => false],
                 'text_watermark' => ['accepts' => ['image/png'], 'availability' => 'stable'],
             ],
+            // BLOCK key is snake_case; per-format props are camelCase on the wire
+            // (a deliberate two-level casing asymmetry in the contract).
             'output_properties' => [
-                'webp' => ['has_audio_track' => true, 'is_animated' => 'maybe'],
+                'webp' => ['hasAudioTrack' => true, 'isAnimated' => false],
             ],
             'image_encode_capabilities' => ['webp_quality_supported' => true, 'background_flatten' => 'supported'],
         ];
@@ -126,13 +128,11 @@ final class CapabilitiesOperationTest extends TestCase
         self::assertFalse($snapshot->operations['compress']->getSoleOp());
         self::assertSame(['image/jpeg'], $snapshot->operations['compress']->getAccepts());
         // outputProperties (keyed by output_format) + imageEncode surfaced as the
-        // typed contract models. Deep field values are the generated
-        // ObjectSerializer's concern — this test pins that capabilities() projects
-        // the getSchema() fields as the right types, not that model hydration is
-        // correct (covered by the generated layer).
-        self::assertArrayHasKey('webp', $snapshot->outputProperties);
+        // typed contract models, with props decoded from the camelCase wire.
         self::assertInstanceOf(OutputProperties::class, $snapshot->outputProperties['webp']);
+        self::assertTrue($snapshot->outputProperties['webp']->getHasAudioTrack());
         self::assertInstanceOf(ImageEncodeCapabilities::class, $snapshot->imageEncode);
+        self::assertTrue($snapshot->imageEncode->getWebpQualitySupported());
     }
 
     public function testCapabilitiesWithOpTypeReturnsThatOpsCapability(): void

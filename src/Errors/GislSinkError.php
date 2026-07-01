@@ -7,7 +7,7 @@ namespace Gisl\Sdk\Errors;
 /**
  * Thrown by the file-first {@see \Gisl\Sdk\FileFirst\RunResult} sinks
  * (`toFile()` / `downloadTo()`) when they cannot deliver. The machine
- * readable `$reason` discriminates the three cases, mirroring the
+ * readable `$reason` discriminates the six cases below, mirroring the
  * `reason`-bag convention on {@see GislConfigError}:
  *
  *  - `not_single_output`     — `toFile()` requires exactly one output but
@@ -37,7 +37,8 @@ final class GislSinkError extends GislError
 
     /**
      * Machine-readable cause: `not_single_output` | `downloader_unavailable`
-     * | `partial_failure`.
+     * | `partial_failure` | `duplicate_filename` | `invalid_directory` |
+     * `write_failed` (see the class docblock for what each means).
      */
     public function getReason(): string
     {
