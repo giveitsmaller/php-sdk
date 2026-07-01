@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Gisl\Sdk\FileFirst;
 
 use Gisl\Generated\OpenApi\Model\WorkflowCreateResponse;
-use Gisl\Sdk\Ergonomic\ArchiveFormat;
+use Gisl\Sdk\Ergonomic\ArchiveRecipeOptions;
 use Gisl\Sdk\Ergonomic\BuilderInternals;
 use Gisl\Sdk\Ergonomic\Handle;
 use Gisl\Sdk\Ergonomic\MaxWait;
@@ -140,18 +140,17 @@ final class FilesRecipe
     /**
      * Bundle the inputs into ONE archive (N→1, zip / tar.gz) — media-agnostic,
      * inputs may mix types. Returns a terminal {@see ArchivedRecipe} (a zip is
-     * the final artefact — no post-bundle chain). `$format` and `$folderStructure`
-     * are optional; the server defaults to zip + flat.
+     * the final artefact — no post-bundle chain). `$options` is optional; the
+     * server defaults to zip + flat.
      *
      * archive() must be the FIRST op on `files([...])` — per-file ops before a
      * bundle are a separate follow-up.
      *
-     * @param "flat"|"by_job"|null $folderStructure
+     * Takes a single {@see ArchiveRecipeOptions} value (mirrors the TS
+     * `archive(ArchiveRecipeOptions)` shape and this SDK's own `merge(MergeOptions)`).
      */
-    public function archive(
-        ArchiveFormat|string|null $format = null,
-        ?string $folderStructure = null,
-    ): ArchivedRecipe {
+    public function archive(?ArchiveRecipeOptions $options = null): ArchivedRecipe
+    {
         if ($this->steps !== []) {
             throw new GislConfigError(
                 'archive() must be the first operation on files([...]); applying per-file ops before a bundle '
@@ -162,8 +161,7 @@ final class FilesRecipe
 
         return new ArchivedRecipe(
             $this->inputs,
-            $format,
-            $folderStructure,
+            $options ?? new ArchiveRecipeOptions(),
             $this->client,
         );
     }

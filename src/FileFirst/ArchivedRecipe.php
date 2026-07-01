@@ -7,6 +7,7 @@ namespace Gisl\Sdk\FileFirst;
 use Gisl\Generated\OpenApi\Model\WorkflowCreateResponse;
 use Gisl\Sdk\Cancellation;
 use Gisl\Sdk\Ergonomic\ArchiveFormat;
+use Gisl\Sdk\Ergonomic\ArchiveRecipeOptions;
 use Gisl\Sdk\Ergonomic\BuilderInternals;
 use Gisl\Sdk\Ergonomic\Handle;
 use Gisl\Sdk\Ergonomic\MaxWait;
@@ -40,13 +41,11 @@ use Gisl\Sdk\WorkflowCreatePayload;
 final class ArchivedRecipe
 {
     /**
-     * @param list<FileInput>     $inputs          Ordered inputs being bundled.
-     * @param "flat"|"by_job"|null $folderStructure Archive folder layout.
+     * @param list<FileInput> $inputs Ordered inputs being bundled.
      */
     public function __construct(
         private readonly array $inputs,
-        private readonly ArchiveFormat|string|null $format = null,
-        private readonly ?string $folderStructure = null,
+        private readonly ArchiveRecipeOptions $options = new ArchiveRecipeOptions(),
         private readonly ?GislClient $client = null,
     ) {
     }
@@ -268,11 +267,12 @@ final class ArchivedRecipe
     private function wireArchiveOptions(): array
     {
         $out = [];
-        if ($this->format !== null) {
-            $out['format'] = $this->format instanceof ArchiveFormat ? $this->format->value : $this->format;
+        $format = $this->options->format;
+        if ($format !== null) {
+            $out['format'] = $format instanceof ArchiveFormat ? $format->value : $format;
         }
-        if ($this->folderStructure !== null) {
-            $out['folder_structure'] = $this->folderStructure;
+        if ($this->options->folderStructure !== null) {
+            $out['folder_structure'] = $this->options->folderStructure;
         }
 
         return $out;

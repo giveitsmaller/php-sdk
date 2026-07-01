@@ -646,13 +646,16 @@ final class MergeBuilderTest extends TestCase
                 // be dropped from the outbound payload.
                 crossfadeDuration: 1.0,
                 normalizeAudio: true,
+                reEncodeMode: 'always',
                 codec: 'h264',
                 crf: 23,
                 preset: 'fast',
+                targetResolution: '1920x1080',
                 targetSize: '5MB',
                 // image-allowed fields below
                 transitionDuration: 0.5,
                 fps: 24.0,
+                delay: 500,
             ),
         )->submit(new SubmitOptions(webhook: 'https://example.com/cb'));
 
@@ -662,11 +665,15 @@ final class MergeBuilderTest extends TestCase
         $this->assertSame('video', $opts['output_type']);
         $this->assertArrayHasKey('transition_duration', $opts);
         $this->assertArrayHasKey('fps', $opts);
+        $this->assertArrayHasKey('delay', $opts);
+        $this->assertSame(500, $opts['delay']);
         $this->assertArrayNotHasKey('crossfade_duration', $opts);
         $this->assertArrayNotHasKey('normalize_audio', $opts);
+        $this->assertArrayNotHasKey('re_encode_mode', $opts);
         $this->assertArrayNotHasKey('codec', $opts);
         $this->assertArrayNotHasKey('crf', $opts);
         $this->assertArrayNotHasKey('preset', $opts);
+        $this->assertArrayNotHasKey('target_resolution', $opts);
         $this->assertArrayNotHasKey('target_size_bytes', $opts);
         $this->assertArrayNotHasKey('encoding_mode', $opts);
     }
@@ -691,11 +698,14 @@ final class MergeBuilderTest extends TestCase
             [$pathA, $pathB],
             new MergeOptions(
                 mediaKind: 'video',
+                reEncodeMode: 'always',
                 codec: 'h264',
+                targetResolution: '1920x1080',
                 // image-only — must drop
                 transitionDuration: 0.5,
                 fps: 24.0,
                 durationPerImage: 2.0,
+                delay: 500,
                 loopCount: 1,
                 videoFormat: 'webm',
             ),
@@ -704,9 +714,12 @@ final class MergeBuilderTest extends TestCase
         $body = self::decodeJson($captured[2]);
         $opts = $this->assertMergeShapeAndReturnMergeJob($body, 2)['operations'][0]['options'];
         $this->assertSame('h264', $opts['codec']);
+        $this->assertSame('always', $opts['re_encode_mode']);
+        $this->assertSame('1920x1080', $opts['target_resolution']);
         $this->assertArrayNotHasKey('transition_duration', $opts);
         $this->assertArrayNotHasKey('fps', $opts);
         $this->assertArrayNotHasKey('duration_per_image', $opts);
+        $this->assertArrayNotHasKey('delay', $opts);
         $this->assertArrayNotHasKey('loop_count', $opts);
         $this->assertArrayNotHasKey('video_format', $opts);
     }

@@ -540,6 +540,9 @@ final class MergeBuilder
         }
 
         if ($mediaKind === 'video') {
+            if ($this->opOptions->reEncodeMode !== null) {
+                $out['reEncodeMode'] = $this->opOptions->reEncodeMode;
+            }
             if ($this->opOptions->codec !== null) {
                 $out['codec'] = $this->opOptions->codec;
             }
@@ -548,6 +551,9 @@ final class MergeBuilder
             }
             if ($this->opOptions->preset !== null) {
                 $out['preset'] = $this->opOptions->preset;
+            }
+            if ($this->opOptions->targetResolution !== null) {
+                $out['targetResolution'] = $this->opOptions->targetResolution;
             }
             if ($this->opOptions->targetSize !== null) {
                 $out['targetSize'] = $this->opOptions->targetSize;
@@ -563,6 +569,9 @@ final class MergeBuilder
             }
             if ($this->opOptions->durationPerImage !== null) {
                 $out['durationPerImage'] = $this->opOptions->durationPerImage;
+            }
+            if ($this->opOptions->delay !== null) {
+                $out['delay'] = $this->opOptions->delay;
             }
             if ($this->opOptions->loopCount !== null) {
                 $out['loopCount'] = $this->opOptions->loopCount;
@@ -617,10 +626,11 @@ final class MergeBuilder
     {
         // Per-media wire allowlists (mirrors generated/typescript/operations/merge.ts):
         //   video: output_type, transition, crossfade_duration, normalize_audio,
-        //          codec, crf, preset, target_size_bytes, encoding_mode
+        //          re_encode_mode, codec, crf, preset, target_resolution,
+        //          target_size_bytes, encoding_mode
         //   audio: output_type, transition, crossfade_duration, gap_duration, normalize_audio
         //   image: output_type, transition, transition_duration, fps,
-        //          duration_per_image, loop_count, video_format
+        //          duration_per_image, delay, loop_count, video_format
         // Codex R2 medium a5aa664e6c74 — without per-media gating, callers
         // hit a server-side 422 only AFTER paying for uploads. Drop the
         // disallowed fields locally instead.
@@ -649,6 +659,9 @@ final class MergeBuilder
         }
 
         if ($mediaKind === 'video') {
+            if ($opts->reEncodeMode !== null) {
+                $out['re_encode_mode'] = $opts->reEncodeMode;
+            }
             if ($opts->codec !== null) {
                 $out['codec'] = $opts->codec;
             }
@@ -657,6 +670,9 @@ final class MergeBuilder
             }
             if ($opts->preset !== null) {
                 $out['preset'] = $opts->preset;
+            }
+            if ($opts->targetResolution !== null) {
+                $out['target_resolution'] = $opts->targetResolution;
             }
             if ($opts->targetSize !== null) {
                 $out['target_size_bytes'] = \is_int($opts->targetSize)
@@ -675,6 +691,9 @@ final class MergeBuilder
             }
             if ($opts->durationPerImage !== null) {
                 $out['duration_per_image'] = $opts->durationPerImage;
+            }
+            if ($opts->delay !== null) {
+                $out['delay'] = $opts->delay;
             }
             if ($opts->loopCount !== null) {
                 $out['loop_count'] = $opts->loopCount;

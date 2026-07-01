@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Gisl\Sdk\Tests\FileFirst;
 
 use Gisl\Sdk\Ergonomic\ArchiveFormat;
+use Gisl\Sdk\Ergonomic\ArchiveRecipeOptions;
 use Gisl\Sdk\Errors\GislConfigError;
 use Gisl\Sdk\Errors\GislTimeoutError;
 use Gisl\Sdk\FileFirst\ArchivedRecipe;
@@ -33,8 +34,7 @@ final class ArchivedRecipeTest extends TestCase
     {
         $archived = new ArchivedRecipe(
             [FileInput::path('report.pdf'), FileInput::path('hero.jpg'), FileInput::path('narration.mp3')],
-            ArchiveFormat::Zip,
-            'by_job',
+            new ArchiveRecipeOptions(format: ArchiveFormat::Zip, folderStructure: 'by_job'),
         );
 
         $payload = $archived->toWorkflowPayload(['f0', 'f1', 'f2'], null);
@@ -65,6 +65,19 @@ final class ArchivedRecipeTest extends TestCase
         $archived = new ArchivedRecipe([FileInput::path('a.pdf'), FileInput::path('b.pdf')]);
         $payload = $archived->toWorkflowPayload(['f0', 'f1'], null);
         self::assertSame([], $payload->jobs[2]->operations[0]->options);
+    }
+
+    public function test_archive_accepts_a_raw_string_format(): void
+    {
+        // ArchiveRecipeOptions::$format is ArchiveFormat|string|null — the raw
+        // string leg of wireArchiveOptions()'s ternary must reach the wire
+        // verbatim (parity with the TS `format: 'tar.gz'` string form).
+        $archived = new ArchivedRecipe(
+            [FileInput::path('a.pdf'), FileInput::path('b.pdf')],
+            new ArchiveRecipeOptions(format: 'tar.gz'),
+        );
+        $payload = $archived->toWorkflowPayload(['f0', 'f1'], null);
+        self::assertSame(['format' => 'tar.gz'], $payload->jobs[2]->operations[0]->options);
     }
 
     public function test_callback_url_is_wired_into_the_payload(): void
@@ -138,7 +151,7 @@ final class ArchivedRecipeTest extends TestCase
         // uploadId arm keeps the queue tight (no upload requests); the lowering +
         // projection is what this exercises.
         $result = $client->files([FileInput::uploadId('id0'), FileInput::uploadId('id1')])
-            ->archive(ArchiveFormat::Zip)
+            ->archive(new ArchiveRecipeOptions(format: ArchiveFormat::Zip))
             ->run();
 
         // The FIRST captured request is the workflow create — its body carries the

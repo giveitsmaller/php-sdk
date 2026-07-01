@@ -15,6 +15,7 @@ use Gisl\Generated\Operations\ThumbnailMetadata;
 use Gisl\Generated\Operations\VideoWatermarkMetadata;
 use Gisl\Sdk\Ergonomic\OptionValidation;
 use Gisl\Sdk\Ergonomic\ArchiveFormat;
+use Gisl\Sdk\Ergonomic\ArchiveRecipeOptions;
 use Gisl\Sdk\Ergonomic\MergeOptions;
 use Gisl\Sdk\Ergonomic\PresetResolver;
 use Gisl\Sdk\FileFirst\ArchivedRecipe;
@@ -426,9 +427,11 @@ final class WireKeyConformanceTest extends TestCase
             transition: 'crossfade',
             crossfadeDuration: 1.0,
             normalizeAudio: true,
+            reEncodeMode: 'always',
             codec: 'h264',
             crf: 23,
             preset: 'medium',
+            targetResolution: '1920x1080',
             targetSize: '10MB',
             output: 'video',
             mediaKind: 'video',
@@ -446,6 +449,7 @@ final class WireKeyConformanceTest extends TestCase
             transitionDuration: 0.5,
             fps: 30.0,
             durationPerImage: 3.0,
+            delay: 500,
             loopCount: 0,
             output: 'video',
             videoFormat: 'mp4',
@@ -480,6 +484,69 @@ final class WireKeyConformanceTest extends TestCase
         self::assertNotContains('allowUnusedAssets', $keys);
     }
 
+    /**
+     * MERGE_INTENTIONALLY_OMITTED: op-level contract merge options the SDK
+     * deliberately does NOT surface as a standalone MergeOptions field. Empty
+     * today — every op-level key is reachable via a builder field (`output_type`
+     * via output/outputType; `encoding_mode`+`target_size_bytes` via targetSize).
+     * A FUTURE new contract merge option fails the reverse check below until it is
+     * either exposed on MergeOptions (+ wireMergeOptions) or documented here.
+     * Mirrors the TS `MERGE_INTENTIONALLY_OMITTED`.
+     *
+     * @var array<string, list<string>>
+     */
+    private const MERGE_INTENTIONALLY_OMITTED = [
+        'video' => [],
+        'audio' => [],
+        'image' => [],
+    ];
+
+    /**
+     * Reverse direction (9u5aS8tU): the forward check only catches an emitted key
+     * that is NOT in the contract. It does NOT catch a contract operation-level
+     * merge option the SDK FAILS to expose — the drift that lets a new merge
+     * option (e.g. delay/re_encode_mode/target_resolution) silently go unreachable
+     * while CI stays green. For each media kind, every op-level contract merge
+     * option (`mime_groups[kind]->options` — per-input options excluded because we
+     * read `->options` only) must be EMITTED by the maximal fixture OR listed in
+     * MERGE_INTENTIONALLY_OMITTED. Mirrors the TS reverse merge check.
+     */
+    #[Test]
+    #[DataProvider('mergeOptionsProvider')]
+    public function every_op_level_merge_contract_option_is_exposed_or_documented_omission(MergeOptions $options): void
+    {
+        $kind = $options->mediaKind;
+        self::assertNotNull($kind, 'each merge fixture pins mediaKind');
+        $contract = $this->mediaGroupOptionKeys(MergeMetadata::instance(), $kind);
+        $payload = (new MergedRecipe([FileInput::path('a'), FileInput::path('b')], $options))
+            ->toWorkflowPayload(['f0', 'f1'], null);
+
+        $emitted = [];
+        foreach ($this->optionKeysOf($payload, 'merge') as $k) {
+            $emitted[$k] = true;
+        }
+        foreach (self::MERGE_INTENTIONALLY_OMITTED[$kind] ?? [] as $omitted) {
+            $emitted[$omitted] = true;
+        }
+
+        $unexposed = array_values(array_filter(
+            array_keys($contract),
+            static fn (string $k): bool => !isset($emitted[$k]),
+        ));
+        self::assertSame(
+            [],
+            $unexposed,
+            \sprintf(
+                'merge:%s: contract op-level option(s) %s are neither emitted by wireMergeOptions nor in '
+                . "MERGE_INTENTIONALLY_OMITTED['%s'] — a new merge option would be silently unreachable. "
+                . 'Expose it on MergeOptions (+ wireMergeOptions) or document the omission.',
+                $kind,
+                \json_encode($unexposed),
+                $kind,
+            ),
+        );
+    }
+
     // --- archive ------------------------------------------------------------
 
     #[Test]
@@ -488,8 +555,7 @@ final class WireKeyConformanceTest extends TestCase
         $contract = $this->operationOptionKeys(ArchiveMetadata::instance());
         $payload = (new ArchivedRecipe(
             [FileInput::path('a.png'), FileInput::path('b.pdf')],
-            ArchiveFormat::Zip,
-            'by_job',
+            new ArchiveRecipeOptions(format: ArchiveFormat::Zip, folderStructure: 'by_job'),
         ))->toWorkflowPayload(['f0', 'f1'], null);
         $this->assertKeysConform('archive', $this->optionKeysOf($payload, 'archive'), $contract);
     }
