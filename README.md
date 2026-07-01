@@ -14,7 +14,7 @@ composer require giveitsmaller/sdk guzzlehttp/guzzle http-interop/http-factory-g
 
 Requires **PHP ^8.1**.
 
-> **Bring your own PSR-18 client.** The SDK's runtime imports only PSR-18 interfaces, so you can use any implementation (e.g. Symfony HttpClient) instead of Guzzle — inject it via `Gisl::create(httpClient: ...)`. While GISL is pre-release the package is served from a private Composer mirror — see the [private-registry install notes](../../docs/php-consumer-install.md) for the `repositories` + `auth.json` PAT setup.
+> **Bring your own PSR-18 client.** The SDK's runtime imports only PSR-18 interfaces, so you can use any implementation (e.g. Symfony HttpClient) instead of Guzzle — inject it via `Gisl::create(httpClient: ...)`. Published on [Packagist](https://packagist.org/packages/giveitsmaller/sdk) — the `composer require` above is all you need (no `repositories` block or auth token). See the [install notes](../../docs/php-consumer-install.md) for the BYO-client and dev-checkout options.
 
 ## Quickstart
 
