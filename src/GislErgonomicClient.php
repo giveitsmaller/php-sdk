@@ -7,7 +7,9 @@ namespace Gisl\Sdk;
 use Gisl\Generated\OpenApi\Model\AccountLimits;
 use Gisl\Generated\OpenApi\Model\CreditsBalanceResponse;
 use Gisl\Generated\OpenApi\Model\CreditsUsageResponse;
+use Gisl\Generated\OpenApi\Model\OperationCapability;
 use Gisl\Sdk\Ergonomic\Asset;
+use Gisl\Sdk\Ergonomic\CapabilitiesSnapshot;
 use Gisl\Sdk\Ergonomic\Handle;
 use Gisl\Sdk\Ergonomic\Merge;
 use Gisl\Sdk\Ergonomic\MergeBuilder;
@@ -296,6 +298,63 @@ class GislErgonomicClient extends GislClient
     public function limits(): AccountLimits
     {
         return $this->getAccountLimits();
+    }
+
+    /**
+     * Operation-capability read helper (qUhxfDA5). A typed projection over
+     * {@see GislClient::getSchema()} that surfaces the tier-scoped
+     * operation-capability matrix, the output-property table, and the
+     * image-encode capability matrix — without dropping to the low-level
+     * `getSchema()` and its hit/not-modified result union. Mirrors the TS
+     * `capabilities()` on the ergonomic client.
+     *
+     * Called with no argument it returns the full {@see CapabilitiesSnapshot};
+     * called with an operation type it returns just that op's
+     * {@see OperationCapability}, or `null` when the op is absent from the
+     * server's capability matrix.
+     *
+     * Degraded fallback: if the client is configured to force conditional
+     * revalidation (a static `If-None-Match` header) the schema fetch may 304
+     * with no body — in that case the snapshot is empty / the per-op lookup is
+     * `null`.
+     *
+     * @return ($opType is null ? CapabilitiesSnapshot : OperationCapability|null)
+     */
+    public function capabilities(?string $opType = null): CapabilitiesSnapshot|OperationCapability|null
+    {
+        $result = $this->getSchema();
+        $schema = $result instanceof GetSchemaHitResult ? $result->schema : null;
+        /** @var array<string, OperationCapability> $operations */
+        $operations = $schema?->getCapabilities() ?? [];
+        if ($opType !== null) {
+            return $operations[$opType] ?? null;
+        }
+        return new CapabilitiesSnapshot(
+            operations: $operations,
+            outputProperties: $schema?->getOutputProperties() ?? [],
+            imageEncode: $schema?->getImageEncodeCapabilities(),
+        );
+    }
+
+    /**
+     * Generic operation escape hatch (qUhxfDA5). Build + run any operation type
+     * with no first-class verb — e.g. `text_watermark`, `split`, or a
+     * not-yet-in-contract op. Builds a SINGLE-input, SINGLE-operation job (the
+     * generic sibling of {@see compress()}/{@see convert()}/{@see thumbnail()}).
+     * `$options` reach the wire unchanged — there is NO pre-upload validation
+     * (the server validates) and NO preset resolution unless `$opType` is
+     * `compress`.
+     *
+     * Multi-input operations (merge, archive, image/video/audio overlay
+     * watermarks) canNOT be expressed here — they need multiple sources and have
+     * dedicated builders ({@see merge()}, `files(...)->archive(...)`,
+     * `file($a)->watermark($b)`). Use those instead.
+     *
+     * @param array<string, mixed> $options
+     */
+    public function operation(string $opType, string $input, array $options = []): OperationBuilder
+    {
+        return new OperationBuilder($this, $opType, $input, $options, $this->presetDefaults, $this->scopedPresetDefaults);
     }
 
     // `watermark()` and `archive()` factories are NOT shipped in P2/P3.
