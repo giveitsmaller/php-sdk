@@ -345,4 +345,68 @@ final class OptionValidationTest extends TestCase
             self::assertSame(['bogus'], $err->getConflictingFields());
         }
     }
+
+    // --- single-op convert guard (ExVcchMz) --------------------------------
+    // The single-op builder convert carries its target in the bag as
+    // `output_format` (no positional format), so it uses a DISTINCT guard that
+    // allows+requires output_format and rejects the `format` alias. Mirrors the
+    // TS `validateSingleOpConvertOptions` coverage.
+
+    #[Test]
+    public function single_op_convert_accepts_output_format_plus_contract_keys(): void
+    {
+        $this->expectNotToPerformAssertions();
+        OptionValidation::validateSingleOpConvertOptions(['output_format' => 'webp', 'quality' => 80]);
+    }
+
+    #[Test]
+    public function single_op_convert_rejects_a_missing_output_format(): void
+    {
+        try {
+            OptionValidation::validateSingleOpConvertOptions(['quality' => 80]);
+            self::fail('single-op convert must require output_format');
+        } catch (GislConfigError $err) {
+            self::assertSame('missing_required_field', $err->getReason());
+            self::assertSame(['output_format'], $err->getConflictingFields());
+        }
+    }
+
+    #[Test]
+    public function single_op_convert_rejects_a_null_output_format(): void
+    {
+        try {
+            OptionValidation::validateSingleOpConvertOptions(['output_format' => null]);
+            self::fail('single-op convert must reject a null output_format');
+        } catch (GislConfigError $err) {
+            self::assertSame('missing_required_field', $err->getReason());
+        }
+    }
+
+    #[Test]
+    public function single_op_convert_rejects_an_unknown_key(): void
+    {
+        try {
+            OptionValidation::validateSingleOpConvertOptions(['output_format' => 'webp', 'bogus' => 1]);
+            self::fail('single-op convert must reject an unknown key');
+        } catch (GislConfigError $err) {
+            self::assertSame('unknown_field', $err->getReason());
+            self::assertSame(['bogus'], $err->getConflictingFields());
+        }
+    }
+
+    #[Test]
+    public function single_op_convert_rejects_the_format_alias(): void
+    {
+        // `format` is the SDK alias for the positional file-first arg; the
+        // single-op bag lowers verbatim to the wire, so only the wire key
+        // `output_format` is accepted — `format` must be rejected as unknown,
+        // never silently shipped as a wire `format` the server 422s.
+        try {
+            OptionValidation::validateSingleOpConvertOptions(['format' => 'webp']);
+            self::fail('single-op convert must reject the `format` alias');
+        } catch (GislConfigError $err) {
+            self::assertSame('unknown_field', $err->getReason());
+            self::assertSame(['format'], $err->getConflictingFields());
+        }
+    }
 }

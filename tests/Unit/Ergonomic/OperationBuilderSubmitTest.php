@@ -7,6 +7,7 @@ namespace Gisl\Sdk\Tests\Unit\Ergonomic;
 use Gisl\Sdk\Ergonomic\Handle;
 use Gisl\Sdk\Ergonomic\OperationBuilder;
 use Gisl\Sdk\Ergonomic\SubmitOptions;
+use Gisl\Sdk\Errors\GislConfigError;
 use Gisl\Sdk\Generated\SdkSpec\Enums\OptimizeFor;
 use Gisl\Sdk\GislClientConfig;
 use Gisl\Sdk\GislErgonomicClient;
@@ -138,7 +139,9 @@ final class OperationBuilderSubmitTest extends TestCase
         ], $captured);
 
         $client = self::makeClient($http);
-        $handle = $client->thumbnail($tempPath, ['width' => 320])
+        // ExVcchMz — width AND height are required (single-op thumbnail now
+        // validates pre-upload); a width-only bag would throw before submit.
+        $handle = $client->thumbnail($tempPath, ['width' => 320, 'height' => 240])
             ->submit(new SubmitOptions(webhook: 'https://example.com/cb'));
 
         $this->assertNull($handle->webhookSecret);
@@ -215,6 +218,72 @@ final class OperationBuilderSubmitTest extends TestCase
         self::assertIsArray($options);
 
         return $options;
+    }
+
+    // --- single-op builder validation wiring (ExVcchMz) ---------------------
+    // The client factory methods convert()/thumbnail() must validate PRE-UPLOAD
+    // (no HTTP). Empty stub queue → any HTTP call throws "queue exhausted", so an
+    // asserted GislConfigError with an empty $captured proves the guard fires at
+    // the factory before submit. Mirrors the TS gisl.test.ts proxy tests.
+
+    public function test_single_op_thumbnail_rejects_missing_dimensions_pre_upload(): void
+    {
+        $captured = [];
+        $client = self::makeClient(self::stubClient([], $captured));
+        $tempPath = self::writeTempFile('img', 'photo.png');
+        try {
+            $client->thumbnail($tempPath, []);
+            self::fail('thumbnail with no dimensions must throw pre-upload');
+        } catch (GislConfigError $err) {
+            self::assertSame('missing_required_field', $err->getReason());
+        } finally {
+            self::assertSame([], $captured, 'no HTTP may fire before the validation throw');
+        }
+    }
+
+    public function test_single_op_thumbnail_rejects_unknown_key_pre_upload(): void
+    {
+        $captured = [];
+        $client = self::makeClient(self::stubClient([], $captured));
+        $tempPath = self::writeTempFile('img', 'photo.png');
+        try {
+            $client->thumbnail($tempPath, ['width' => 10, 'height' => 10, 'bogus' => 1]);
+            self::fail('thumbnail with an unknown key must throw pre-upload');
+        } catch (GislConfigError $err) {
+            self::assertSame('unknown_field', $err->getReason());
+        } finally {
+            self::assertSame([], $captured);
+        }
+    }
+
+    public function test_single_op_convert_rejects_missing_output_format_pre_upload(): void
+    {
+        $captured = [];
+        $client = self::makeClient(self::stubClient([], $captured));
+        $tempPath = self::writeTempFile('img', 'photo.png');
+        try {
+            $client->convert($tempPath, ['quality' => 80]);
+            self::fail('convert with no output_format must throw pre-upload');
+        } catch (GislConfigError $err) {
+            self::assertSame('missing_required_field', $err->getReason());
+        } finally {
+            self::assertSame([], $captured);
+        }
+    }
+
+    public function test_single_op_convert_rejects_format_alias_pre_upload(): void
+    {
+        $captured = [];
+        $client = self::makeClient(self::stubClient([], $captured));
+        $tempPath = self::writeTempFile('img', 'photo.png');
+        try {
+            $client->convert($tempPath, ['format' => 'webp']);
+            self::fail('convert with the `format` alias must throw pre-upload');
+        } catch (GislConfigError $err) {
+            self::assertSame('unknown_field', $err->getReason());
+        } finally {
+            self::assertSame([], $captured);
+        }
     }
 
     private static function writeTempFile(string $bytes, string $filename = 'fixture.bin'): string

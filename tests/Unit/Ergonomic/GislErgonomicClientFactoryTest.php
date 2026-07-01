@@ -43,14 +43,18 @@ final class GislErgonomicClientFactoryTest extends TestCase
     }
 
     /**
-     * @return array<string, array{string}>
+     * Each verb paired with a VALID option bag (ExVcchMz — convert/thumbnail now
+     * validate pre-upload, so the generic `['quality' => 80]` bag no longer works
+     * for thumbnail (needs width+height) or convert (needs output_format)).
+     *
+     * @return array<string, array{0: string, 1: array<string, mixed>}>
      */
     public static function ergonomicVerbProvider(): array
     {
         return [
-            'compress' => ['compress'],
-            'thumbnail' => ['thumbnail'],
-            'convert' => ['convert'],
+            'compress' => ['compress', ['quality' => 80]],
+            'thumbnail' => ['thumbnail', ['width' => 320, 'height' => 240]],
+            'convert' => ['convert', ['output_format' => 'webp', 'quality' => 80]],
         ];
     }
 
@@ -67,12 +71,15 @@ final class GislErgonomicClientFactoryTest extends TestCase
         $this->assertFalse(\method_exists($client, 'archive'));
     }
 
+    /**
+     * @param array<string, mixed> $options
+     */
     #[DataProvider('ergonomicVerbProvider')]
-    public function test_factory_returns_operation_builder(string $verb): void
+    public function test_factory_returns_operation_builder(string $verb, array $options): void
     {
         $client = $this->makeClient();
         /** @var OperationBuilder $builder */
-        $builder = $client->$verb('/tmp/anywhere.bin', ['quality' => 80]);
+        $builder = $client->$verb('/tmp/anywhere.bin', $options);
         $this->assertInstanceOf(OperationBuilder::class, $builder);
     }
 
@@ -81,11 +88,14 @@ final class GislErgonomicClientFactoryTest extends TestCase
      * reflection. Cheap regression guard against an accidental rename
      * of `opType` or argument-shuffle in the factory.
      */
+    /**
+     * @param array<string, mixed> $options
+     */
     #[DataProvider('ergonomicVerbProvider')]
-    public function test_factory_captures_verb_and_options(string $verb): void
+    public function test_factory_captures_verb_and_options(string $verb, array $options): void
     {
         $client = $this->makeClient();
-        $opts = ['quality' => 75, 'format' => 'webp'];
+        $opts = $options;
         $builder = $client->$verb('/tmp/some.bin', $opts);
 
         $reflection = new \ReflectionObject($builder);

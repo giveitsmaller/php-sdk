@@ -13,6 +13,7 @@ use Gisl\Sdk\Ergonomic\Merge;
 use Gisl\Sdk\Ergonomic\MergeBuilder;
 use Gisl\Sdk\Ergonomic\MergeOptions;
 use Gisl\Sdk\Ergonomic\OperationBuilder;
+use Gisl\Sdk\Ergonomic\OptionValidation;
 use Gisl\Sdk\Errors\GislConfigError;
 use Gisl\Sdk\FileFirst\FileInput;
 use Gisl\Sdk\FileFirst\FilesRecipe;
@@ -185,18 +186,68 @@ class GislErgonomicClient extends GislClient
     }
 
     /**
-     * @param array<string, mixed> $options
+     * Generate a preview thumbnail. `width` + `height` are REQUIRED (the contract
+     * marks both required for image/video/document); an unknown option key or a
+     * missing dimension is rejected pre-upload (ExVcchMz), not as a server 422.
+     *
+     * `width` + `height` are REQUIRED at runtime (enforced by the guard below);
+     * the shape keys are all marked optional only so the `= []` default type-checks.
+     *
+     * @param array{
+     *   width?: int,
+     *   height?: int,
+     *   fit?: 'max'|'crop'|'scale',
+     *   format?: 'jpg'|'png'|'webp',
+     *   quality?: int,
+     *   background?: string,
+     *   timestamp?: string,
+     *   source?: 'page'|'cover',
+     *   page?: int,
+     * } $options
      */
     public function thumbnail(string $input, array $options = []): OperationBuilder
     {
+        OptionValidation::validateVerbOptions('thumbnail', $options);
+        OptionValidation::assertThumbnailDimensions($options);
+
         return new OperationBuilder($this, 'thumbnail', $input, $options, $this->presetDefaults, $this->scopedPresetDefaults);
     }
 
     /**
-     * @param array<string, mixed> $options
+     * Convert to another format. The single-op builder has no positional format —
+     * the target rides the bag as the wire key `output_format` (REQUIRED). An
+     * unknown option key or a missing `output_format` is rejected pre-upload
+     * (ExVcchMz), not as a server 422.
+     *
+     * `output_format` is REQUIRED at runtime (enforced by the guard below); the
+     * shape keys are all marked optional only so the `= []` default type-checks.
+     *
+     * @param array{
+     *   output_format?: string,
+     *   quality?: int,
+     *   background?: string,
+     *   crf?: int,
+     *   trim_start?: float,
+     *   trim_end?: float,
+     *   fps?: int|float,
+     *   width?: int,
+     *   height?: int,
+     *   fit?: 'max'|'crop'|'scale',
+     *   metadata?: 'strip'|'keep',
+     *   color_profile?: 'keep'|'srgb'|'strip',
+     *   auto_orient?: bool,
+     *   max_colors?: int,
+     *   loop?: int,
+     *   dither?: 'none'|'bayer'|'floyd_steinberg'|'sierra2'|'sierra2_4a',
+     *   bitrate?: 64|96|128|192|256|320,
+     *   pages?: string,
+     *   dpi?: int,
+     * } $options
      */
     public function convert(string $input, array $options = []): OperationBuilder
     {
+        OptionValidation::validateSingleOpConvertOptions($options);
+
         return new OperationBuilder($this, 'convert', $input, $options, $this->presetDefaults, $this->scopedPresetDefaults);
     }
 
