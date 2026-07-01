@@ -8,6 +8,7 @@ use Gisl\Sdk\Errors\GislAuthError;
 use Gisl\Sdk\GislClient;
 use Gisl\Sdk\GislClientConfig;
 use Gisl\Sdk\GislSseEvent;
+use Gisl\Sdk\GislSseParseFailure;
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
 use GuzzleHttp\Psr7\Utils;
@@ -272,6 +273,87 @@ final class GislClientSseTest extends TestCase
         self::assertCount(1, $events);
         self::assertSame('good', $events[0]->event);
         self::assertSame(['ok' => true], $events[0]->data);
+    }
+
+    public function testOnParseErrorReceivesTypedDiagnosticAndMalformedFrameIsSkipped(): void
+    {
+        // TYNjcjpo: a malformed frame between two valid ones is dropped and
+        // surfaced to $onParseError as a typed GislSseParseFailure, while the
+        // valid frames keep yielding. Mirrors the TS `onParseError` seam.
+        $body = "event: good1\ndata: {\"n\":1}\n\n"
+              . "event: bad\ndata: {not json}\n\n"
+              . "event: good2\ndata: {\"n\":2}\n\n";
+        $http = $this->stubClient([$this->sseResponse($body)]);
+        $client = $this->makeClient($http);
+
+        /** @var list<GislSseParseFailure> $failures */
+        $failures = [];
+        $events = $this->collect(
+            $client->streamEvents(
+                self::HARNESS_WORKFLOW_ID,
+                null,
+                static function (GislSseParseFailure $failure) use (&$failures): void {
+                    $failures[] = $failure;
+                },
+            ),
+        );
+
+        self::assertCount(2, $events);
+        self::assertSame('good1', $events[0]->event);
+        self::assertSame('good2', $events[1]->event);
+
+        self::assertCount(1, $failures);
+        self::assertInstanceOf(GislSseParseFailure::class, $failures[0]);
+        self::assertSame('{not json}', $failures[0]->raw);
+        self::assertSame('bad', $failures[0]->event);
+        self::assertNotSame('', $failures[0]->error);
+    }
+
+    public function testOnParseErrorReportsMessageEventWhenFrameHasNoEventField(): void
+    {
+        // A malformed frame with no `event:` field reports the SSE-spec
+        // default event name ("message").
+        $body = "data: {still bad}\n\n";
+        $http = $this->stubClient([$this->sseResponse($body)]);
+        $client = $this->makeClient($http);
+
+        /** @var list<GislSseParseFailure> $failures */
+        $failures = [];
+        $events = $this->collect(
+            $client->streamEvents(
+                self::HARNESS_WORKFLOW_ID,
+                null,
+                static function (GislSseParseFailure $failure) use (&$failures): void {
+                    $failures[] = $failure;
+                },
+            ),
+        );
+
+        self::assertCount(0, $events);
+        self::assertCount(1, $failures);
+        self::assertSame('message', $failures[0]->event);
+    }
+
+    public function testOnParseErrorCallbackThrowPropagates(): void
+    {
+        // A throw from $onParseError is NOT swallowed — it aborts the stream,
+        // matching the onProgress-throw convention (a caller that throws is
+        // signalling it wants to stop consuming).
+        $body = "event: bad\ndata: {nope}\n\n";
+        $http = $this->stubClient([$this->sseResponse($body)]);
+        $client = $this->makeClient($http);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('boom');
+        $this->collect(
+            $client->streamEvents(
+                self::HARNESS_WORKFLOW_ID,
+                null,
+                static function (GislSseParseFailure $failure): void {
+                    throw new \RuntimeException('boom');
+                },
+            ),
+        );
     }
 
     public function testEarlyBreakClosesGracefully(): void

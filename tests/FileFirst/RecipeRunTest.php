@@ -325,6 +325,39 @@ final class RecipeRunTest extends TestCase
     }
 
     #[Test]
+    public function poll_fallback_when_terminal_sse_frame_is_malformed(): void
+    {
+        // TYNjcjpo: a malformed *terminal* SSE frame (workflow.completed with a
+        // corrupt data: body) is SKIPPED by the parser, so the stream ends
+        // without a recognised terminal event and run() falls back to poll — it
+        // resolves via getWorkflowStatus, it does NOT hang. PHP already dropped
+        // malformed frames; this locks that path as a regression guard now that
+        // the drop is also observable via onParseError.
+        $captured = [];
+        $http = $this->stubClient([
+            $this->uploadResponse(),
+            $this->createResponse(),
+            // Terminal frame present by NAME but its data: body is corrupt →
+            // dropped → the stream yields no terminal → poll fallback.
+            $this->sseResponse("event: workflow.completed\ndata: {bad json}\n\n"),
+            $this->statusResponse('completed'),   // poll fallback resolves here
+            $this->downloadsResponse(),
+        ], $captured);
+
+        $client = $this->makeClient($http);
+        $path = $this->tempImage();
+        try {
+            $result = $this->recipe($client, FileInput::path($path))->compress()->run(pollIntervalMs: 0);
+        } finally {
+            @\unlink($path);
+        }
+
+        self::assertSame('completed', $result->state);
+        self::assertTrue($result->ok);
+        self::assertCount(1, $result->artifacts);
+    }
+
+    #[Test]
     public function timeout_throws_when_deadline_elapses_before_terminal(): void
     {
         $captured = [];

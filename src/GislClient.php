@@ -1579,7 +1579,16 @@ class GislClient
      * can read it — sent as the `X-Workflow-Capability` header. Pass null for
      * authenticated reads. A wrong/missing cap on a null-owner workflow is a 404.
      *
+     * `$onParseError` (optional, TYNjcjpo): observe malformed-JSON frames. A
+     * frame whose `data:` body fails to decode is SKIPPED (the stream stays
+     * resilient) and, when this callback is supplied, reported to it as a typed
+     * {@see GislSseParseFailure} instead of being silently dropped. Omit it to
+     * keep the historical silent-drop default (TS parity). A callback that
+     * throws PROPAGATES out of the generator (matching the `onProgress`-throw
+     * convention) — do not throw from it unless you intend to abort the stream.
+     *
      * @param ?string $capability Anonymous-workflow capability token.
+     * @param ?callable(GislSseParseFailure):void $onParseError Malformed-frame observer.
      * @return \Generator<int, GislSseEvent, void, void>
      * @throws GislNetworkError on transport failure.
      * @throws GislApiError     on a non-2xx envelope (typed subclass
@@ -1588,6 +1597,7 @@ class GislClient
     public function streamEvents(
         string $workflowId,
         ?string $capability = null,
+        ?callable $onParseError = null,
     ): \Generator {
         $encoded = \rawurlencode($workflowId);
         $request = $this->buildRequest(
@@ -1620,7 +1630,7 @@ class GislClient
             );
         }
 
-        return $this->parseSseStream($response->getBody());
+        return $this->parseSseStream($response->getBody(), $onParseError);
     }
 
     /**
@@ -1630,10 +1640,13 @@ class GislClient
      * JSON-decodes on blank-line boundaries, and yields a
      * {@see GislSseEvent} per successfully-parsed frame.
      *
+     * @param ?callable(GislSseParseFailure):void $onParseError Malformed-frame observer (TYNjcjpo).
      * @return \Generator<int, GislSseEvent, void, void>
      */
-    private function parseSseStream(\Psr\Http\Message\StreamInterface $body): \Generator
-    {
+    private function parseSseStream(
+        \Psr\Http\Message\StreamInterface $body,
+        ?callable $onParseError = null,
+    ): \Generator {
         $buffer = '';
         $eventType = '';
         /** @var list<string> $dataLines */
@@ -1673,7 +1686,7 @@ class GislClient
             foreach ($lines as $line) {
                 if ($line === '') {
                     // Blank line = frame terminator. Flush.
-                    $event = $this->flushSseFrame($eventType, $dataLines);
+                    $event = $this->flushSseFrame($eventType, $dataLines, $onParseError);
                     $eventType = '';
                     $dataLines = [];
                     if ($event !== null) {
@@ -1725,7 +1738,7 @@ class GislClient
         // Flush any final frame at stream end (server closed without a
         // trailing blank line).
         if ($dataLines !== []) {
-            $event = $this->flushSseFrame($eventType, $dataLines);
+            $event = $this->flushSseFrame($eventType, $dataLines, $onParseError);
             if ($event !== null) {
                 yield $event;
             }
@@ -1745,10 +1758,19 @@ class GislClient
      * or return null if the frame should be dropped (no data lines, or
      * malformed JSON).
      *
+     * On a malformed-JSON frame (TYNjcjpo) the frame is dropped and, when
+     * `$onParseError` is supplied, a typed {@see GislSseParseFailure} is
+     * passed to it before returning null. A callback that throws propagates
+     * (it is not caught here) — matching the `onProgress`-throw convention.
+     *
      * @param list<string> $dataLines
+     * @param ?callable(GislSseParseFailure):void $onParseError Malformed-frame observer.
      */
-    private function flushSseFrame(string $eventType, array $dataLines): ?GislSseEvent
-    {
+    private function flushSseFrame(
+        string $eventType,
+        array $dataLines,
+        ?callable $onParseError = null,
+    ): ?GislSseEvent {
         if ($dataLines === []) {
             return null;
         }
@@ -1764,6 +1786,15 @@ class GislClient
                 \error_log(
                     "GISL SDK: dropping SSE frame with non-JSON data: {$e->getMessage()}",
                 );
+            }
+            // TYNjcjpo: surface the drop as a typed, non-throwing diagnostic
+            // when the caller opted in. Mirrors the TS `onParseError` seam.
+            if ($onParseError !== null) {
+                $onParseError(new GislSseParseFailure(
+                    raw: $rawData,
+                    event: $eventType !== '' ? $eventType : 'message',
+                    error: $e->getMessage(),
+                ));
             }
             return null;
         }
