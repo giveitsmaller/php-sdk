@@ -207,8 +207,9 @@ final class WatermarkGate
 
     /**
      * Lower the watermark op itself. Options (anchor/opacity/margin_x/margin_y/
-     * overlay_width) are already wire keys; empty options omit the `options` key
-     * (byte-identical to the TS `_lowerWatermarkOp`).
+     * overlay_width, or the multi-overlay overlays[] stack) are already wire
+     * keys; empty options omit the `options` key (byte-identical to the TS
+     * `_lowerWatermarkOp`).
      *
      * @param array<string, mixed> $options
      */
