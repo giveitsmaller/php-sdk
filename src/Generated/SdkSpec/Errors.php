@@ -1,0 +1,592 @@
+<?php
+
+/**
+ * CODE GENERATED — DO NOT EDIT.
+ * Source: compression_contracts/sdk-spec/ (see sdk-spec/README.md).
+ * Regenerate with: scripts/generate.py.
+ */
+
+declare(strict_types=1);
+
+namespace Gisl\Sdk\Generated\SdkSpec;
+
+/**
+ * Error taxonomy registry — the machine code -> metadata map the
+ * GislApiError back-off accessors resolve for retryable / category
+ * hints. Mirrors the TS reference at
+ * packages/typescript/src/generated/sdk_spec/errors.ts.
+ */
+final class Errors
+{
+    /**
+     * @var array<string, array{
+     *     code: string,
+     *     category: string,
+     *     source: string,
+     *     status: string,
+     *     httpStatus: int|null,
+     *     retryable: bool,
+     *     sdkClass: string,
+     *     description: string,
+     *     metadataSchema: array<string, string>,
+     * }>
+     */
+    public const ERROR_CODES = [
+        'missing_credentials' => [
+            'code' => 'missing_credentials',
+            'category' => 'config',
+            'source' => 'SDK_local',
+            'status' => 'wired',
+            'httpStatus' => null,
+            'retryable' => false,
+            'sdkClass' => 'GislMissingCredentialsError',
+            'description' => 'gisl.create() failed the credential chain (explicit → GISL_API_KEY env → ~/.gisl/credentials profile → fail-early).',
+            'metadataSchema' => [
+                'sourcesTried' => 'array',
+            ],
+        ],
+        'feature_requires_auth' => [
+            'code' => 'feature_requires_auth',
+            'category' => 'config',
+            'source' => 'SDK_local',
+            'status' => 'wired',
+            'httpStatus' => null,
+            'retryable' => false,
+            'sdkClass' => 'GislFeatureRequiresAuthError',
+            'description' => 'SDK rejected an anonymous-mode call to a feature that requires authentication. Pre-flight gate; never reaches the API.',
+            'metadataSchema' => [
+                'feature' => 'string',
+            ],
+        ],
+        'undeclared_asset' => [
+            'code' => 'undeclared_asset',
+            'category' => 'chain',
+            'source' => 'SDK_local',
+            'status' => 'wired',
+            'httpStatus' => null,
+            'retryable' => false,
+            'sdkClass' => 'GislUndeclaredAssetError',
+            'description' => 'Merge / archive / mapEach referenced an asset handle that was not declared upstream in the chain.',
+            'metadataSchema' => [
+                'ref' => 'string',
+            ],
+        ],
+        'unused_asset' => [
+            'code' => 'unused_asset',
+            'category' => 'chain',
+            'source' => 'SDK_local',
+            'status' => 'wired',
+            'httpStatus' => null,
+            'retryable' => false,
+            'sdkClass' => 'GislUnusedAssetError',
+            'description' => 'A declared asset was never referenced in the chain (caller likely forgot to use it; escape via allowUnusedAssets).',
+            'metadataSchema' => [
+                'ref' => 'string',
+            ],
+        ],
+        'per_input_options_not_supported' => [
+            'code' => 'per_input_options_not_supported',
+            'category' => 'chain',
+            'source' => 'SDK_local',
+            'status' => 'wired',
+            'httpStatus' => null,
+            'retryable' => false,
+            'sdkClass' => 'GislPerInputOptionsNotSupportedError',
+            'description' => 'per_input_options provided on a multi-input op role that doesn\'t accept it (e.g. role-less branch).',
+            'metadataSchema' => [
+                'op' => 'string',
+                'role' => 'string',
+            ],
+        ],
+        'chain_cardinality_mismatch' => [
+            'code' => 'chain_cardinality_mismatch',
+            'category' => 'chain',
+            'source' => 'SDK_local',
+            'status' => 'wired',
+            'httpStatus' => null,
+            'retryable' => false,
+            'sdkClass' => 'GislChainCardinalityMismatchError',
+            'description' => 'Chain step expects a single artifact but the upstream step produces N (e.g.
+.compress() chained after convert(pdf, pages: "1-20")). Recovery: branch
+to a single artifact OR use .mapEach() to fan out.
+',
+            'metadataSchema' => [
+                'upstreamArtifactCount' => 'integer',
+                'operation' => 'string',
+            ],
+        ],
+        'multipart_part_invalid' => [
+            'code' => 'multipart_part_invalid',
+            'category' => 'validation',
+            'source' => 'SDK_local',
+            'status' => 'wired',
+            'httpStatus' => null,
+            'retryable' => false,
+            'sdkClass' => 'GislMultipartPartError',
+            'description' => 'SDK rejected a part configuration before upload (e.g. out-of-range part number, duplicate, missing).',
+            'metadataSchema' => [
+                'partNumber' => 'integer',
+                'reason' => 'string',
+            ],
+        ],
+        'multipart_part_count_exceeded' => [
+            'code' => 'multipart_part_count_exceeded',
+            'category' => 'validation',
+            'source' => 'SDK_local',
+            'status' => 'wired',
+            'httpStatus' => null,
+            'retryable' => false,
+            'sdkClass' => 'GislMultipartPartCountError',
+            'description' => 'Multipart presign batch / total parts exceeds S3 ceilings (10 000 total, 100 per presign request).',
+            'metadataSchema' => [
+                'partCount' => 'integer',
+                'ceiling' => 'integer',
+            ],
+        ],
+        'timeout' => [
+            'code' => 'timeout',
+            'category' => 'network',
+            'source' => 'SDK_local',
+            'status' => 'wired',
+            'httpStatus' => null,
+            'retryable' => true,
+            'sdkClass' => 'GislTimeoutError',
+            'description' => 'SDK-set deadline exceeded (run({maxWait}), waitForCompletion, multipart attempt timeout).',
+            'metadataSchema' => [
+                'timeoutMs' => 'integer',
+                'phase' => 'string',
+            ],
+        ],
+        'aborted' => [
+            'code' => 'aborted',
+            'category' => 'network',
+            'source' => 'SDK_local',
+            'status' => 'wired',
+            'httpStatus' => null,
+            'retryable' => false,
+            'sdkClass' => 'GislAbortError',
+            'description' => 'Caller-supplied AbortSignal triggered cancellation.',
+            'metadataSchema' => [
+                'reason' => 'string',
+            ],
+        ],
+        'validation_failed' => [
+            'code' => 'validation_failed',
+            'category' => 'validation',
+            'source' => 'ErrorEnvelope.error',
+            'status' => 'wired',
+            'httpStatus' => 422,
+            'retryable' => false,
+            'sdkClass' => 'GislValidationError',
+            'description' => '422 — request validation failure; emitted on the wire as `VALIDATION_FAILED` (e.g. invalid limit/offset on GET /api/v2/credits/usage). Carries `details[]`.',
+            'metadataSchema' => [
+                'details' => 'array',
+            ],
+        ],
+        'validation_error' => [
+            'code' => 'validation_error',
+            'category' => 'validation',
+            'source' => 'error_type',
+            'status' => 'wired',
+            'httpStatus' => 422,
+            'retryable' => false,
+            'sdkClass' => 'GislValidationError',
+            'description' => '422 — `error_type` discriminator on `ValidationErrorEnvelope` (ADR-0018/0019); distinct from `validation_failed` (the `error` code), same `GislValidationError`. Carries `details[]`.',
+            'metadataSchema' => [
+                'details' => 'array',
+            ],
+        ],
+        'cyclic_workflow_edges' => [
+            'code' => 'cyclic_workflow_edges',
+            'category' => 'validation',
+            'source' => 'ErrorEnvelope.error',
+            'status' => 'wired',
+            'httpStatus' => 422,
+            'retryable' => false,
+            'sdkClass' => 'GislValidationError',
+            'description' => '422 — cycle/self-edge in the explicit `workflow_edges` DAG. Wire `CYCLIC_WORKFLOW_EDGES` (g8PPkbNu); ValidationErrorEnvelope shape, `details[0].field`=`workflow_edges`.',
+            'metadataSchema' => [
+                'details' => 'array',
+            ],
+        ],
+        'workflow_edge_references_unknown_job' => [
+            'code' => 'workflow_edge_references_unknown_job',
+            'category' => 'validation',
+            'source' => 'ErrorEnvelope.error',
+            'status' => 'wired',
+            'httpStatus' => 400,
+            'retryable' => false,
+            'sdkClass' => 'GislValidationError',
+            'description' => '400 — a `workflow_edges` entry, job-level `source`, or `inputs[].source` references a job not in the request. Wire `WORKFLOW_EDGE_REFERENCES_UNKNOWN_JOB` (g8PPkbNu).',
+            'metadataSchema' => [],
+        ],
+        'reserved_job_id_pattern' => [
+            'code' => 'reserved_job_id_pattern',
+            'category' => 'validation',
+            'source' => 'ErrorEnvelope.error',
+            'status' => 'wired',
+            'httpStatus' => 400,
+            'retryable' => false,
+            'sdkClass' => 'GislValidationError',
+            'description' => '400 — user job `id` matches the reserved `^job_\\d+$` pattern as the SOLE failure. Wire `RESERVED_JOB_ID_PATTERN` (g8PPkbNu); mixed violations keep generic `BAD_REQUEST`.',
+            'metadataSchema' => [],
+        ],
+        'cyclic_job_output_source_graph' => [
+            'code' => 'cyclic_job_output_source_graph',
+            'category' => 'validation',
+            'source' => 'ErrorEnvelope.error',
+            'status' => 'wired',
+            'httpStatus' => 400,
+            'retryable' => false,
+            'sdkClass' => 'GislValidationError',
+            'description' => '400 — an implicit cycle in the `job_output` source graph, caught during effective-input-MIME resolution on POST /api/workflows. Wire `CYCLIC_JOB_OUTPUT_SOURCE_GRAPH` (g8PPkbNu).',
+            'metadataSchema' => [],
+        ],
+        'auth_failed' => [
+            'code' => 'auth_failed',
+            'category' => 'auth',
+            'source' => 'ErrorEnvelope.error',
+            'status' => 'wired',
+            'httpStatus' => 401,
+            'retryable' => false,
+            'sdkClass' => 'GislAuthError',
+            'description' => '401 — invalid / expired / missing API key.',
+            'metadataSchema' => [
+                'authErrorType' => 'string',
+            ],
+        ],
+        'feature_tier_restricted' => [
+            'code' => 'feature_tier_restricted',
+            'category' => 'api',
+            'source' => 'error_type',
+            'status' => 'wired',
+            'httpStatus' => 403,
+            'retryable' => false,
+            'sdkClass' => 'GislFeatureTierRestrictedError',
+            'description' => '403 — feature requires a higher subscription tier than the caller\'s.',
+            'metadataSchema' => [
+                'feature' => 'string',
+                'requiredTier' => 'string',
+                'currentTier' => 'string',
+            ],
+        ],
+        'tier_restriction' => [
+            'code' => 'tier_restriction',
+            'category' => 'api',
+            'source' => 'error_type',
+            'status' => 'wired',
+            'httpStatus' => 403,
+            'retryable' => false,
+            'sdkClass' => 'GislTierRestrictedError',
+            'description' => '403 — general tier restriction (not feature-specific). Wire emits `error_type: "tier_restriction"`; the SDK class name keeps the `TierRestricted` adjective form per packages/typescript/src/errors.ts.',
+            'metadataSchema' => [
+                'requiredTier' => 'string',
+                'currentTier' => 'string',
+            ],
+        ],
+        'multipart_session_ownership' => [
+            'code' => 'multipart_session_ownership',
+            'category' => 'auth',
+            'source' => 'ErrorEnvelope.error',
+            'status' => 'wired',
+            'httpStatus' => 403,
+            'retryable' => false,
+            'sdkClass' => 'GislMultipartSessionOwnershipError',
+            'description' => '403 on multipart resume — session exists but belongs to a different caller.',
+            'metadataSchema' => [
+                'uploadId' => 'string',
+            ],
+        ],
+        'multipart_session_auth_required' => [
+            'code' => 'multipart_session_auth_required',
+            'category' => 'auth',
+            'source' => 'ErrorEnvelope.error',
+            'status' => 'wired',
+            'httpStatus' => 403,
+            'retryable' => false,
+            'sdkClass' => 'GislMultipartSessionAuthRequiredError',
+            'description' => '403 on multipart resume — session was initiated anonymously; resume requires auth (future-flip per upstream 8LABloaz).',
+            'metadataSchema' => [
+                'uploadId' => 'string',
+            ],
+        ],
+        'multipart_session_not_found' => [
+            'code' => 'multipart_session_not_found',
+            'category' => 'api',
+            'source' => 'ErrorEnvelope.error',
+            'status' => 'wired',
+            'httpStatus' => 404,
+            'retryable' => false,
+            'sdkClass' => 'GislMultipartSessionNotFoundError',
+            'description' => '404 on multipart resume — upload_id unknown or expired past 48h TTL.',
+            'metadataSchema' => [
+                'uploadId' => 'string',
+            ],
+        ],
+        'upload_not_found' => [
+            'code' => 'upload_not_found',
+            'category' => 'api',
+            'source' => 'ErrorEnvelope.error',
+            'status' => 'wired',
+            'httpStatus' => 404,
+            'retryable' => false,
+            'sdkClass' => 'GislApiError',
+            'description' => '404 on POST /api/workflows — a referenced upload was not found, OR exists but is owned by a different identity (deliberate BOLA/IDOR existence-mask: reported as not-found, never 403, so the response does not reveal another user\'s upload exists). message_key upload.not_found. Wire token UPLOAD_NOT_FOUND keyed on the `error` field. Per ADR-0016 amendment.',
+            'metadataSchema' => [],
+        ],
+        'workflow_expired' => [
+            'code' => 'workflow_expired',
+            'category' => 'api',
+            'source' => 'error_type',
+            'status' => 'wired',
+            'httpStatus' => 410,
+            'retryable' => false,
+            'sdkClass' => 'GislWorkflowExpiredError',
+            'description' => '410 — workflow result TTL expired; outputs no longer downloadable.',
+            'metadataSchema' => [
+                'workflowId' => 'string',
+            ],
+        ],
+        'balance_exhausted' => [
+            'code' => 'balance_exhausted',
+            'category' => 'api',
+            'source' => 'error_type',
+            'status' => 'wired',
+            'httpStatus' => 402,
+            'retryable' => false,
+            'sdkClass' => 'GislBalanceExhaustedError',
+            'description' => '402 — workflow create rejected because cost estimate exceeds available credits (monthly + purchased + overdraft).',
+            'metadataSchema' => [
+                'requiredCredits' => 'integer',
+                'availableCredits' => 'integer',
+                'links' => 'object',
+            ],
+        ],
+        'feature_not_available' => [
+            'code' => 'feature_not_available',
+            'category' => 'api',
+            'source' => 'error_type',
+            'status' => 'wired',
+            'httpStatus' => 422,
+            'retryable' => false,
+            'sdkClass' => 'GislFeatureNotAvailableError',
+            'description' => '422 — operation type is planned but not yet implemented server-side (e.g. custom_luma before Lambda support ships).',
+            'metadataSchema' => [
+                'feature' => 'string',
+            ],
+        ],
+        'upload_size_exceeds_tier' => [
+            'code' => 'upload_size_exceeds_tier',
+            'category' => 'api',
+            'source' => 'error_type',
+            'status' => 'wired',
+            'httpStatus' => 422,
+            'retryable' => false,
+            'sdkClass' => 'GislUploadCapExceededError',
+            'description' => '422 — uploaded file size exceeds the per-tier cap. Wire `error_type: "upload_size_exceeds_tier"`. SDK class GislUploadCapExceededError covers this + upload_duration_exceeds_tier (sibling code below).',
+            'metadataSchema' => [
+                'size' => 'integer',
+                'ceiling' => 'integer',
+            ],
+        ],
+        'upload_duration_exceeds_tier' => [
+            'code' => 'upload_duration_exceeds_tier',
+            'category' => 'api',
+            'source' => 'error_type',
+            'status' => 'wired',
+            'httpStatus' => 422,
+            'retryable' => false,
+            'sdkClass' => 'GislUploadCapExceededError',
+            'description' => '422 — uploaded media duration exceeds the per-tier cap. Wire `error_type: "upload_duration_exceeds_tier"`. Shares SDK class GislUploadCapExceededError with upload_size_exceeds_tier; consumers branch on the metadata.',
+            'metadataSchema' => [
+                'duration' => 'integer',
+                'ceiling' => 'integer',
+            ],
+        ],
+        'probe_pending' => [
+            'code' => 'probe_pending',
+            'category' => 'api',
+            'source' => 'error_type',
+            'status' => 'wired',
+            'httpStatus' => 422,
+            'retryable' => true,
+            'sdkClass' => 'GislApiError',
+            'description' => '422 on workflow create — upload probing not yet complete; retry after the upload finishes probing. Wire `error_type: "probe_pending"`.',
+            'metadataSchema' => [
+                'jobRef' => 'string',
+            ],
+        ],
+        'requires_reencode' => [
+            'code' => 'requires_reencode',
+            'category' => 'api',
+            'source' => 'ErrorEnvelope.error',
+            'status' => 'wired',
+            'httpStatus' => 422,
+            'retryable' => false,
+            'sdkClass' => 'GislApiError',
+            'description' => '422 on merge — inputs are byte-stream-incompatible (different codec / resolution / etc.); merge requires re-encode rather than concat.',
+            'metadataSchema' => [
+                'reason' => 'string',
+            ],
+        ],
+        'invalid_options' => [
+            'code' => 'invalid_options',
+            'category' => 'validation',
+            'source' => 'ErrorEnvelope.error',
+            'status' => 'wired',
+            'httpStatus' => 422,
+            'retryable' => false,
+            'sdkClass' => 'GislValidationError',
+            'description' => '422 — operation option failed server-side validation (range, depends_on, mutex). Often surfaces preflight rejections (e.g. split.cut_points len exceeds 200-output cap).',
+            'metadataSchema' => [
+                'field' => 'string',
+                'reason' => 'string',
+            ],
+        ],
+        'invalid_combination' => [
+            'code' => 'invalid_combination',
+            'category' => 'validation',
+            'source' => 'SDK_local',
+            'status' => 'wired',
+            'httpStatus' => null,
+            'retryable' => false,
+            'sdkClass' => 'GislValidationError',
+            'description' => 'Two or more options that are mutually exclusive per contract `depends_on` / mutex were both provided.',
+            'metadataSchema' => [
+                'fields' => 'array',
+            ],
+        ],
+        'missing_dependency' => [
+            'code' => 'missing_dependency',
+            'category' => 'validation',
+            'source' => 'SDK_local',
+            'status' => 'wired',
+            'httpStatus' => null,
+            'retryable' => false,
+            'sdkClass' => 'GislValidationError',
+            'description' => 'An option was set but its contract `depends_on` predicate was not satisfied (e.g. quality set but mode is not lossy).',
+            'metadataSchema' => [
+                'field' => 'string',
+                'requires' => 'array',
+            ],
+        ],
+        'unsupported_value' => [
+            'code' => 'unsupported_value',
+            'category' => 'validation',
+            'source' => 'SDK_local',
+            'status' => 'wired',
+            'httpStatus' => null,
+            'retryable' => false,
+            'sdkClass' => 'GislValidationError',
+            'description' => 'A value was outside the allowed enum / range for an option.',
+            'metadataSchema' => [
+                'field' => 'string',
+                'value' => 'string',
+                'allowed' => 'array',
+            ],
+        ],
+        'type_mismatch' => [
+            'code' => 'type_mismatch',
+            'category' => 'validation',
+            'source' => 'SDK_local',
+            'status' => 'wired',
+            'httpStatus' => null,
+            'retryable' => false,
+            'sdkClass' => 'GislValidationError',
+            'description' => 'A value\'s type didn\'t match the schema (e.g. string where integer expected).',
+            'metadataSchema' => [
+                'field' => 'string',
+                'expected' => 'string',
+                'actual' => 'string',
+            ],
+        ],
+        'upload_failed' => [
+            'code' => 'upload_failed',
+            'category' => 'network',
+            'source' => 'SDK_local',
+            'status' => 'wired',
+            'httpStatus' => null,
+            'retryable' => true,
+            'sdkClass' => 'GislError',
+            'description' => 'Single-shot or multipart upload failed after retry exhaustion. Distinct from auth/balance/cap errors (those are typed above).',
+            'metadataSchema' => [
+                'reason' => 'string',
+                'attempt' => 'integer',
+            ],
+        ],
+        'workflow_failed' => [
+            'code' => 'workflow_failed',
+            'category' => 'api',
+            'source' => 'OperationResponse.error_code',
+            'status' => 'wired',
+            'httpStatus' => null,
+            'retryable' => false,
+            'sdkClass' => 'GislApiError',
+            'description' => 'Workflow reached terminal failure status. Per-job error codes live on jobErrors[].errorCode.',
+            'metadataSchema' => [
+                'workflowId' => 'string',
+                'jobErrors' => 'array',
+            ],
+        ],
+    ];
+
+    /**
+     * @var array<string, list<string>>
+     */
+    public const ERROR_CATEGORIES = [
+        'api' => [
+            'feature_tier_restricted',
+            'tier_restriction',
+            'multipart_session_not_found',
+            'upload_not_found',
+            'workflow_expired',
+            'balance_exhausted',
+            'feature_not_available',
+            'upload_size_exceeds_tier',
+            'upload_duration_exceeds_tier',
+            'probe_pending',
+            'requires_reencode',
+            'workflow_failed',
+        ],
+        'config' => [
+            'missing_credentials',
+            'feature_requires_auth',
+        ],
+        'network' => [
+            'timeout',
+            'aborted',
+            'upload_failed',
+        ],
+        'auth' => [
+            'auth_failed',
+            'multipart_session_ownership',
+            'multipart_session_auth_required',
+        ],
+        'validation' => [
+            'multipart_part_invalid',
+            'multipart_part_count_exceeded',
+            'validation_failed',
+            'validation_error',
+            'cyclic_workflow_edges',
+            'workflow_edge_references_unknown_job',
+            'reserved_job_id_pattern',
+            'cyclic_job_output_source_graph',
+            'invalid_options',
+            'invalid_combination',
+            'missing_dependency',
+            'unsupported_value',
+            'type_mismatch',
+        ],
+        'chain' => [
+            'undeclared_asset',
+            'unused_asset',
+            'per_input_options_not_supported',
+            'chain_cardinality_mismatch',
+        ],
+    ];
+
+    /** @codeCoverageIgnore */
+    private function __construct()
+    {
+    }
+}

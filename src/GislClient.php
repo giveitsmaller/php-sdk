@@ -53,6 +53,7 @@ use Gisl\Sdk\Errors\GislFeatureTierRestrictedError;
 use Gisl\Sdk\Errors\GislMultipartPartCountError;
 use Gisl\Sdk\Errors\GislMultipartPartError;
 use Gisl\Sdk\Http\MultipartPartUploader;
+use Gisl\Sdk\Http\RateLimitHeaders;
 use Gisl\Sdk\Http\UploadSource;
 use Gisl\Sdk\Errors\GislMultipartSessionAuthRequiredError;
 use Gisl\Sdk\Errors\GislMultipartSessionNotFoundError;
@@ -1341,7 +1342,13 @@ class GislClient
 
     private function isRetryableStatus(int $status): bool
     {
-        // 408 Request Timeout, 429 Too Many Requests, 500-599 server errors.
+        // S3-PUT chunk-upload retry predicate. Deliberately kept INDEPENDENT of
+        // RateLimitHeaders::isApiRetryableStatus (the GislApiError back-off
+        // accessor) so a change to one cannot silently alter the other — this
+        // preserves the pre-existing S3 upload behaviour byte-for-byte.
+        // NOTE: this includes 408 whereas the TS SDK's S3-PUT predicate omits
+        // it — a PRE-EXISTING cross-SDK divergence in the upload path, tracked
+        // in qz7MjNTy and out of scope for the error-metadata accessors.
         return $status === 408 || $status === 429 || ($status >= 500 && $status < 600);
     }
 
@@ -2429,7 +2436,7 @@ class GislClient
                 return new ProbeWaitResult(landed: true, probe: $probe);
             } catch (GislFeatureNotAvailableError $e) {
                 // Not landed yet — keep polling.
-                $retryAfterMs = self::parseRetryAfterMs($e->responseHeaders['retry-after'] ?? null);
+                $retryAfterMs = RateLimitHeaders::parseRetryAfterMs($e->responseHeaders['retry-after'] ?? null);
             } catch (GislNetworkError $e) {
                 // Transport failure (transient) → retry a couple of times then
                 // give up; the caller creates anyway (never-bounce).
@@ -2443,7 +2450,7 @@ class GislClient
                     if ($transientFailures > $maxProberRetries) {
                         return new ProbeWaitResult(landed: false, reason: 'prober_error');
                     }
-                    $retryAfterMs = self::parseRetryAfterMs($e->responseHeaders['retry-after'] ?? null);
+                    $retryAfterMs = RateLimitHeaders::parseRetryAfterMs($e->responseHeaders['retry-after'] ?? null);
                 } else {
                     // 404 upload_not_found, auth, or any other typed error is a
                     // real failure, not "probe not ready" — propagate.
@@ -2492,37 +2499,6 @@ class GislClient
             return;
         }
         $this->waitForProbe($fileId, new ProbeWaitOptions(timeoutMs: $timeoutMs, cancellation: $cancellation));
-    }
-
-    /**
-     * Parse an HTTP `Retry-After` header into milliseconds. Accepts the two
-     * RFC 9110 forms: delta-seconds (e.g. "5") or an HTTP-date. Returns null
-     * for an absent / unparseable value (caller falls back to its own
-     * backoff). A past HTTP-date clamps to 0.
-     */
-    private static function parseRetryAfterMs(?string $headerValue): ?int
-    {
-        if ($headerValue === null) {
-            return null;
-        }
-        $trimmed = \trim($headerValue);
-        if ($trimmed === '') {
-            return null;
-        }
-        if (\preg_match('/^\d+$/', $trimmed) === 1) {
-            $ms = ((int) $trimmed) * 1000;
-        } else {
-            $whenSec = \strtotime($trimmed);
-            if ($whenSec === false) {
-                return null;
-            }
-            $ms = ($whenSec - \time()) * 1000;
-        }
-
-        // A non-positive Retry-After (e.g. "0" or a past HTTP-date) must NOT
-        // short-circuit the backoff to zero — treat it as absent so the caller
-        // falls back to jitter and the loop can't busy-poll until timeout.
-        return $ms > 0 ? $ms : null;
     }
 
     /**
