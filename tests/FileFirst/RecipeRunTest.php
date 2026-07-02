@@ -237,6 +237,44 @@ final class RecipeRunTest extends TestCase
     }
 
     #[Test]
+    public function use_sse_false_polls_directly_and_never_opens_the_sse_stream(): void
+    {
+        // wf133EDR — useSSE:false routes straight to the poll fallback: the
+        // /events SSE stream is never opened, and the terminal state is resolved
+        // via the /status poll. The queue carries NO sse response. The default
+        // (SSE-first) path is pinned by happy_path_via_sse_... above (which
+        // queues + consumes an sse response). Mirrors the operation-first
+        // OperationBuilderRunTest useSSE:false cases.
+        $captured = [];
+        $http = $this->stubClient([
+            $this->createResponse(),
+            $this->statusResponse('completed'),   // poll resolves terminal here
+            $this->downloadsResponse(),
+        ], $captured);
+
+        $client = $this->makeClient($http);
+        $result = $this->recipe($client, FileInput::uploadId('file_existing'))
+            ->compress()
+            ->run(useSSE: false, pollIntervalMs: 0);
+
+        self::assertSame('completed', $result->state);
+        self::assertTrue($result->ok);
+        self::assertCount(1, $result->artifacts);
+
+        // Exactly create + status + downloads — no SSE request was issued.
+        self::assertCount(3, $captured);
+        $hitStatus = false;
+        foreach ($captured as $request) {
+            $uri = (string) $request->getUri();
+            self::assertStringNotContainsString('/events', $uri, 'useSSE:false must not open the SSE stream');
+            if (\str_contains($uri, '/status')) {
+                $hitStatus = true;
+            }
+        }
+        self::assertTrue($hitStatus, 'useSSE:false must resolve terminal via the /status poll');
+    }
+
+    #[Test]
     public function a_resource_input_carries_its_filename_and_content_type_to_the_upload(): void
     {
         // fFwaKsN5: a file-first resource input's filename/contentType hints flow

@@ -167,6 +167,7 @@ final class WatermarkedRecipe
      * output into a {@see RunResult}. Mirrors {@see MergedRecipe::run()}.
      *
      * @param (callable(\Gisl\Sdk\Ergonomic\ProgressEvent): void)|null $onProgress
+     * @param bool|null $useSSE Force the poll fallback instead of attempting SSE. Default true (SSE-first, poll fallback).
      */
     public function run(
         string|int|null $maxWait = null,
@@ -175,6 +176,7 @@ final class WatermarkedRecipe
         ?Cancellation $cancellation = null,
         ?bool $probeBeforeCreate = null,
         ?int $probeTimeoutMs = null,
+        ?bool $useSSE = null,
     ): RunResult {
         $client = $this->requireClient();
         $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? 300_000);
@@ -195,7 +197,7 @@ final class WatermarkedRecipe
             workflowId: $workflowId,
             deadlineMs: $deadlineMs,
             onProgress: $onProgressClosure,
-            useSSE: true,
+            useSSE: $useSSE ?? true,
             pollIntervalMs: $pollIntervalMs,
             cancellation: $cancellation,
         );

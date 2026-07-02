@@ -235,6 +235,47 @@ final class FilesRecipeTest extends TestCase
     }
 
     #[Test]
+    public function run_use_sse_false_polls_directly_and_never_opens_the_sse_stream(): void
+    {
+        // wf133EDR — useSSE:false routes the fan-out straight to the poll
+        // fallback: no /events SSE request, terminal resolved via /status. The
+        // queue carries NO sse response; the default SSE-first path is exercised
+        // by the sibling run tests (which queue + consume an sse response).
+        $captured = [];
+        $http = $this->capturingStubClient([
+            $this->createResponse(),
+            $this->multiJobStatusResponse('completed', [
+                ['ref' => 'file-0', 'status' => 'completed'],
+                ['ref' => 'file-1', 'status' => 'completed'],
+            ]),
+            $this->multiJobDownloadsResponse([
+                ['ref' => 'file-0', 'filename' => 'a.webp', 'size' => 10, 'url' => 'https://cdn/a.webp'],
+                ['ref' => 'file-1', 'filename' => 'b.webp', 'size' => 20, 'url' => 'https://cdn/b.webp'],
+            ]),
+        ], $captured);
+
+        $client = $this->makeClient($http);
+        $result = $client->files([FileInput::uploadId('id0'), FileInput::uploadId('id1')])
+            ->compress()
+            ->run(useSSE: false, pollIntervalMs: 0);
+
+        self::assertTrue($result->ok);
+        self::assertSame(['0', '1'], array_map(static fn ($s) => $s->key, $result->succeeded));
+
+        // Exactly create + status + downloads — no SSE request was issued.
+        self::assertCount(3, $captured);
+        $hitStatus = false;
+        foreach ($captured as $request) {
+            $uri = (string) $request->getUri();
+            self::assertStringNotContainsString('/events', $uri, 'useSSE:false must not open the SSE stream');
+            if (\str_contains($uri, '/status')) {
+                $hitStatus = true;
+            }
+        }
+        self::assertTrue($hitStatus, 'useSSE:false must resolve terminal via the /status poll');
+    }
+
+    #[Test]
     public function run_one_failing_job_does_not_sink_the_rest(): void
     {
         // file-1 fails; file-0 + file-2 complete; workflow partially_failed.
@@ -645,6 +686,47 @@ final class FilesRecipeTest extends TestCase
 
             public function sendRequest(RequestInterface $request): ResponseInterface
             {
+                $next = \array_shift($this->queue);
+                if ($next === null) {
+                    throw new \RuntimeException('Stub PSR-18 client: response queue exhausted');
+                }
+                if ($next instanceof \Throwable) {
+                    throw $next;
+                }
+                return $next;
+            }
+        };
+    }
+
+    /**
+     * A capturing PSR-18 stub (the sibling {@see stubClient} does not record
+     * requests) so the useSSE opt-out test can assert the request routing.
+     *
+     * @param list<ResponseInterface|\Throwable> $queue
+     * @param-out list<RequestInterface>          $captured
+     */
+    private function capturingStubClient(array $queue, array &$captured = []): ClientInterface
+    {
+        $captured = [];
+        return new class ($queue, $captured) implements ClientInterface {
+            /** @var list<ResponseInterface|\Throwable> */
+            private array $queue;
+            /** @var list<RequestInterface> */
+            private array $captured;
+
+            /**
+             * @param list<ResponseInterface|\Throwable> $queue
+             * @param list<RequestInterface>             $captured
+             */
+            public function __construct(array $queue, array &$captured)
+            {
+                $this->queue = $queue;
+                $this->captured = &$captured;
+            }
+
+            public function sendRequest(RequestInterface $request): ResponseInterface
+            {
+                $this->captured[] = $request;
                 $next = \array_shift($this->queue);
                 if ($next === null) {
                     throw new \RuntimeException('Stub PSR-18 client: response queue exhausted');

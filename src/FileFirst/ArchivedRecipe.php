@@ -69,6 +69,7 @@ final class ArchivedRecipe
      * @param bool|null $probeBeforeCreate Best-effort probe-before-create for the
      *        VIDEO inputs that went multipart (default true). Pass false to skip.
      * @param int|null $probeTimeoutMs Aggregate timeout (ms) for the probe waits.
+     * @param bool|null $useSSE Force the poll fallback instead of attempting SSE. Default true (SSE-first, poll fallback).
      */
     public function run(
         string|int|null $maxWait = null,
@@ -77,6 +78,7 @@ final class ArchivedRecipe
         ?Cancellation $cancellation = null,
         ?bool $probeBeforeCreate = null,
         ?int $probeTimeoutMs = null,
+        ?bool $useSSE = null,
     ): RunResult {
         $client = $this->requireClient();
         $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? 300_000);
@@ -97,7 +99,7 @@ final class ArchivedRecipe
             workflowId: $workflowId,
             deadlineMs: $deadlineMs,
             onProgress: $onProgressClosure,
-            useSSE: true,
+            useSSE: $useSSE ?? true,
             pollIntervalMs: $pollIntervalMs,
             cancellation: $cancellation,
         );

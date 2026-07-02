@@ -185,6 +185,42 @@ final class ArchivedRecipeTest extends TestCase
         self::assertSame('https://signed.example.com/bundle.zip', $result->url);
     }
 
+    public function test_run_use_sse_false_polls_directly_and_never_opens_the_sse_stream(): void
+    {
+        // wf133EDR — useSSE:false routes straight to the poll fallback: no
+        // /events SSE request, terminal resolved via /status. The queue carries
+        // NO sse response; the default SSE-first path is pinned by
+        // test_run_creates_the_lowered_archive_dag_... (which queues + consumes
+        // an sse response).
+        $captured = [];
+        $http = $this->stubClient([
+            $this->createResponse(),
+            $this->statusResponse('completed'),
+            $this->archiveDownloadsResponse(),
+        ], $captured);
+
+        $client = $this->makeClient($http);
+        $result = $client->files([FileInput::uploadId('id0'), FileInput::uploadId('id1')])
+            ->archive(new ArchiveRecipeOptions(format: ArchiveFormat::Zip))
+            ->run(useSSE: false, pollIntervalMs: 0);
+
+        self::assertSame('completed', $result->state);
+        self::assertTrue($result->ok);
+        self::assertSame(['bundle.zip'], \array_map(static fn ($a) => $a->filename, $result->artifacts));
+
+        // Exactly create + status + downloads — no SSE request was issued.
+        self::assertCount(3, $captured);
+        $hitStatus = false;
+        foreach ($captured as $request) {
+            $uri = (string) $request->getUri();
+            self::assertStringNotContainsString('/events', $uri, 'useSSE:false must not open the SSE stream');
+            if (\str_contains($uri, '/status')) {
+                $hitStatus = true;
+            }
+        }
+        self::assertTrue($hitStatus, 'useSSE:false must resolve terminal via the /status poll');
+    }
+
     public function test_run_mid_batch_timeout_message_names_the_archive_label(): void
     {
         // Pin the archive label noun the shared helper threads into its timeout

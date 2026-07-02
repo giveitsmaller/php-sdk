@@ -391,6 +391,52 @@ final class WatermarkRecipeTest extends TestCase
         self::assertSame('https://signed.example.com/photo_watermarked.jpg', $result->url);
     }
 
+    public function test_run_use_sse_false_polls_directly_and_never_opens_the_sse_stream(): void
+    {
+        // wf133EDR — useSSE:false routes straight to the poll fallback: no
+        // /events SSE request, terminal resolved via /status. The queue carries
+        // NO sse response; the default SSE-first path is pinned by
+        // test_run_creates_the_lowered_watermark_dag_... (which queues + consumes
+        // an sse response). base + overlay both upload, so the create is the
+        // THIRD request.
+        $captured = [];
+        $http = $this->stubClient([
+            $this->uploadResponse('01936fb1-7bb3-7000-8000-0000000060b1'),
+            $this->uploadResponse('01936fb1-7bb3-7000-8000-0000000060b2'),
+            $this->createResponse(),
+            $this->statusResponse('completed'),
+            $this->watermarkDownloadsResponse(),
+        ], $captured);
+
+        $client = $this->makeClient($http);
+        $base = $this->tempFile('jpg');
+        $overlay = $this->tempFile('png');
+        try {
+            $result = $client->file($base)
+                ->watermark(new Recipe(FileInput::path($overlay)), ['anchor' => 'center'])
+                ->run(useSSE: false, pollIntervalMs: 0);
+        } finally {
+            @\unlink($base);
+            @\unlink($overlay);
+        }
+
+        self::assertSame('completed', $result->state);
+        self::assertTrue($result->ok);
+        self::assertSame(['photo_watermarked.jpg'], \array_map(static fn ($a) => $a->filename, $result->artifacts));
+
+        // upload + upload + create + status + downloads — no SSE request issued.
+        self::assertCount(5, $captured);
+        $hitStatus = false;
+        foreach ($captured as $request) {
+            $uri = (string) $request->getUri();
+            self::assertStringNotContainsString('/events', $uri, 'useSSE:false must not open the SSE stream');
+            if (\str_contains($uri, '/status')) {
+                $hitStatus = true;
+            }
+        }
+        self::assertTrue($hitStatus, 'useSSE:false must resolve terminal via the /status poll');
+    }
+
     public function test_run_mid_batch_timeout_message_names_the_watermark_label(): void
     {
         // Pin the watermark label noun the shared helper threads into its timeout

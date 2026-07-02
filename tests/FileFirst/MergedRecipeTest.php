@@ -28,6 +28,8 @@ use Psr\Http\Message\ResponseInterface;
 #[CoversClass(MergedRecipe::class)]
 final class MergedRecipeTest extends TestCase
 {
+    private const WORKFLOW_ID = '01936fb2-0000-7000-8000-0000000000c0';
+
     public function test_getInputCount_and_getStepCount_report_the_recipe_shape(): void
     {
         // BuflcZvO — TS-parity introspection getters (MergedRecipe.inputCount/stepCount).
@@ -221,6 +223,81 @@ final class MergedRecipeTest extends TestCase
     }
 
     // -----------------------------------------------------------------
+    // run() — SSE transport selection (wf133EDR). MergedRecipe had no
+    // double-driven run() happy path; these establish the default SSE-first
+    // baseline AND the useSSE:false poll-direct opt-out. Mirrors the TS
+    // file-first-merge.test.ts run cases.
+    // -----------------------------------------------------------------
+
+    public function test_run_creates_the_merge_dag_and_projects_only_the_merge_output_via_sse(): void
+    {
+        // Default (SSE-first): the /events stream IS opened, and ONLY the merge
+        // job's output is projected (the src_* passthroughs are filtered out).
+        $captured = [];
+        $http = $this->stubClient([
+            $this->createResponse(),
+            $this->sseResponse("event: workflow.completed\ndata: {\"status\":\"completed\"}\n\n"),
+            $this->statusResponse('completed'),
+            $this->mergeDownloadsResponse(),
+        ], $captured);
+
+        $client = $this->makeClient($http);
+        // uploadId arm keeps the queue tight (no upload requests); mediaKind
+        // video needs no output_type, so the lowering + projection is what runs.
+        $result = $client->files([FileInput::uploadId('id0'), FileInput::uploadId('id1')])
+            ->merge(new MergeOptions(mediaKind: 'video'))
+            ->run();
+
+        self::assertCount(4, $captured);
+        $hitEvents = false;
+        foreach ($captured as $request) {
+            if (\str_contains((string) $request->getUri(), '/events')) {
+                $hitEvents = true;
+            }
+        }
+        self::assertTrue($hitEvents, 'the default path opens the SSE stream');
+
+        self::assertSame('completed', $result->state);
+        self::assertTrue($result->ok);
+        self::assertSame(['merged.mp4'], \array_map(static fn ($a) => $a->filename, $result->artifacts));
+        self::assertSame('https://signed.example.com/merged.mp4', $result->url);
+    }
+
+    public function test_run_use_sse_false_polls_directly_and_never_opens_the_sse_stream(): void
+    {
+        // useSSE:false routes straight to the poll fallback: no /events SSE
+        // request, terminal resolved via /status. The queue carries NO sse
+        // response; the default SSE-first path is pinned by the case above.
+        $captured = [];
+        $http = $this->stubClient([
+            $this->createResponse(),
+            $this->statusResponse('completed'),
+            $this->mergeDownloadsResponse(),
+        ], $captured);
+
+        $client = $this->makeClient($http);
+        $result = $client->files([FileInput::uploadId('id0'), FileInput::uploadId('id1')])
+            ->merge(new MergeOptions(mediaKind: 'video'))
+            ->run(useSSE: false, pollIntervalMs: 0);
+
+        self::assertSame('completed', $result->state);
+        self::assertTrue($result->ok);
+        self::assertSame(['merged.mp4'], \array_map(static fn ($a) => $a->filename, $result->artifacts));
+
+        // Exactly create + status + downloads — no SSE request was issued.
+        self::assertCount(3, $captured);
+        $hitStatus = false;
+        foreach ($captured as $request) {
+            $uri = (string) $request->getUri();
+            self::assertStringNotContainsString('/events', $uri, 'useSSE:false must not open the SSE stream');
+            if (\str_contains($uri, '/status')) {
+                $hitStatus = true;
+            }
+        }
+        self::assertTrue($hitStatus, 'useSSE:false must resolve terminal via the /status poll');
+    }
+
+    // -----------------------------------------------------------------
 
     private function makeClient(ClientInterface $http): GislErgonomicClient
     {
@@ -322,5 +399,83 @@ final class MergedRecipeTest extends TestCase
                 return $next;
             }
         };
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     */
+    private function jsonResponse(int $status, array $body): ResponseInterface
+    {
+        return new Response($status, ['Content-Type' => 'application/json'], (string) \json_encode($body, JSON_THROW_ON_ERROR));
+    }
+
+    private function createResponse(): ResponseInterface
+    {
+        return $this->jsonResponse(201, [
+            'success' => true,
+            'data' => ['workflow_id' => self::WORKFLOW_ID, 'status' => 'pending'],
+        ]);
+    }
+
+    private function sseResponse(string $sse): ResponseInterface
+    {
+        return new Response(200, ['Content-Type' => 'text/event-stream'], $sse);
+    }
+
+    private function statusResponse(string $status): ResponseInterface
+    {
+        return $this->jsonResponse(200, [
+            'success' => true,
+            'data' => ['workflow_id' => self::WORKFLOW_ID, 'status' => $status, 'jobs' => []],
+        ]);
+    }
+
+    /**
+     * Downloads carrying the src_* passthrough re-exposures of the raw uploads
+     * ALONGSIDE the merge output, so run()'s `ref === 'merge'` filter is
+     * genuinely exercised.
+     */
+    private function mergeDownloadsResponse(): ResponseInterface
+    {
+        return $this->jsonResponse(200, [
+            'success' => true,
+            'data' => [
+                'downloads' => [
+                    [
+                        'job_id' => '01936fb3-0001-7000-8000-0000000060c1',
+                        'ref' => 'src_0',
+                        'files' => [[
+                            'operation' => 'passthrough',
+                            'operation_id' => '01936fb4-0001-7000-8000-0000000060c1',
+                            'filename' => 'a.mp4',
+                            'size_bytes' => 1,
+                            'download_url' => 'https://signed.example.com/a.mp4',
+                        ]],
+                    ],
+                    [
+                        'job_id' => '01936fb3-0002-7000-8000-0000000060c2',
+                        'ref' => 'src_1',
+                        'files' => [[
+                            'operation' => 'passthrough',
+                            'operation_id' => '01936fb4-0002-7000-8000-0000000060c2',
+                            'filename' => 'b.mp4',
+                            'size_bytes' => 1,
+                            'download_url' => 'https://signed.example.com/b.mp4',
+                        ]],
+                    ],
+                    [
+                        'job_id' => '01936fb3-0003-7000-8000-0000000060c3',
+                        'ref' => 'merge',
+                        'files' => [[
+                            'operation' => 'merge',
+                            'operation_id' => '01936fb4-0003-7000-8000-0000000060c3',
+                            'filename' => 'merged.mp4',
+                            'size_bytes' => 99,
+                            'download_url' => 'https://signed.example.com/merged.mp4',
+                        ]],
+                    ],
+                ],
+            ],
+        ]);
     }
 }
