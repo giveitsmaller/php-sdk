@@ -17,6 +17,7 @@ use Gisl\Sdk\Ergonomic\MergeOptions;
 use Gisl\Sdk\Ergonomic\OperationBuilder;
 use Gisl\Sdk\Ergonomic\OptionValidation;
 use Gisl\Sdk\Errors\GislConfigError;
+use Gisl\Sdk\FileFirst\BatchRecipe;
 use Gisl\Sdk\FileFirst\FileInput;
 use Gisl\Sdk\FileFirst\FilesRecipe;
 use Gisl\Sdk\FileFirst\Recipe;
@@ -164,6 +165,30 @@ class GislErgonomicClient extends GislClient
         }
 
         return new FilesRecipe($resolved, [], $this->presetDefaults, $this->scopedPresetDefaults, $this);
+    }
+
+    /**
+     * Heterogeneous batch entry point (FF7 / MFaCjL8d). Run N DISTINCT
+     * single-input keyed recipes as ONE workflow. Unlike {@see files()} (ONE
+     * shared op-chain fanned across many inputs), each entry carries its OWN
+     * input AND its OWN op-chain — build each via `$client->file($path, $key)`
+     * (a non-empty, unique key per entry is REQUIRED). Returns an immutable
+     * {@see BatchRecipe}; `run()` returns a partitioned
+     * {@see \Gisl\Sdk\FileFirst\RunResult} addressed by each entry's key
+     * (`$result->byKey($key)`) — one failed entry does not sink the rest.
+     *
+     * v1 is `run()`-only and accepts SINGLE-INPUT recipes only; the multi-input
+     * builders ({@see FilesRecipe}/`merge`/`archive`/`watermark`) are rejected
+     * pre-upload. No cross-recipe upload dedupe yet (each entry uploads 1:1).
+     *
+     * Wires only `$this` (the client) — NOT the preset defaults, because each
+     * entry already captured its own presets at `$client->file(...)` time.
+     *
+     * @param list<Recipe> $recipes Ordered batch entries, each a keyed single-input recipe.
+     */
+    public function batch(array $recipes): BatchRecipe
+    {
+        return new BatchRecipe($recipes, $this);
     }
 
     /**
