@@ -123,6 +123,8 @@ final class RunResult
                     operation: BuilderInternals::coerceString($file->getOperation()),
                     chosenQuality: $file->getChosenQuality(),
                     targetSizeMet: $file->getTargetSizeMet(),
+                    measuredQuality: $file->getMeasuredQuality(),
+                    qualityMetric: $file->getQualityMetric(),
                 );
             }
         }
@@ -219,6 +221,8 @@ final class RunResult
                     operation: BuilderInternals::coerceString($file->getOperation()),
                     chosenQuality: $file->getChosenQuality(),
                     targetSizeMet: $file->getTargetSizeMet(),
+                    measuredQuality: $file->getMeasuredQuality(),
+                    qualityMetric: $file->getQualityMetric(),
                 );
             }
             // The flat artifacts[] keeps every job's outputs in job order.
@@ -485,8 +489,8 @@ final class RunResult
      *     ok: bool,
      *     targetSizeMissed?: bool,
      *     url?: string,
-     *     artifacts: list<array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool}>,
-     *     succeeded: list<array{key: string|null, outputs: list<array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool}>}>,
+     *     artifacts: list<array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool, measuredQuality?: float, qualityMetric?: string}>,
+     *     succeeded: list<array{key: string|null, outputs: list<array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool, measuredQuality?: float, qualityMetric?: string}>}>,
      *     failed: list<array{key: string|null, error: string, state: string, errorMessage?: string, errorCode?: string}>
      * }
      */

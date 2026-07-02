@@ -26,6 +26,13 @@ final class OutputFile
      *                                 landed at or under the requested byte target.
      *                                 `false` is an honest best-effort outcome, NOT a
      *                                 failure. Null for non-target-size outputs.
+     * @param float|null  $measuredQuality The measured perceptual quality of an
+     *                                     `auto_quality` encode (0-1). Projected from
+     *                                     the generated OperationDownload; null when
+     *                                     the worker reported no measurement.
+     * @param string|null $qualityMetric  The metric `$measuredQuality` was measured on
+     *                                     (e.g. `ssimulacra2`). Null when no
+     *                                     measurement was reported.
      */
     public function __construct(
         public readonly string $url,
@@ -34,6 +41,8 @@ final class OutputFile
         public readonly string $operation,
         public readonly ?int $chosenQuality = null,
         public readonly ?bool $targetSizeMet = null,
+        public readonly ?float $measuredQuality = null,
+        public readonly ?string $qualityMetric = null,
     ) {
     }
 
@@ -44,7 +53,7 @@ final class OutputFile
      * The target-size fields are OMITTED when null, mirroring TS's
      * omit-when-undefined so non-target-size outputs stay byte-identical.
      *
-     * @return array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool}
+     * @return array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool, measuredQuality?: float, qualityMetric?: string}
      */
     public function toArray(): array
     {
@@ -59,6 +68,12 @@ final class OutputFile
         }
         if ($this->targetSizeMet !== null) {
             $out['targetSizeMet'] = $this->targetSizeMet;
+        }
+        if ($this->measuredQuality !== null) {
+            $out['measuredQuality'] = $this->measuredQuality;
+        }
+        if ($this->qualityMetric !== null) {
+            $out['qualityMetric'] = $this->qualityMetric;
         }
         return $out;
     }
