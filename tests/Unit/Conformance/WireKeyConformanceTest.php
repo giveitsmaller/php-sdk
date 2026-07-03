@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Gisl\Sdk\Tests\Unit\Conformance;
 
 use Gisl\Generated\Operations\ArchiveMetadata;
-use Gisl\Generated\Operations\CompressMetadata;
 use Gisl\Generated\Operations\ConvertMetadata;
 use Gisl\Generated\Operations\ImageWatermarkMetadata;
 use Gisl\Generated\Operations\MergeMetadata;
@@ -17,7 +16,6 @@ use Gisl\Sdk\Ergonomic\OptionValidation;
 use Gisl\Sdk\Ergonomic\ArchiveFormat;
 use Gisl\Sdk\Ergonomic\ArchiveRecipeOptions;
 use Gisl\Sdk\Ergonomic\MergeOptions;
-use Gisl\Sdk\Ergonomic\PresetResolver;
 use Gisl\Sdk\FileFirst\ArchivedRecipe;
 use Gisl\Sdk\FileFirst\FileInput;
 use Gisl\Sdk\FileFirst\MergedRecipe;
@@ -42,6 +40,11 @@ use PHPUnit\Framework\TestCase;
  * each one is a real contract option key, read from the generated, in-repo
  * {@see OperationMetadata} sidecars (regenerated from the contract; their
  * `options` keys are the verbatim contract wire keys).
+ *
+ * NOTE: `compress` conformance moved OUT of this suite (card 0fNO60BX) — it is now
+ * owned by {@see CodeBuilderConformanceTest}, driven from the contract-authored
+ * `code-builder-metadata.json` `sdk_exposure` gate (a single, stronger ledger). This
+ * suite covers convert/thumbnail/text_watermark/merge/archive + the eager validator.
  */
 final class WireKeyConformanceTest extends TestCase
 {
@@ -93,45 +96,6 @@ final class WireKeyConformanceTest extends TestCase
     }
 
     /**
-     * The contract mime_group keys that make up the image FAMILY: the single
-     * `image` group plus every `image_*` (image_jpeg / image_png / image_avif).
-     * The SDK's one format-agnostic `image` media maps to this whole family.
-     *
-     * @return list<string>
-     */
-    private function imageFamilyGroups(OperationMetadata $metadata): array
-    {
-        return array_values(array_filter(
-            array_keys($metadata->mime_groups),
-            static fn (string $g): bool => $g === 'image' || str_starts_with($g, 'image_'),
-        ));
-    }
-
-    /**
-     * The contract option surface for a single SDK media: the UNION of every
-     * image-family group for `image`, else the one same-named mime group.
-     * mediaGroupOptionKeys asserts the group exists → a renamed/dropped
-     * PresetMedia<->mime_group mapping fails loudly rather than silently skipping.
-     *
-     * @return array<string, true>
-     */
-    private function contractOptionKeysForMedia(string $media): array
-    {
-        if ($media === 'image') {
-            $keys = [];
-            foreach ($this->imageFamilyGroups(CompressMetadata::instance()) as $group) {
-                foreach (array_keys($this->mediaGroupOptionKeys(CompressMetadata::instance(), $group)) as $k) {
-                    $keys[$k] = true;
-                }
-            }
-
-            return $keys;
-        }
-
-        return $this->mediaGroupOptionKeys(CompressMetadata::instance(), $media);
-    }
-
-    /**
      * @param list<string>        $emitted
      * @param array<string, true> $contract
      */
@@ -172,187 +136,6 @@ final class WireKeyConformanceTest extends TestCase
         self::assertNotNull($match, "expected a '{$type}' op in the lowered payload");
 
         return array_keys($match->options ?? []);
-    }
-
-    // --- compress -----------------------------------------------------------
-
-    /**
-     * Pin KNOWN_WIRE_FIELDS to the contract PER MEDIA (not union-wide) so a key
-     * parked under the WRONG media (e.g. a PDF `grayscale` listed under
-     * document_office) is caught too — the previous union check let any such key
-     * through as long as some media owned it. Mirrors the TS per-media forward check.
-     */
-    #[Test]
-    public function every_known_wire_field_is_a_real_compress_contract_option_for_its_media(): void
-    {
-        foreach (PresetResolver::KNOWN_WIRE_FIELDS as $media => $fields) {
-            $this->assertKeysConform(
-                "compress[{$media}]",
-                array_values($fields),
-                $this->contractOptionKeysForMedia($media),
-            );
-        }
-    }
-
-    /**
-     * Contract compress options the ergonomic resolver deliberately does NOT
-     * expose. `output_format` on compress is the API-side "compress + change
-     * format" facade surface (contracts VcPeRWdD / ADR-0021) — canonicalized to
-     * a `convert` op server-side. Changing format is a `convert()` concern in
-     * the ergonomic SDK, never an ergonomic `compress()` option, so compress's
-     * `output_format` is omitted for every media REGARDLESS of its availability:
-     *   - audio: ALL values flipped `stable` in contracts v2.78.0 (RTokti20) —
-     *     now live, but still omitted here (format-change goes through `convert`).
-     *   - video: non-`original` values are `per_value_availability: planned`
-     *     (facade unbuilt for video) — omitted; exposing a planned value would
-     *     let the resolver emit a field the worker can't honour.
-     * (Image keeps `output_format` in KNOWN_WIRE_FIELDS — its preset emits the
-     * stable `original` value — so it is NOT listed here.)
-     *
-     * Image format-specific knobs (contracts v2.80.0 honesty pass): compress.image
-     * is now a 4-group family — image (webp/gif/svg/tiff), image_jpeg, image_png,
-     * image_avif. The ergonomic resolver models image-compress with ONE
-     * format-agnostic `image` media that emits only the options common to every
-     * image input format (quality / metadata / output_format). The per-format
-     * advanced knobs are NOT emitted by the format-agnostic path and are omitted
-     * until per-input-format ergonomic options ship (tracked follow-up):
-     *   - progressive        (image_jpeg only)
-     *   - optimization_level (image_png only)
-     *   - avif_speed         (image_avif only)
-     *
-     * Document `quality` (contracts v2.83.0 document-compress honesty pass): a
-     * stable per-document-group quality knob the ergonomic document-compress
-     * preset path does not expose yet (the document preset DTOs carry
-     * profile/grayscale/strip_* but not `quality`) — omitted until
-     * a document-quality ergonomic option ships (tracked follow-up).
-     *
-     * document_pdf `image_dpi` (contracts v2.96.0 Acrobat-PDF realignment
-     * Lw1LseYr): the PDF preset DTO now carries only {profile, grayscale}.
-     * `image_dpi` is a STABLE, worker-honored PER-CALL knob (not a preset cell) —
-     * omitted until a per-call PDF-DPI ergonomic option ships (tracked follow-up).
-     * The PDF `colorspace` / `pages` / `flatten_forms` are `planned` and live in
-     * PLANNED_OMISSIONS below (drift-guarded), NOT here.
-     *
-     * @var array<string, list<string>>
-     */
-    private const INTENTIONALLY_OMITTED = [
-        // image Output-facade knobs (contracts v2.97.0 tewB37Jg → v2.110.0): compress.image*
-        // carries width/height/fit (Resize-inside-Output), lossless, encoding_mode +
-        // target_size_bytes (target-size, STABLE since v2.108.0), chroma_subsampling (jpeg,
-        // stable v2.110.0), and quality_preset (stable, v2.148.0). These are the image OUTPUT
-        // facade surface — exposed/gated by the ergonomic output()/resize() verbs
-        // (RecipeOutputTest), NOT the preset compress() verb. Their availability + route
-        // gating is pinned by ImageOutputRouteConformanceTest (the projection honored/planned),
-        // so they are omitted from compress() here.
-        'image' => [
-            'progressive', 'optimization_level', 'avif_speed',
-            'width', 'height', 'fit', 'lossless',
-            'encoding_mode', 'target_size_bytes', 'chroma_subsampling', 'quality_preset',
-            'color_profile', 'auto_orient',
-        ],
-        'audio' => ['output_format'],
-        'video' => ['output_format'],
-        'document_pdf' => ['quality', 'image_dpi'],
-        'document_office' => ['quality'],
-        'document_odf' => ['quality'],
-        'document_epub' => ['quality'],
-    ];
-
-    /**
-     * PLANNED_OMISSIONS: contract compress options omitted SPECIFICALLY BECAUSE the
-     * contract marks them `availability: 'planned'` (advertised-ahead, not yet read
-     * by the worker, FE-hidden). Kept separate from INTENTIONALLY_OMITTED (stable-
-     * but-deliberately-unexposed) so the drift-guard below can assert these are
-     * STILL planned: if a future regen flips one to stable, the assertion fails and
-     * forces a deliberate "expose it or reclassify it" decision instead of silently
-     * leaving a now-live option unreachable. Mirrors the TS PLANNED_OMISSIONS.
-     *
-     * @var array<string, list<string>>
-     */
-    private const PLANNED_OMISSIONS = [
-        'document_pdf' => ['colorspace', 'pages', 'flatten_forms'],
-    ];
-
-    /**
-     * Reverse direction (7dUpPmDZ): the forward check only catches a contract key
-     * REMOVED/renamed out from under KNOWN_WIRE_FIELDS. It does NOT catch a contract
-     * key ADDED that KNOWN_WIRE_FIELDS lacks — the ergonomic resolver would throw
-     * `unknown_field` on a field the wire accepts, silently lagging the contract.
-     * Pin the reverse PER MEDIA so a new compress option fails CI until it is either
-     * exposed (added to KNOWN_WIRE_FIELDS) or documented as intentionally omitted.
-     */
-    #[Test]
-    public function every_compress_contract_option_per_media_is_known_or_documented_omission(): void
-    {
-        foreach (PresetResolver::KNOWN_WIRE_FIELDS as $media => $fields) {
-            $contractForMedia = $this->contractOptionKeysForMedia($media);
-            $allowed = [];
-            foreach ($fields as $field) {
-                $allowed[$field] = true;
-            }
-            foreach (self::INTENTIONALLY_OMITTED[$media] ?? [] as $omitted) {
-                $allowed[$omitted] = true;
-            }
-            foreach (self::PLANNED_OMISSIONS[$media] ?? [] as $omitted) {
-                $allowed[$omitted] = true;
-            }
-            $this->assertKeysConform("compress[{$media}]", array_keys($contractForMedia), $allowed);
-        }
-    }
-
-    /**
-     * Drift-guard for PLANNED_OMISSIONS (closes the blind spot codex flagged): an
-     * option is allowed in the reverse check above purely because we asserted it is
-     * `planned`. Pin that to the generated contract — if any is no longer
-     * `availability: 'planned'` (i.e. it went live), this fails so the omission is
-     * re-evaluated rather than silently masking a now-supported option. Mirrors TS.
-     */
-    #[Test]
-    public function every_planned_omission_is_still_availability_planned(): void
-    {
-        foreach (self::PLANNED_OMISSIONS as $media => $opts) {
-            $groups = CompressMetadata::instance()->mime_groups;
-            self::assertArrayHasKey($media, $groups, "metadata has a '{$media}' mime group");
-            foreach ($opts as $opt) {
-                self::assertArrayHasKey($opt, $groups[$media]->options, "compress[{$media}].{$opt} exists in the contract");
-                self::assertSame(
-                    'planned',
-                    $groups[$media]->options[$opt]->availability,
-                    "compress[{$media}].{$opt} is listed in PLANNED_OMISSIONS but is no longer "
-                    . "availability:'planned' — it likely went live; expose it in KNOWN_WIRE_FIELDS "
-                    . 'or move it to INTENTIONALLY_OMITTED.',
-                );
-            }
-        }
-    }
-
-    /**
-     * Whole-media-group coverage (closes the blind spot one level up): the per-media
-     * reverse check iterates KNOWN_WIRE_FIELDS keys, so a contract mime_group ABSENT
-     * from KNOWN_WIRE_FIELDS would be skipped silently — the resolver would
-     * unknown_field-throw on every option for that media while CI stays green.
-     */
-    #[Test]
-    public function every_compress_contract_mime_group_is_covered_by_known_wire_fields(): void
-    {
-        $known = PresetResolver::KNOWN_WIRE_FIELDS;
-        // Fold the image-family groups (image + image_*) into the SDK's single
-        // `image` media: a group is covered if it has a same-named KNOWN_WIRE_FIELDS
-        // entry, OR it is an image-family group and the SDK has an `image` entry.
-        $uncovered = array_values(array_filter(
-            array_keys(CompressMetadata::instance()->mime_groups),
-            static fn (string $m): bool => !isset($known[$m])
-                && !(isset($known['image']) && ($m === 'image' || str_starts_with($m, 'image_'))),
-        ));
-        self::assertSame(
-            [],
-            $uncovered,
-            \sprintf(
-                'contract compress mime_group(s) %s have no KNOWN_WIRE_FIELDS entry — the per-media '
-                . 'reverse check silently skips them. Add the media to KNOWN_WIRE_FIELDS.',
-                \json_encode($uncovered),
-            ),
-        );
     }
 
     // --- convert ------------------------------------------------------------
