@@ -209,6 +209,28 @@ final class GislClientMultipartTest extends TestCase
         self::assertCount(4, $captured);
     }
 
+    public function testRetryOn408ThenSucceeds(): void
+    {
+        // qz7MjNTy — 408 Request Timeout is a retryable S3-PUT status (cross-SDK
+        // parity with the TS predicate). First S3 PUT 408, second 200 -> succeeds.
+        $filePath = $this->writeBigFile(self::TOTAL_SIZE);
+
+        $captured = [];
+        $http = $this->stubClient([
+            $this->jsonResponse(200, $this->initiateEnvelope(remainingChunks: 1, chunkSize: self::CHUNK_SIZE)),
+            new Response(408, [], 'request timeout'),
+            $this->s3Response('"etag-part-2"'),
+            $this->jsonResponse(200, $this->completeEnvelope('completed')),
+        ], $captured);
+
+        $client = $this->makeClient($http, multipartRetryBaseMs: 0);
+        $result = $client->uploadFile($filePath);
+
+        self::assertSame(self::UPLOAD_ID, $result->getFileId());
+        // initiate + 2x S3 PUT + complete = 4
+        self::assertCount(4, $captured);
+    }
+
     public function testNonRetryable4xxOnS3IsFatal(): void
     {
         $filePath = $this->writeBigFile(self::TOTAL_SIZE);

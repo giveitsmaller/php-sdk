@@ -1346,9 +1346,8 @@ class GislClient
         // RateLimitHeaders::isApiRetryableStatus (the GislApiError back-off
         // accessor) so a change to one cannot silently alter the other — this
         // preserves the pre-existing S3 upload behaviour byte-for-byte.
-        // NOTE: this includes 408 whereas the TS SDK's S3-PUT predicate omits
-        // it — a PRE-EXISTING cross-SDK divergence in the upload path, tracked
-        // in qz7MjNTy and out of scope for the error-metadata accessors.
+        // 408 (request timeout) is retried here and, since qz7MjNTy, in the TS
+        // SDK's S3-PUT predicate too — the two SDKs are now aligned on this set.
         return $status === 408 || $status === 429 || ($status >= 500 && $status < 600);
     }
 
