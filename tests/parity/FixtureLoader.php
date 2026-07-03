@@ -112,8 +112,8 @@ final class FixtureLoader
     private const WATERMARK_OVERLAY_KEYS = ['file', 'resolvedFileId', 'operations'];
     private const WATERMARK_POST_OPS = ['compress', 'convert', 'thumbnail'];
     // FF2b (tywwynmN) — run-mode block keys: lowering's file + operations
-    // plus the run-only maxWait / pollIntervalMs.
-    private const RUN_KEYS = ['file', 'operations', 'maxWait', 'pollIntervalMs'];
+    // plus the run-only maxWait / pollIntervalMs / useSSE (Fo4R0v4j opt-out).
+    private const RUN_KEYS = ['file', 'operations', 'maxWait', 'pollIntervalMs', 'useSSE'];
     // FF5b (u8M49LU2) — submit block keys: lowering's file + operations plus
     // the submit-only optional webhook.
     private const SUBMIT_KEYS = ['file', 'operations', 'webhook'];
@@ -121,7 +121,8 @@ final class FixtureLoader
     // operations + (lowering variant) resolvedFileIds + (run variant) maxWait /
     // pollIntervalMs.
     // aQMm5khm — `merge` adds the merge-combine sub-block to the files block.
-    private const FILES_KEYS = ['files', 'resolvedFileIds', 'operations', 'merge', 'maxWait', 'pollIntervalMs', 'webhook'];
+    // Fo4R0v4j — `useSSE` adds the run-variant transport opt-out.
+    private const FILES_KEYS = ['files', 'resolvedFileIds', 'operations', 'merge', 'maxWait', 'pollIntervalMs', 'useSSE', 'webhook'];
     // aQMm5khm — keys allowed inside a `files.merge` sub-block.
     private const FILES_MERGE_KEYS = ['options'];
     // aQMm5khm — allowed `files.merge.options` keys (the camelCase MergeOptions
@@ -757,6 +758,9 @@ final class FixtureLoader
         if (\array_key_exists('pollIntervalMs', $raw) && !\is_int($raw['pollIntervalMs'])) {
             throw new \RuntimeException("[{$base}] files.pollIntervalMs must be an int when present");
         }
+        if (\array_key_exists('useSSE', $raw) && !\is_bool($raw['useSSE'])) {
+            throw new \RuntimeException("[{$base}] files.useSSE must be a bool when present");
+        }
         if (\array_key_exists('webhook', $raw) && !\is_string($raw['webhook'])) {
             throw new \RuntimeException("[{$base}] files.webhook must be a string when present (submit variant)");
         }
@@ -815,6 +819,9 @@ final class FixtureLoader
         }
         if (\array_key_exists('pollIntervalMs', $raw) && !\is_int($raw['pollIntervalMs'])) {
             throw new \RuntimeException("[{$base}] run.pollIntervalMs must be an int when present");
+        }
+        if (\array_key_exists('useSSE', $raw) && !\is_bool($raw['useSSE'])) {
+            throw new \RuntimeException("[{$base}] run.useSSE must be a bool when present");
         }
         /** @var array<string, mixed> $raw */
         return $raw;

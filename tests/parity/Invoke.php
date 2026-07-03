@@ -293,8 +293,11 @@ final class Invoke
         $maxWait = $spec['maxWait'] ?? null;
         $maxWaitArg = (\is_string($maxWait) || \is_int($maxWait)) ? $maxWait : null;
         $pollIntervalMs = isset($spec['pollIntervalMs']) ? (int) $spec['pollIntervalMs'] : null;
+        // Fo4R0v4j — thread the transport opt-out; absent key => null => run()'s
+        // `?? true` default (SSE-first), preserving every existing run fixture.
+        $useSSE = \array_key_exists('useSSE', $spec) ? (bool) $spec['useSSE'] : null;
 
-        $result = $recipe->run(maxWait: $maxWaitArg, pollIntervalMs: $pollIntervalMs);
+        $result = $recipe->run(maxWait: $maxWaitArg, pollIntervalMs: $pollIntervalMs, useSSE: $useSSE);
 
         return $result->toArray();
     }
@@ -454,8 +457,11 @@ final class Invoke
         $maxWait = $spec['maxWait'] ?? null;
         $maxWaitArg = (\is_string($maxWait) || \is_int($maxWait)) ? $maxWait : null;
         $pollIntervalMs = isset($spec['pollIntervalMs']) ? (int) $spec['pollIntervalMs'] : null;
+        // Fo4R0v4j — thread the transport opt-out; absent key => null => run()'s
+        // `?? true` default (SSE-first), preserving every existing run fixture.
+        $useSSE = \array_key_exists('useSSE', $spec) ? (bool) $spec['useSSE'] : null;
 
-        $result = $recipe->run(maxWait: $maxWaitArg, pollIntervalMs: $pollIntervalMs);
+        $result = $recipe->run(maxWait: $maxWaitArg, pollIntervalMs: $pollIntervalMs, useSSE: $useSSE);
 
         return $result->toArray();
     }
