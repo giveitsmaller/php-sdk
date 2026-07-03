@@ -88,7 +88,27 @@ final class Recipe
      * (the contract's required convert key, see convert.yaml), NOT `format`.
      * `$options` carries any additional per-op convert options.
      *
-     * @param array<string, mixed> $options
+     * @param array{
+     *   quality?: int,
+     *   background?: string,
+     *   crf?: int,
+     *   trim_start?: float,
+     *   trim_end?: float,
+     *   fps?: int|float,
+     *   width?: int,
+     *   height?: int,
+     *   fit?: 'max'|'crop'|'scale',
+     *   metadata?: 'strip'|'keep',
+     *   color_profile?: 'keep'|'srgb'|'strip',
+     *   auto_orient?: bool,
+     *   max_colors?: int,
+     *   loop?: int,
+     *   dither?: 'none'|'bayer'|'floyd_steinberg'|'sierra2'|'sierra2_4a',
+     *   bitrate?: 64|96|128|192|256|320,
+     *   pages?: string,
+     *   dpi?: int,
+     * } $options Keys are all optional so the `= []` default type-checks; the
+     *   honored set narrows by media at lower time. Mirrors the TS `ConvertOptions`.
      */
     public function convert(string $format, array $options = []): self
     {
@@ -109,7 +129,20 @@ final class Recipe
      * through; a null OPTIONAL value is dropped from the wire options. Mirrors the
      * TS `thumbnail({ width, height })`.
      *
-     * @param array<string, mixed> $options
+     * @param array{
+     *   width?: int,
+     *   height?: int,
+     *   fit?: 'max'|'crop'|'scale',
+     *   format?: 'jpg'|'png'|'webp',
+     *   quality?: int,
+     *   background?: string,
+     *   timestamp?: string,
+     *   source?: 'page'|'cover',
+     *   page?: int,
+     * } $options `width` + `height` are REQUIRED at runtime (see above /
+     *   {@see OptionValidation::assertThumbnailDimensions()}) but are marked
+     *   optional in the shape so the `= []` default type-checks. Mirrors the TS
+     *   `ThumbnailOptions`.
      */
     public function thumbnail(array $options = []): self
     {
@@ -221,7 +254,19 @@ final class Recipe
      * secondary file) — lowers to the `text_watermark` op with a `text` option.
      * `$options` carries any additional per-op watermark options.
      *
-     * @param array<string, mixed> $options
+     * @param array{
+     *   font_size?: int,
+     *   color?: string,
+     *   font_family?: 'liberation_sans',
+     *   rotation?: int,
+     *   watermark_mode?: 'single'|'tiled',
+     *   tile_spacing?: int,
+     *   anchor?: 'top_left'|'top_center'|'top_right'|'center_left'|'center'|'center_right'|'bottom_left'|'bottom_center'|'bottom_right',
+     *   margin_x?: string,
+     *   margin_y?: string,
+     *   opacity?: float,
+     * } $options Keys are all optional so the `= []` default type-checks.
+     *   Mirrors the TS `TextWatermarkOptions`.
      */
     public function textWatermark(string $text, array $options = []): self
     {
@@ -245,7 +290,17 @@ final class Recipe
      * {@see textWatermark()} (single-input text overlay). Mirrors the TS
      * `Recipe::watermark`.
      *
-     * @param array<string, mixed> $options
+     * @param array{
+     *   anchor?: 'top_left'|'top_center'|'top_right'|'center_left'|'center'|'center_right'|'bottom_left'|'bottom_center'|'bottom_right',
+     *   margin_x?: string,
+     *   margin_y?: string,
+     *   opacity?: float,
+     *   overlay_width?: string,
+     *   overlays?: list<array{anchor?: 'top_left'|'top_center'|'top_right'|'center_left'|'center'|'center_right'|'bottom_left'|'bottom_center'|'bottom_right', margin_x?: string, margin_y?: string, opacity?: float, overlay_width?: string}>,
+     * } $options The flat single-overlay keys and `overlays[]` are mutually
+     *   exclusive (server rejects mixing as `invalid_options`). Keys are all
+     *   optional so the `= []` default type-checks. Mirrors the TS
+     *   `WatermarkOptions`.
      */
     public function watermark(Recipe $overlay, array $options = []): WatermarkedRecipe
     {
