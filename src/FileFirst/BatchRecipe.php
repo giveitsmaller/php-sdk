@@ -31,8 +31,11 @@ use Gisl\Sdk\WorkflowCreatePayload;
  *  - SINGLE-INPUT recipes ONLY — every entry must be a {@see Recipe}; the
  *    multi-input builders ({@see FilesRecipe}/{@see MergedRecipe}/
  *    {@see WatermarkedRecipe}/{@see ArchivedRecipe}) are rejected pre-upload.
- *  - NO cross-recipe upload dedupe — each entry's input uploads 1:1, exactly
- *    like {@see FilesRecipe} does today (a correctness-neutral follow-up).
+ *  - Cross-recipe upload dedupe IS applied (1LwSJcz1): two entries sourcing the
+ *    SAME input (by {@see inputIdentity()}) upload ONCE and share the resulting
+ *    fileId — correctness-neutral (same bytes → same per-job output), it only
+ *    elides redundant uploads. Observable caveat: `$onProgress` upload-phase
+ *    events drop to one-per-UNIQUE input rather than one-per-entry.
  *
  * **Lowering (one workflow):** for each entry `$i`, its single-file
  * {@see Recipe::toWorkflowPayload()} is composed to get that entry's one-job
@@ -311,10 +314,20 @@ final class BatchRecipe
     ): WorkflowCreateResponse {
         \assert($this->client !== null);
 
+        // Dedupe cross-entry uploads: collapse to the first-appearance-unique
+        // input list, upload each unique input ONCE, then expand the returned
+        // unique fileIds back to one-per-entry (entry order) so the b{$i} jobs +
+        // keyByRef stay N-length and correctness-neutral. See planUploads().
+        [$uniqueInputs, $entryToUnique] = $this->planUploads();
+
         return MultiInputUpload::uploadAllAndCreate(
             $this->client,
-            \array_map(static fn (Recipe $entry): FileInput => $entry->recipeInput(), $this->recipes),
-            fn (array $fileIds, ?string $callbackUrl): WorkflowCreatePayload => $this->toWorkflowPayload($fileIds, $callbackUrl),
+            $uniqueInputs,
+            /** @param list<string> $uniqueFileIds */
+            fn (array $uniqueFileIds, ?string $callbackUrl): WorkflowCreatePayload => $this->toWorkflowPayload(
+                \array_map(static fn (int $u): string => $uniqueFileIds[$u], $entryToUnique),
+                $callbackUrl,
+            ),
             null,
             $deadlineMs,
             $onProgressClosure,
@@ -326,5 +339,60 @@ final class BatchRecipe
             'batch',
             'workflow',
         );
+    }
+
+    /**
+     * Collapse the entry inputs to a first-appearance-unique list for
+     * cross-entry upload dedupe: two entries sourcing the SAME input (by
+     * {@see inputIdentity()}) upload ONCE and share the fileId. Returns the
+     * ordered unique inputs plus an entry->unique index map (length N, entry
+     * order) so {@see uploadAllAndCreate()} can expand the unique fileIds back
+     * to one-per-entry before {@see toWorkflowPayload()} — keeping the b{$i}
+     * refs + keyByRef N-length and correctness-neutral.
+     *
+     * @return array{0: list<FileInput>, 1: list<int>}
+     */
+    private function planUploads(): array
+    {
+        $uniqueInputs = [];
+        $identityToUnique = [];
+        $entryToUnique = [];
+        foreach ($this->recipes as $entry) {
+            $input = $entry->recipeInput();
+            $identity = self::inputIdentity($input);
+            if (!isset($identityToUnique[$identity])) {
+                $identityToUnique[$identity] = \count($uniqueInputs);
+                $uniqueInputs[] = $input;
+            }
+            $entryToUnique[] = $identityToUnique[$identity];
+        }
+
+        return [$uniqueInputs, $entryToUnique];
+    }
+
+    /**
+     * Identity key for cross-entry upload dedupe — mirrors
+     * {@see \Gisl\Sdk\Ergonomic\MergeBuilder} `assetIdentity`. `path` uses the
+     * EXACT caller-provided string (no trim / normalise, so `'./a.jpg'` and
+     * `'/abs/a.jpg'` do NOT dedupe — by design); `resource` uses referential
+     * identity via `get_resource_id()` (two distinct-but-equal streams still
+     * upload twice); `upload_id` uses the fileId itself (already upload-free, a
+     * pure no-op).
+     */
+    private static function inputIdentity(FileInput $input): string
+    {
+        if ($input->kind === FileInput::KIND_PATH) {
+            return 'path:' . BuilderInternals::coerceString($input->path);
+        }
+        if ($input->kind === FileInput::KIND_UPLOAD_ID) {
+            return 'id:' . BuilderInternals::coerceString($input->fileId);
+        }
+        if ($input->kind === FileInput::KIND_RESOURCE) {
+            \assert(\is_resource($input->resource));
+
+            return 'resource:' . \get_resource_id($input->resource);
+        }
+        // Unreachable — FileInput::kind is one of the three KIND_* constants.
+        throw new \LogicException('Unknown FileInput kind: ' . $input->kind);
     }
 }

@@ -131,7 +131,7 @@ final class BatchRecipeTest extends TestCase
 
         self::assertTrue($result->ok);
 
-        // Each entry's input uploaded 1:1 (no dedupe in v1) — two upload requests.
+        // Distinct path inputs → dedupe does not apply; each uploads once (two requests).
         $uploadRequests = \array_values(\array_filter(
             $captured,
             static fn (RequestInterface $r): bool => \str_contains((string) $r->getUri(), '/api/uploads'),
@@ -154,6 +154,219 @@ final class BatchRecipeTest extends TestCase
             ['01936fb1-7bb3-7000-8000-0000000060c1', '01936fb1-7bb3-7000-8000-0000000060c2'],
             array_map(static fn (array $job): string => $job['source']['file_id'], $body['jobs']),
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Cross-entry upload dedupe (1LwSJcz1) — two entries sourcing the SAME
+    // input upload ONCE and share the fileId; correctness-neutral.
+    // -----------------------------------------------------------------------
+
+    #[Test]
+    public function shared_path_input_uploads_once_and_all_jobs_share_the_fileid(): void
+    {
+        // Two entries, byte-identical caller path → ONE upload; both jobs share
+        // the resulting fileId (same bytes → same per-job output).
+        $shared = $this->tempFile('jpg');
+        $captured = [];
+        // upload(shared) + create + sse + status + downloads = 5 (ONE upload, not two).
+        $http = $this->stubClient([
+            $this->uploadResponse('01936fb1-7bb3-7000-8000-0000000060d1'),
+            $this->createResponse(),
+            $this->sseResponse("event: workflow.completed\ndata: {\"status\":\"completed\"}\n\n"),
+            $this->multiJobStatusResponse('completed', [
+                ['ref' => 'b0', 'status' => 'completed'],
+                ['ref' => 'b1', 'status' => 'completed'],
+            ]),
+            $this->multiJobDownloadsResponse([
+                ['ref' => 'b0', 'filename' => 'a.png', 'size' => 10, 'url' => 'https://cdn/a.png'],
+                ['ref' => 'b1', 'filename' => 'b.png', 'size' => 20, 'url' => 'https://cdn/b.png'],
+            ]),
+        ], $captured);
+
+        $client = $this->makeClient($http);
+        try {
+            $a = $client->file(FileInput::path($shared), 'a')->thumbnail(['width' => 100, 'height' => 100]);
+            $b = $client->file(FileInput::path($shared), 'b')->thumbnail(['width' => 200, 'height' => 200]);
+            $result = $client->batch([$a, $b])->run();
+        } finally {
+            @\unlink($shared);
+        }
+
+        self::assertTrue($result->ok);
+        // Exactly ONE upload request despite two entries.
+        $uploadRequests = \array_values(\array_filter(
+            $captured,
+            static fn (RequestInterface $r): bool => \str_contains((string) $r->getUri(), '/api/uploads'),
+        ));
+        self::assertCount(1, $uploadRequests);
+
+        // The create body threads the SAME uploaded id into BOTH jobs (N-length).
+        $body = \json_decode((string) $this->firstRequestMatching($captured, '/api/workflows')->getBody(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        self::assertSame(['b0', 'b1'], array_column($body['jobs'], 'id'));
+        self::assertSame(
+            ['01936fb1-7bb3-7000-8000-0000000060d1', '01936fb1-7bb3-7000-8000-0000000060d1'],
+            array_map(static fn (array $job): string => $job['source']['file_id'], $body['jobs']),
+        );
+        // Per-entry keys stay independent despite the shared source.
+        self::assertSame(['a', 'b'], array_map(static fn ($s) => $s->key, $result->succeeded));
+    }
+
+    #[Test]
+    public function mixed_batch_dedupes_only_the_shared_input(): void
+    {
+        // 3 entries, 2 unique inputs: `$shared` appears at index 0 AND 2;
+        // `$distinct` only at 1 → exactly 2 uploads, file_ids expanded to N.
+        $shared = $this->tempFile('jpg');
+        $distinct = $this->tempFile('jpg');
+        $captured = [];
+        // upload(shared) + upload(distinct) + create + sse + status(3) + downloads(3) = 6.
+        $http = $this->stubClient([
+            $this->uploadResponse('01936fb1-7bb3-7000-8000-0000000060f1'),
+            $this->uploadResponse('01936fb1-7bb3-7000-8000-0000000060f2'),
+            $this->createResponse(),
+            $this->sseResponse("event: workflow.completed\ndata: {\"status\":\"completed\"}\n\n"),
+            $this->multiJobStatusResponse('completed', [
+                ['ref' => 'b0', 'status' => 'completed'],
+                ['ref' => 'b1', 'status' => 'completed'],
+                ['ref' => 'b2', 'status' => 'completed'],
+            ]),
+            $this->multiJobDownloadsResponse([
+                ['ref' => 'b0', 'filename' => 'a.png', 'size' => 1, 'url' => 'https://cdn/a.png'],
+                ['ref' => 'b1', 'filename' => 'b.png', 'size' => 1, 'url' => 'https://cdn/b.png'],
+                ['ref' => 'b2', 'filename' => 'c.png', 'size' => 1, 'url' => 'https://cdn/c.png'],
+            ]),
+        ], $captured);
+
+        $client = $this->makeClient($http);
+        try {
+            $result = $client->batch([
+                $client->file(FileInput::path($shared), 'first')->thumbnail(['width' => 100, 'height' => 100]),
+                $client->file(FileInput::path($distinct), 'middle')->thumbnail(['width' => 150, 'height' => 150]),
+                $client->file(FileInput::path($shared), 'last')->thumbnail(['width' => 200, 'height' => 200]),
+            ])->run();
+        } finally {
+            @\unlink($shared);
+            @\unlink($distinct);
+        }
+
+        self::assertTrue($result->ok);
+        $uploadRequests = \array_values(\array_filter(
+            $captured,
+            static fn (RequestInterface $r): bool => \str_contains((string) $r->getUri(), '/api/uploads'),
+        ));
+        self::assertCount(2, $uploadRequests);
+
+        $body = \json_decode((string) $this->firstRequestMatching($captured, '/api/workflows')->getBody(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        self::assertSame(['b0', 'b1', 'b2'], array_column($body['jobs'], 'id'));
+        // b0 + b2 (shared) share upload #1; b1 (distinct) gets upload #2 — the
+        // expand map yields an N-length file_id list with no gaps.
+        self::assertSame(
+            [
+                '01936fb1-7bb3-7000-8000-0000000060f1',
+                '01936fb1-7bb3-7000-8000-0000000060f2',
+                '01936fb1-7bb3-7000-8000-0000000060f1',
+            ],
+            array_map(static fn (array $job): string => $job['source']['file_id'], $body['jobs']),
+        );
+        self::assertSame(['first', 'middle', 'last'], array_map(static fn ($s) => $s->key, $result->succeeded));
+    }
+
+    #[Test]
+    public function same_resource_handle_dedupes_but_distinct_handles_over_equal_bytes_do_not(): void
+    {
+        // e0 + e1 share ONE handle (referential identity → 1 upload); e2 is a
+        // DISTINCT handle over byte-identical content (reference, not content →
+        // its own upload). 3 entries, 2 unique resources → 2 uploads.
+        $shared = $this->memoryStream('pixels');
+        $twin = $this->memoryStream('pixels'); // distinct handle, same bytes + name
+        $captured = [];
+        $http = $this->stubClient([
+            $this->uploadResponse('01936fb1-7bb3-7000-8000-0000000060e1'),
+            $this->uploadResponse('01936fb1-7bb3-7000-8000-0000000060e2'),
+            $this->createResponse(),
+            $this->sseResponse("event: workflow.completed\ndata: {\"status\":\"completed\"}\n\n"),
+            $this->multiJobStatusResponse('completed', [
+                ['ref' => 'b0', 'status' => 'completed'],
+                ['ref' => 'b1', 'status' => 'completed'],
+                ['ref' => 'b2', 'status' => 'completed'],
+            ]),
+            $this->multiJobDownloadsResponse([
+                ['ref' => 'b0', 'filename' => 'a.png', 'size' => 1, 'url' => 'https://cdn/a.png'],
+                ['ref' => 'b1', 'filename' => 'b.png', 'size' => 1, 'url' => 'https://cdn/b.png'],
+                ['ref' => 'b2', 'filename' => 'c.png', 'size' => 1, 'url' => 'https://cdn/c.png'],
+            ]),
+        ], $captured);
+
+        $client = $this->makeClient($http);
+        try {
+            $result = $client->batch([
+                $client->file(FileInput::resource($shared, filename: 'img.jpg'), 'e0')->thumbnail(['width' => 10, 'height' => 10]),
+                $client->file(FileInput::resource($shared, filename: 'img.jpg'), 'e1')->thumbnail(['width' => 20, 'height' => 20]),
+                $client->file(FileInput::resource($twin, filename: 'img.jpg'), 'e2')->thumbnail(['width' => 30, 'height' => 30]),
+            ])->run();
+        } finally {
+            \is_resource($shared) && \fclose($shared);
+            \is_resource($twin) && \fclose($twin);
+        }
+
+        self::assertTrue($result->ok);
+        $uploadRequests = \array_values(\array_filter(
+            $captured,
+            static fn (RequestInterface $r): bool => \str_contains((string) $r->getUri(), '/api/uploads'),
+        ));
+        self::assertCount(2, $uploadRequests);
+
+        $body = \json_decode((string) $this->firstRequestMatching($captured, '/api/workflows')->getBody(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        // b0 + b1 (shared handle) share upload #1; b2 (twin handle) → upload #2.
+        self::assertSame(
+            [
+                '01936fb1-7bb3-7000-8000-0000000060e1',
+                '01936fb1-7bb3-7000-8000-0000000060e1',
+                '01936fb1-7bb3-7000-8000-0000000060e2',
+            ],
+            array_map(static fn (array $job): string => $job['source']['file_id'], $body['jobs']),
+        );
+        self::assertSame(['e0', 'e1', 'e2'], array_map(static fn ($s) => $s->key, $result->succeeded));
+    }
+
+    #[Test]
+    public function identical_upload_ids_collapse_to_zero_uploads(): void
+    {
+        // uploadId inputs never upload; deduping two identical ids is a pure
+        // no-op — both jobs still carry the id.
+        $captured = [];
+        $http = $this->stubClient([
+            $this->createResponse(),
+            $this->sseResponse("event: workflow.completed\ndata: {\"status\":\"completed\"}\n\n"),
+            $this->multiJobStatusResponse('completed', [
+                ['ref' => 'b0', 'status' => 'completed'],
+                ['ref' => 'b1', 'status' => 'completed'],
+            ]),
+            $this->multiJobDownloadsResponse([
+                ['ref' => 'b0', 'filename' => 'a.png', 'size' => 1, 'url' => 'https://cdn/a.png'],
+                ['ref' => 'b1', 'filename' => 'b.png', 'size' => 1, 'url' => 'https://cdn/b.png'],
+            ]),
+        ], $captured);
+
+        $client = $this->makeClient($http);
+        $a = $client->file(FileInput::uploadId('pre'), 'a')->thumbnail(['width' => 100, 'height' => 100]);
+        $b = $client->file(FileInput::uploadId('pre'), 'b')->thumbnail(['width' => 200, 'height' => 200]);
+        $result = $client->batch([$a, $b])->run();
+
+        self::assertTrue($result->ok);
+        // No upload request at all.
+        $uploadRequests = \array_values(\array_filter(
+            $captured,
+            static fn (RequestInterface $r): bool => \str_contains((string) $r->getUri(), '/api/uploads'),
+        ));
+        self::assertCount(0, $uploadRequests);
+        $body = \json_decode((string) $this->firstRequestMatching($captured, '/api/workflows')->getBody(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        self::assertSame(['pre', 'pre'], array_map(static fn (array $job): string => $job['source']['file_id'], $body['jobs']));
+        self::assertSame(['a', 'b'], array_map(static fn ($s) => $s->key, $result->succeeded));
     }
 
     // -----------------------------------------------------------------------
@@ -629,5 +842,35 @@ final class BatchRecipeTest extends TestCase
         \rename($tmp, $path);
         \file_put_contents($path, \str_repeat('x', 64));
         return $path;
+    }
+
+    /**
+     * A seekable, readable in-memory stream (php://temp) primed with `$bytes` —
+     * a valid resource input for the dedupe tests. Distinct calls return
+     * DISTINCT handles (distinct `get_resource_id`), which is exactly the
+     * referential-identity boundary under test.
+     *
+     * @return resource
+     */
+    private function memoryStream(string $bytes)
+    {
+        $stream = \fopen('php://temp', 'r+b');
+        self::assertNotFalse($stream);
+        \fwrite($stream, $bytes);
+        \rewind($stream);
+        return $stream;
+    }
+
+    /**
+     * @param list<RequestInterface> $captured
+     */
+    private function firstRequestMatching(array $captured, string $needle): RequestInterface
+    {
+        foreach ($captured as $request) {
+            if (\str_contains((string) $request->getUri(), $needle)) {
+                return $request;
+            }
+        }
+        self::fail("no captured request matched {$needle}");
     }
 }

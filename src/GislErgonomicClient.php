@@ -179,7 +179,9 @@ class GislErgonomicClient extends GislClient
      *
      * v1 is `run()`-only and accepts SINGLE-INPUT recipes only; the multi-input
      * builders ({@see FilesRecipe}/`merge`/`archive`/`watermark`) are rejected
-     * pre-upload. No cross-recipe upload dedupe yet (each entry uploads 1:1).
+     * pre-upload. Cross-recipe upload dedupe IS applied (1LwSJcz1): entries
+     * sourcing the SAME input upload ONCE and share the fileId (correctness-
+     * neutral); `$onProgress` upload events drop to one-per-unique input.
      *
      * Wires only `$this` (the client) — NOT the preset defaults, because each
      * entry already captured its own presets at `$client->file(...)` time.
