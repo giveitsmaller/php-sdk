@@ -23,7 +23,7 @@ final class ItemResult
     }
 
     /**
-     * @return array{key: string|null, outputs: list<array{url: string, filename: string, sizeBytes: int, operation: string}>}
+     * @return array{key: string|null, outputs: list<array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool, measuredQuality?: float, qualityMetric?: string}>}
      */
     public function toArray(): array
     {
