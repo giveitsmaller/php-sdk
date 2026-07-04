@@ -99,6 +99,17 @@ final class FilesRecipe
     }
 
     /**
+     * Apply the same geometric transform (rotate/flip) to every input.
+     * Passthrough; validated via the base {@see Recipe::transform()}.
+     *
+     * @param array<string, mixed> $options
+     */
+    public function transform(array $options = []): self
+    {
+        return $this->withRecipe($this->baseRecipe()->transform($options));
+    }
+
+    /**
      * Apply the same text watermark to every input.
      *
      * @param array<string, mixed> $options

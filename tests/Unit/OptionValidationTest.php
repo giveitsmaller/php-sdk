@@ -346,6 +346,47 @@ final class OptionValidationTest extends TestCase
         }
     }
 
+    #[Test]
+    public function recipe_transform_rejects_an_unknown_key_at_the_verb_call(): void
+    {
+        try {
+            $this->recipe('photo.jpg')->transform(['bogus' => 1]);
+            self::fail('an unknown Recipe transform key must throw');
+        } catch (GislConfigError $err) {
+            self::assertSame('unknown_field', $err->getReason());
+            self::assertSame(['bogus'], $err->getConflictingFields());
+        }
+    }
+
+    #[Test]
+    public function merged_transform_rejects_an_unknown_key_at_the_verb_call(): void
+    {
+        $merged = new MergedRecipe(
+            [FileInput::path('a.mp4'), FileInput::path('b.mp4')],
+            new MergeOptions(mediaKind: 'video'),
+        );
+        try {
+            $merged->transform(['bogus' => 1]);
+            self::fail('an unknown MergedRecipe transform key must throw');
+        } catch (GislConfigError $err) {
+            self::assertSame('unknown_field', $err->getReason());
+            self::assertSame(['bogus'], $err->getConflictingFields());
+        }
+    }
+
+    #[Test]
+    public function watermarked_transform_rejects_an_unknown_key_at_the_verb_call(): void
+    {
+        $watermarked = (new Recipe(FileInput::path('photo.jpg')))->watermark($this->overlay());
+        try {
+            $watermarked->transform(['bogus' => 1]);
+            self::fail('an unknown WatermarkedRecipe transform key must throw');
+        } catch (GislConfigError $err) {
+            self::assertSame('unknown_field', $err->getReason());
+            self::assertSame(['bogus'], $err->getConflictingFields());
+        }
+    }
+
     // --- single-op convert guard (ExVcchMz) --------------------------------
     // The single-op builder convert carries its target in the bag as
     // `output_format` (no positional format), so it uses a DISTINCT guard that

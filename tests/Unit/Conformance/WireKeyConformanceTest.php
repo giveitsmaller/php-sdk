@@ -11,6 +11,7 @@ use Gisl\Generated\Operations\MergeMetadata;
 use Gisl\Generated\Operations\OperationMetadata;
 use Gisl\Generated\Operations\TextWatermarkMetadata;
 use Gisl\Generated\Operations\ThumbnailMetadata;
+use Gisl\Generated\Operations\TransformMetadata;
 use Gisl\Generated\Operations\VideoWatermarkMetadata;
 use Gisl\Sdk\Ergonomic\OptionValidation;
 use Gisl\Sdk\Ergonomic\ArchiveFormat;
@@ -181,6 +182,48 @@ final class WireKeyConformanceTest extends TestCase
             ->thumbnail(['width' => 320, 'height' => 240, 'fit' => 'crop', 'format' => 'png'])
             ->toWorkflowPayload(self::FILE_ID);
         $this->assertKeysConform('thumbnail', $this->optionKeysOf($payload, 'thumbnail'), $contract);
+    }
+
+    // --- transform ----------------------------------------------------------
+
+    #[Test]
+    public function transform_passthrough_keys_conform_to_the_contract(): void
+    {
+        $contract = $this->operationOptionKeys(TransformMetadata::instance());
+        // transform is open passthrough (rotate/flip) — callers supply contract keys directly.
+        $payload = (new Recipe(FileInput::path('photo.jpg')))
+            ->transform(['rotate' => 90, 'flip' => 'horizontal'])
+            ->toWorkflowPayload(self::FILE_ID);
+        $this->assertKeysConform('transform', $this->optionKeysOf($payload, 'transform'), $contract);
+    }
+
+    /**
+     * Non-tautological key pin (codex T4 r2): PHP has no hand-maintained
+     * `VERB_OPTION_KEYS` tuple like TS, so pin the transform contract key set to the
+     * hand-expected `{flip, rotate}` — a future contract key add/remove fails CI here.
+     */
+    #[Test]
+    public function transform_exposes_exactly_rotate_and_flip(): void
+    {
+        $keys = \array_keys($this->operationOptionKeys(TransformMetadata::instance()));
+        \sort($keys);
+        self::assertSame(['flip', 'rotate'], $keys, 'transform contract option keys drifted from {rotate, flip}');
+    }
+
+    /**
+     * Availability drift tripwire (karen Gap B / codex T4 r2): transform is exposed AHEAD
+     * of the worker — the op AND every option are `availability: planned` today. If a
+     * future re-vendor flips it live, this fails, forcing a re-review of the passthrough
+     * "planned -> server 422 until Lambdas ship" contract. Mirrors the TS tripwire.
+     */
+    #[Test]
+    public function transform_is_still_availability_planned(): void
+    {
+        // Op-level `availability` is the reliable, cross-language-consistent signal (per-option
+        // availability is null; the PHP generator also leaves mime_group availability null while
+        // TS emits it — so op-level is the parity-safe pin). A live op omits this field, so when a
+        // re-vendor flips transform live this fails, forcing a re-review of the passthrough gating.
+        self::assertSame('planned', TransformMetadata::instance()->availability);
     }
 
     // --- text_watermark -----------------------------------------------------
@@ -361,6 +404,7 @@ final class WireKeyConformanceTest extends TestCase
 
         yield 'convert' => ['convert', OptionValidation::operationOptionKeys(ConvertMetadata::instance())];
         yield 'thumbnail' => ['thumbnail', OptionValidation::operationOptionKeys(ThumbnailMetadata::instance())];
+        yield 'transform' => ['transform', OptionValidation::operationOptionKeys(TransformMetadata::instance())];
         yield 'textWatermark' => ['textWatermark', OptionValidation::operationOptionKeys(TextWatermarkMetadata::instance())];
         yield 'watermark' => ['watermark', $watermark];
     }

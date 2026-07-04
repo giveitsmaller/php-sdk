@@ -14,6 +14,7 @@ namespace Gisl\Sdk\FileFirst;
  *  - `compress`       — `['optimize' => OptimizeFor|null]` (resolved at lower-time).
  *  - `convert`        — `['output_format' => string]` (the contract convert key; the `format` shorthand is lowered to it).
  *  - `thumbnail`      — `['width'? => int, 'height'? => int]` (nulls already dropped).
+ *  - `transform`      — `{rotate?: 0|90|180|270, flip?: 'none'|'horizontal'|'vertical'|'both'}` (passthrough; nulls dropped).
  *  - `text_watermark` — `['text' => string]`.
  *  - `output`         — `['output_format'? => string, ...resize/route options]` (an INTERNAL step kind for the image
  *                       Output facade; lowers to a `compress` (same_format) or `convert` (format_change) wire op per the
@@ -22,7 +23,7 @@ namespace Gisl\Sdk\FileFirst;
 final class RecipeStep
 {
     /**
-     * @param 'compress'|'convert'|'thumbnail'|'text_watermark'|'output' $opType
+     * @param 'compress'|'convert'|'thumbnail'|'transform'|'text_watermark'|'output' $opType
      * @param array<string, mixed>                                       $options
      */
     public function __construct(

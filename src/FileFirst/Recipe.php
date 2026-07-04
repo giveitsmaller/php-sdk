@@ -160,6 +160,41 @@ final class Recipe
     }
 
     /**
+     * Apply a geometric transform: rotate (0/90/180/270°) and/or flip. A
+     * PASSTHROUGH verb (like {@see thumbnail()}) — the `$options` bag lowers
+     * verbatim to the `transform` wire op (unknown keys rejected pre-upload; a
+     * null OPTIONAL value is dropped). Chainable — the canonical single-job order
+     * the server applies is `transform → convert → compress → thumbnail`, so
+     * downstream size options refer to the final (post-transform) frame.
+     *
+     * NO client-side media / dimension / availability gate: `rotate`/`flip` are
+     * forwarded as-is (the SDK does NOT narrow per media — a `flip` on a PDF
+     * input passes SDK validation but the server rejects it, matching thumbnail's
+     * coarse per-op-union validation). The transform op is `availability: planned`
+     * today, so a lowered transform returns `feature_not_available` (422) until
+     * the per-media Lambdas ship. Mirrors the TS `Recipe::transform`.
+     *
+     * @param array{
+     *   rotate?: 0|90|180|270,
+     *   flip?: 'none'|'horizontal'|'vertical'|'both',
+     * } $options Keys are all optional so the `= []` default type-checks.
+     *   Mirrors the TS `TransformOptions`.
+     */
+    public function transform(array $options = []): self
+    {
+        // Eager pre-upload key validation: unknown keys rejected. No required
+        // dimension / media gate — transform is a passthrough (server-validated).
+        OptionValidation::validateVerbOptions('transform', $options);
+        $wire = [];
+        foreach ($options as $key => $value) {
+            if ($value !== null) {
+                $wire[$key] = $value;
+            }
+        }
+        return $this->withStep(new RecipeStep('transform', $wire));
+    }
+
+    /**
      * Produce ONE transformed image: keep or change format, plus quality, resize
      * and route-honored controls. The single user-facing image transform — the SDK
      * resolves the route from `(input format, output_format)` against the contract's

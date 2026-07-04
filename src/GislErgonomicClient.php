@@ -243,6 +243,26 @@ class GislErgonomicClient extends GislClient
     }
 
     /**
+     * Apply a geometric transform (rotate/flip). A PASSTHROUGH op with no
+     * positional-owned key and no required dimensions — only the generic
+     * unknown-key validation runs pre-upload (ExVcchMz). The transform op is
+     * `availability: planned` today, so a lowered transform returns
+     * `feature_not_available` (422) until the per-media Lambdas ship. Mirrors the
+     * TS `transform()` on the ergonomic client.
+     *
+     * @param array{
+     *   rotate?: 0|90|180|270,
+     *   flip?: 'none'|'horizontal'|'vertical'|'both',
+     * } $options
+     */
+    public function transform(string $input, array $options = []): OperationBuilder
+    {
+        OptionValidation::validateVerbOptions('transform', $options);
+
+        return new OperationBuilder($this, 'transform', $input, $options, $this->presetDefaults, $this->scopedPresetDefaults);
+    }
+
+    /**
      * Convert to another format. The single-op builder has no positional format —
      * the target rides the bag as the wire key `output_format` (REQUIRED). An
      * unknown option key or a missing `output_format` is rejected pre-upload

@@ -104,6 +104,24 @@ final class MergedRecipe
         return $this->withStep(new RecipeStep('thumbnail', $wire));
     }
 
+    /**
+     * Geometric transform (rotate/flip) of the merged output. Passthrough — see
+     * {@see Recipe::transform()}. No dimension gate.
+     *
+     * @param array<string, mixed> $options
+     */
+    public function transform(array $options = []): self
+    {
+        OptionValidation::validateVerbOptions('transform', $options);
+        $wire = [];
+        foreach ($options as $key => $value) {
+            if ($value !== null) {
+                $wire[$key] = $value;
+            }
+        }
+        return $this->withStep(new RecipeStep('transform', $wire));
+    }
+
     private function withStep(RecipeStep $step): self
     {
         return new self(

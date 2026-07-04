@@ -9,6 +9,7 @@ use Gisl\Generated\Operations\ImageWatermarkMetadata;
 use Gisl\Generated\Operations\OperationMetadata;
 use Gisl\Generated\Operations\TextWatermarkMetadata;
 use Gisl\Generated\Operations\ThumbnailMetadata;
+use Gisl\Generated\Operations\TransformMetadata;
 use Gisl\Generated\Operations\VideoWatermarkMetadata;
 use Gisl\Sdk\Errors\GislConfigError;
 
@@ -115,6 +116,7 @@ final class OptionValidation
             self::$allowedCache = [
                 'convert' => self::operationOptionKeys(ConvertMetadata::instance()),
                 'thumbnail' => self::operationOptionKeys(ThumbnailMetadata::instance()),
+                'transform' => self::operationOptionKeys(TransformMetadata::instance()),
                 'textWatermark' => self::operationOptionKeys(TextWatermarkMetadata::instance()),
                 'watermark' => self::operationOptionKeys(ImageWatermarkMetadata::instance())
                     + self::operationOptionKeys(VideoWatermarkMetadata::instance()),
