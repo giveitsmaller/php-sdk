@@ -10,6 +10,7 @@ use Gisl\Generated\OpenApi\Model\AuthErrorResponse;
 use Gisl\Generated\OpenApi\Model\AuthErrorType;
 use Gisl\Generated\OpenApi\Model\AuthRejectionEnvelope;
 use Gisl\Generated\OpenApi\Model\BalanceExhaustedResponse;
+use Gisl\Generated\OpenApi\Model\LongFormConcurrencyLimitResponse;
 use Gisl\Generated\OpenApi\Model\AccountLimits;
 use Gisl\Generated\OpenApi\Model\ContactRequest;
 use Gisl\Generated\OpenApi\Model\CreditsBalanceResponse;
@@ -46,6 +47,7 @@ use Gisl\Sdk\Errors\GislApiError;
 use Gisl\Sdk\Errors\GislAuthError;
 use Gisl\Sdk\Errors\GislAuthRejectionError;
 use Gisl\Sdk\Errors\GislBalanceExhaustedError;
+use Gisl\Sdk\Errors\GislLongFormConcurrencyError;
 use Gisl\Sdk\Errors\GislConfigError;
 use Gisl\Sdk\Errors\GislError;
 use Gisl\Sdk\Errors\GislFeatureNotAvailableError;
@@ -3117,6 +3119,34 @@ class GislClient
                     $statusCode,
                     $errorCode,
                     GislUploadCapExceededError::KIND_DURATION_TIER,
+                    $typed,
+                    $decoded,
+                    $messageKey,
+                    $locale,
+                    $messageParams,
+                    $responseHeaders,
+                    $contentLanguage,
+                );
+            }
+        }
+
+        // Long-form concurrency limit (429) — a TIER quota, DISTINCT from a
+        // generic infra rate-limit 429. Dispatched on the machine `error` CODE
+        // ($errorCode = $decoded['error']); this envelope carries NO
+        // `error_type`. A generic rate-limit 429 has a different/absent code, so
+        // it falls through to the base GislApiError where `retryAfterSeconds()`
+        // applies. Mirrors `packages/typescript/src/client.ts`
+        // GislLongFormConcurrencyError branch.
+        if ($statusCode === 429 && $errorCode === 'LONG_FORM_CONCURRENCY_LIMIT_EXCEEDED') {
+            $typed = $this->tryDeserialize(LongFormConcurrencyLimitResponse::class, $decoded);
+            if (
+                $typed instanceof LongFormConcurrencyLimitResponse
+                && $typed->getError() === 'LONG_FORM_CONCURRENCY_LIMIT_EXCEEDED'
+            ) {
+                throw new GislLongFormConcurrencyError(
+                    $message,
+                    $statusCode,
+                    $errorCode,
                     $typed,
                     $decoded,
                     $messageKey,

@@ -10,6 +10,7 @@ use Gisl\Generated\OpenApi\Model\BalanceExhaustedResponse;
 use Gisl\Generated\OpenApi\Model\FeatureNotAvailableResponse;
 use Gisl\Generated\OpenApi\Model\FeatureTierRestrictedResponse;
 use Gisl\Generated\OpenApi\Model\FeatureViolation;
+use Gisl\Generated\OpenApi\Model\LongFormConcurrencyLimitResponse;
 use Gisl\Generated\OpenApi\Model\ProbePendingResponse;
 use Gisl\Generated\OpenApi\Model\TierRestrictionResponse;
 use Gisl\Generated\OpenApi\Model\UploadDurationExceedsTierResponse;
@@ -25,6 +26,7 @@ use Gisl\Sdk\Errors\GislAuthRejectionError;
 use Gisl\Sdk\Errors\GislBalanceExhaustedError;
 use Gisl\Sdk\Errors\GislFeatureNotAvailableError;
 use Gisl\Sdk\Errors\GislFeatureTierRestrictedError;
+use Gisl\Sdk\Errors\GislLongFormConcurrencyError;
 use Gisl\Sdk\Errors\GislProbePendingError;
 use Gisl\Sdk\Errors\GislTierRestrictedError;
 use Gisl\Sdk\Errors\GislUploadCapExceededError;
@@ -1279,6 +1281,111 @@ final class GislClientTypedErrorsTest extends TestCase
                 . $e::class . ') instead of the typed branch — the Issue 1 '
                 . 'generator-compat fix regressed.',
             );
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // ST5CIN87 — 429 long-form concurrency limit (code-keyed dispatch)
+    // ---------------------------------------------------------------------
+
+    /**
+     * 429 LONG_FORM_CONCURRENCY_LIMIT_EXCEEDED with a `links.upgrade` deep
+     * link -> GislLongFormConcurrencyError. Dispatch keys on the machine
+     * `error` CODE ($errorCode), not error_type (this envelope has none).
+     * Mirrors `packages/typescript/src/client.ts` GislLongFormConcurrencyError
+     * branch.
+     */
+    public function testLongFormConcurrencyDispatch(): void
+    {
+        $captured = [];
+        $http = $this->stubClient([
+            $this->jsonResponse(429, [
+                'success' => false,
+                'error' => 'LONG_FORM_CONCURRENCY_LIMIT_EXCEEDED',
+                'message' => 'Too many long-form jobs',
+                'links' => ['upgrade' => 'https://x/upgrade'],
+            ]),
+        ], $captured);
+
+        $client = $this->makeClient($http);
+
+        try {
+            $client->getWorkflowStatus(self::HARNESS_WORKFLOW_ID);
+            self::fail('Expected GislLongFormConcurrencyError');
+        } catch (GislLongFormConcurrencyError $e) {
+            self::assertInstanceOf(GislApiError::class, $e);
+            self::assertSame(429, $e->statusCode);
+            self::assertSame('LONG_FORM_CONCURRENCY_LIMIT_EXCEEDED', $e->errorCode);
+            self::assertInstanceOf(LongFormConcurrencyLimitResponse::class, $e->typedPayload);
+            self::assertSame('https://x/upgrade', $e->upgradeUrl());
+        }
+    }
+
+    /**
+     * Negative/regression guard: a generic infrastructure rate-limit 429
+     * (`TOO_MANY_REQUESTS`, carries a `Retry-After` header) must NOT be
+     * claimed by the code-keyed long-form branch. It surfaces as the base
+     * GislApiError where `retryAfterSeconds()` applies. Proves the dispatch
+     * doesn't over-match on status alone.
+     */
+    public function testGenericRateLimit429StaysBaseApiErrorWithRetryAfter(): void
+    {
+        $captured = [];
+        $encoded = \json_encode(
+            ['success' => false, 'error' => 'TOO_MANY_REQUESTS'],
+            JSON_THROW_ON_ERROR,
+        );
+        $http = $this->stubClient([
+            new Response(
+                429,
+                ['Content-Type' => 'application/json', 'Retry-After' => '30'],
+                $encoded,
+            ),
+        ], $captured);
+
+        $client = $this->makeClient($http);
+
+        try {
+            $client->getWorkflowStatus(self::HARNESS_WORKFLOW_ID);
+            self::fail('Expected GislApiError');
+        } catch (GislApiError $e) {
+            self::assertNotInstanceOf(GislLongFormConcurrencyError::class, $e);
+            self::assertSame(429, $e->statusCode);
+            self::assertSame('TOO_MANY_REQUESTS', $e->errorCode);
+            // Retry-After still resolves off the base-error header surface.
+            self::assertSame(30, $e->retryAfterSeconds());
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // U7MACpOj — message-absent fallback (byte-identical parity with TS)
+    // ---------------------------------------------------------------------
+
+    /**
+     * A failure envelope with an `error` code but NO `message` must surface
+     * the canonical synthetic sentence on getMessage(), byte-identical to the
+     * TS `fallbackErrorMessage` output — not the raw machine code. Confirms
+     * the parity target the TS SDK now matches.
+     */
+    public function testMessageAbsentFallsBackToSyntheticSentence(): void
+    {
+        $captured = [];
+        $http = $this->stubClient([
+            $this->jsonResponse(400, [
+                'success' => false,
+                'error' => 'SOME_CODE',
+                // message intentionally absent
+            ]),
+        ], $captured);
+
+        $client = $this->makeClient($http);
+
+        try {
+            $client->getWorkflowStatus(self::HARNESS_WORKFLOW_ID);
+            self::fail('Expected GislApiError');
+        } catch (GislApiError $e) {
+            self::assertSame('Request failed with status 400 (SOME_CODE).', $e->getMessage());
+            self::assertSame('SOME_CODE', $e->errorCode);
         }
     }
 }
