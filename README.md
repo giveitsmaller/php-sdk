@@ -4,7 +4,7 @@ The official PHP SDK for **Give It Smaller** (GISL) — a file compression and m
 
 > **Read-only mirror.** This repository is automatically published from Give It Smaller's private monorepo on each release. Do **not** open issues or pull requests here — they are not monitored. Licensed under [Apache-2.0](./LICENSE).
 
-📖 **[Full documentation →](../../docs/php/index.md)**
+📖 Full documentation: [giveitsmaller.com](https://giveitsmaller.com)
 
 ## Install
 
@@ -16,7 +16,7 @@ composer require giveitsmaller/sdk guzzlehttp/guzzle http-interop/http-factory-g
 
 Requires **PHP ^8.1**.
 
-> **Bring your own PSR-18 client.** The SDK's runtime imports only PSR-18 interfaces, so you can use any implementation (e.g. Symfony HttpClient) instead of Guzzle — inject it via `Gisl::create(httpClient: ...)`. Published on [Packagist](https://packagist.org/packages/giveitsmaller/sdk) — the `composer require` above is all you need (no `repositories` block or auth token). See the [install notes](../../docs/php-consumer-install.md) for the BYO-client and dev-checkout options.
+> **Bring your own PSR-18 client.** The SDK's runtime imports only PSR-18 interfaces, so you can use any implementation (e.g. Symfony HttpClient) instead of Guzzle — inject it via `Gisl::create(httpClient: ...)`. Published on [Packagist](https://packagist.org/packages/giveitsmaller/sdk) — the `composer require` above is all you need (no `repositories` block or auth token).
 
 ## Quickstart
 
@@ -42,18 +42,13 @@ echo $result->url; // pre-signed download URL
 
 > **Operation-first also ships.** A lower-level `$client->compress($path, [...])->run(new RunOptions(...))`
 > form (and `thumbnail` / `convert`) is available as an escape hatch, but file-first is the
-> recommended direction the [examples](../../examples/php/) build on.
+> recommended direction.
 
 ## Documentation
 
-| Guide | What's in it |
-|---|---|
-| [Getting started](../../docs/php/index.md) | install, auth, quickstart, core concepts |
-| [Client reference](../../docs/php/client.md) | every method, the ergonomic builders, operation options |
-| [Progress events (SSE)](../../docs/php/sse.md) | subscribe to live job progress |
-| [Webhooks](../../docs/php/webhook.md) | verify and handle callback deliveries |
-| [Errors](../../docs/php/errors.md) | exception hierarchy and retry guidance |
-| [Examples](../../docs/php/examples/) | runnable, per-operation walkthroughs |
+Full documentation — getting started, the client reference and ergonomic builders, operation
+options, progress events (SSE), webhooks, error/retry guidance, and per-operation examples — lives
+at [giveitsmaller.com](https://giveitsmaller.com).
 
 ## License
 
