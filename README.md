@@ -2,6 +2,8 @@
 
 The official PHP SDK for **Give It Smaller** (GISL) — a file compression and media-processing service. Compress, convert, thumbnail, and merge images, video, audio, and documents from PHP 8.1+.
 
+> **Read-only mirror.** This repository is automatically published from Give It Smaller's private monorepo on each release. Do **not** open issues or pull requests here — they are not monitored. Licensed under [Apache-2.0](./LICENSE).
+
 📖 **[Full documentation →](../../docs/php/index.md)**
 
 ## Install
@@ -55,4 +57,4 @@ echo $result->url; // pre-signed download URL
 
 ## License
 
-MIT.
+Apache-2.0 — see the [LICENSE](./LICENSE) file.
