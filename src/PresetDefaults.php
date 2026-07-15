@@ -9,7 +9,6 @@ use Gisl\Sdk\Preset\AudioCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions;
-use Gisl\Sdk\Preset\DocumentPdfCompressPresetOptions;
 use Gisl\Sdk\Preset\ImageCompressPresetOptions;
 use Gisl\Sdk\Preset\VideoCompressPresetOptions;
 
@@ -30,7 +29,7 @@ use Gisl\Sdk\Preset\VideoCompressPresetOptions;
  * overrides. This card ships only the typed slot + builder semantics; the
  * merge logic and `Gisl::create()` wiring land with the resolver (P6).
  *
- * @phpstan-type PresetCellDelta ImageCompressPresetOptions|AudioCompressPresetOptions|VideoCompressPresetOptions|DocumentPdfCompressPresetOptions|DocumentOfficeCompressPresetOptions|DocumentOdfCompressPresetOptions|DocumentEpubCompressPresetOptions
+ * @phpstan-type PresetCellDelta ImageCompressPresetOptions|AudioCompressPresetOptions|VideoCompressPresetOptions|DocumentOfficeCompressPresetOptions|DocumentOdfCompressPresetOptions|DocumentEpubCompressPresetOptions
  */
 final class PresetDefaults
 {
@@ -63,11 +62,6 @@ final class PresetDefaults
         return $this->with('video_compress', $level, $input ?? new VideoCompressPresetOptions());
     }
 
-    public function pdfCompress(OptimizeFor $level, ?DocumentPdfCompressPresetOptions $input = null): self
-    {
-        return $this->with('document_pdf_compress', $level, $input ?? new DocumentPdfCompressPresetOptions());
-    }
-
     public function officeCompress(OptimizeFor $level, ?DocumentOfficeCompressPresetOptions $input = null): self
     {
         return $this->with('document_office_compress', $level, $input ?? new DocumentOfficeCompressPresetOptions());
@@ -89,11 +83,11 @@ final class PresetDefaults
      * live on the leaf DTO via `*::shippedDefaultsFor($level)`.
      *
      * `$mediaOpKey` is the generated PRESETS key, e.g. `'image_compress'`
-     * or `'document_pdf_compress'`.
+     * or `'document_office_compress'`.
      *
      * @return PresetCellDelta|null
      */
-    public function cellFor(string $mediaOpKey, OptimizeFor $level): ImageCompressPresetOptions|AudioCompressPresetOptions|VideoCompressPresetOptions|DocumentPdfCompressPresetOptions|DocumentOfficeCompressPresetOptions|DocumentOdfCompressPresetOptions|DocumentEpubCompressPresetOptions|null
+    public function cellFor(string $mediaOpKey, OptimizeFor $level): ImageCompressPresetOptions|AudioCompressPresetOptions|VideoCompressPresetOptions|DocumentOfficeCompressPresetOptions|DocumentOdfCompressPresetOptions|DocumentEpubCompressPresetOptions|null
     {
         return $this->cells[self::key($mediaOpKey, $level)] ?? null;
     }
@@ -165,11 +159,6 @@ final class PresetDefaults
                     faststart: $child->faststart ?? $parent->faststart,
                     audioCodec: $child->audioCodec ?? $parent->audioCodec,
                     audioBitrate: $child->audioBitrate ?? $parent->audioBitrate,
-                ),
-            $parent instanceof DocumentPdfCompressPresetOptions && $child instanceof DocumentPdfCompressPresetOptions
-                => new DocumentPdfCompressPresetOptions(
-                    profile: $child->profile ?? $parent->profile,
-                    grayscale: $child->grayscale ?? $parent->grayscale,
                 ),
             $parent instanceof DocumentOfficeCompressPresetOptions && $child instanceof DocumentOfficeCompressPresetOptions
                 => new DocumentOfficeCompressPresetOptions(

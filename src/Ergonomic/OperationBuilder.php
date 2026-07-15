@@ -136,7 +136,7 @@ final class OperationBuilder
      *
      * @internal Exposed for unit tests.
      *
-     * @return 'image'|'audio'|'video'|'document_pdf'|'document_office'|'document_odf'|'document_epub'|null
+     * @return 'image'|'audio'|'video'|'document_office'|'document_odf'|'document_epub'|'document_pdf'|null
      */
     public static function detectCompressMedia(string $input): ?string
     {
@@ -157,11 +157,11 @@ final class OperationBuilder
         if (\in_array($ext, ['mp4', 'mov', 'mkv', 'webm', 'avi', 'wmv', 'flv', 'm4v'], true)) {
             return 'video';
         }
-        if ($ext === 'pdf') {
-            return 'document_pdf';
-        }
         if ($ext === 'epub') {
             return 'document_epub';
+        }
+        if ($ext === 'pdf') {
+            return 'document_pdf';
         }
         if (\in_array($ext, ['odt', 'ods', 'odp'], true)) {
             return 'document_odf';
@@ -180,7 +180,7 @@ final class OperationBuilder
      *
      * @internal Exposed for {@see \Gisl\Sdk\FileFirst\FileInput::compressMediaHint()} + unit tests.
      *
-     * @return 'image'|'audio'|'video'|'document_pdf'|'document_office'|'document_odf'|'document_epub'|null
+     * @return 'image'|'audio'|'video'|'document_office'|'document_odf'|'document_epub'|'document_pdf'|null
      */
     public static function detectCompressMediaFromMime(string $mime): ?string
     {
@@ -193,11 +193,11 @@ final class OperationBuilder
         if (\str_starts_with($mime, 'video/')) {
             return 'video';
         }
-        if ($mime === 'application/pdf') {
-            return 'document_pdf';
-        }
         if ($mime === 'application/epub+zip') {
             return 'document_epub';
+        }
+        if ($mime === 'application/pdf') {
+            return 'document_pdf';
         }
         if (\in_array($mime, [
             'application/vnd.oasis.opendocument.text',

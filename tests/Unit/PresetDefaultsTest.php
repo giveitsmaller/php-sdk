@@ -5,12 +5,10 @@ declare(strict_types=1);
 namespace Gisl\Sdk\Tests\Unit;
 
 use Gisl\Sdk\Generated\SdkSpec\Enums\OptimizeFor;
-use Gisl\Sdk\Generated\SdkSpec\Enums\PdfProfile;
 use Gisl\Sdk\Preset\AudioCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions;
-use Gisl\Sdk\Preset\DocumentPdfCompressPresetOptions;
 use Gisl\Sdk\Generated\SdkSpec\Enums\ImageFormat;
 use Gisl\Sdk\Preset\ImageCompressPresetOptions;
 use Gisl\Sdk\Preset\VideoCompressPresetOptions;
@@ -139,11 +137,11 @@ final class PresetDefaultsTest extends TestCase
     }
 
     /**
-     * Every one of the 7 mergeCell arms is exercised: parent sets field A,
+     * Every one of the 6 mergeCell arms is exercised: parent sets field A,
      * child sets a different field B on an overlapping (cell, level); the merged
      * cell must carry child's B AND parent's A (field-wise child-wins/parent-fills).
      */
-    public function testMergeCoversAllSevenLeafTypes(): void
+    public function testMergeCoversAllSixLeafTypes(): void
     {
         $level = OptimizeFor::Size;
 
@@ -151,7 +149,6 @@ final class PresetDefaultsTest extends TestCase
             ->imageCompress($level, new ImageCompressPresetOptions(outputFormat: ImageFormat::Webp))
             ->audioCompress($level, new AudioCompressPresetOptions(normalize: true))
             ->videoCompress($level, new VideoCompressPresetOptions(fps: 24))
-            ->pdfCompress($level, new DocumentPdfCompressPresetOptions(profile: PdfProfile::Printer))
             ->officeCompress($level, new DocumentOfficeCompressPresetOptions(stripMacros: true))
             ->odfCompress($level, new DocumentOdfCompressPresetOptions(stripMetadata: true))
             ->epubCompress($level, new DocumentEpubCompressPresetOptions(fontSubsetting: true));
@@ -160,7 +157,6 @@ final class PresetDefaultsTest extends TestCase
             ->imageCompress($level, new ImageCompressPresetOptions(quality: 92))
             ->audioCompress($level, new AudioCompressPresetOptions(channels: 2))
             ->videoCompress($level, new VideoCompressPresetOptions(crf: 18))
-            ->pdfCompress($level, new DocumentPdfCompressPresetOptions(grayscale: true))
             ->officeCompress($level, new DocumentOfficeCompressPresetOptions(stripHiddenData: true))
             ->odfCompress($level, new DocumentOdfCompressPresetOptions(stripUnusedStyles: true))
             ->epubCompress($level, new DocumentEpubCompressPresetOptions(stripUnusedCss: true));
@@ -181,11 +177,6 @@ final class PresetDefaultsTest extends TestCase
         $this->assertInstanceOf(VideoCompressPresetOptions::class, $vid);
         $this->assertSame(18, $vid->crf);              // child
         $this->assertSame(24, $vid->fps);              // parent
-
-        $pdf = $m->cellFor('document_pdf_compress', $level);
-        $this->assertInstanceOf(DocumentPdfCompressPresetOptions::class, $pdf);
-        $this->assertTrue($pdf->grayscale);            // child
-        $this->assertSame(PdfProfile::Printer, $pdf->profile); // parent
 
         $office = $m->cellFor('document_office_compress', $level);
         $this->assertInstanceOf(DocumentOfficeCompressPresetOptions::class, $office);

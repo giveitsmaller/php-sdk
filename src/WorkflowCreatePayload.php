@@ -20,6 +20,10 @@ final class WorkflowCreatePayload
      * @param array<string, mixed>|null            $exportPayload     `ExternalDestinationPayload` wire shape.
      * @param array<string, mixed>|null            $delivery          `DeliveryPayload` wire shape.
      * @param array<string, mixed>|null            $processing        `WorkflowProcessingPayload` wire shape.
+     * @param array<string, mixed>|null            $notify            `NotifyConfig` wire shape (contracts v2.164.0
+     *                                                                 `notify.email`). Opaque passthrough — the
+     *                                                                 ergonomic `notifyEmail` surface is a separate
+     *                                                                 follow-up (card y6jsQCpb).
      */
     public function __construct(
         public readonly array $jobs,
@@ -29,6 +33,7 @@ final class WorkflowCreatePayload
         public readonly ?array $exportPayload = null,
         public readonly ?array $delivery = null,
         public readonly ?array $processing = null,
+        public readonly ?array $notify = null,
     ) {
     }
 
@@ -60,6 +65,9 @@ final class WorkflowCreatePayload
         }
         if ($this->processing !== null) {
             $payload['processing'] = $this->processing;
+        }
+        if ($this->notify !== null) {
+            $payload['notify'] = $this->notify;
         }
         return $payload;
     }

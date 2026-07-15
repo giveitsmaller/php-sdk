@@ -65,7 +65,6 @@ final class CodeBuilderConformanceTest extends TestCase
      * @var array<string, list<string>>
      */
     private const DEFERRED_EXPOSURE = [
-        'document_pdf' => ['quality', 'image_dpi'],
         'document_office' => ['quality'],
         'document_odf' => ['quality'],
         'document_epub' => ['quality'],

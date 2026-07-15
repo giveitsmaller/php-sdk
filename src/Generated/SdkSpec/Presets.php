@@ -72,20 +72,6 @@ final class Presets
                 'preset' => 'Slow',
             ],
         ],
-        'document_pdf_compress' => [
-            'Size' => [
-                'profile' => 'Screen',
-                'grayscale' => true,
-            ],
-            'Balanced' => [
-                'profile' => 'Ebook',
-                'grayscale' => false,
-            ],
-            'Quality' => [
-                'profile' => 'Printer',
-                'grayscale' => false,
-            ],
-        ],
         'document_office_compress' => [
             'Size' => [
                 'stripMacros' => true,

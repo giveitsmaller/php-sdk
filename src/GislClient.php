@@ -1999,12 +1999,15 @@ class GislClient
      * `Set-Cookie` header is ignored and the typed user-payload is returned
      * unchanged — bearer-token-only flows never opt in to cookie capture.
      *
-     * Failure modes per ticket FX6mbTJD (mirrors TS):
-     *  - **401** `invalid_credentials` → {@see GislAuthError}.
-     *  - **403** account-state failures (`account_locked`,
-     *    `account_disabled`, `account_deleted`,
-     *    `account_deletion_expired`) → {@see GislAuthError}.
+     * Failure modes per ticket FX6mbTJD (mirrors TS; login narrowed at
+     * contracts v2.166.0 authsec — no 403 account-state branch on login):
+     *  - **401** `invalid_credentials` (wrong password, unverified, OR
+     *    unknown account — collapsed for anti-enumeration) → {@see GislAuthError}.
      *  - **429** rate-limit → {@see GislApiError}.
+     *
+     * The account-status error types (`account_locked` / `account_disabled`
+     * / `account_deleted` / `account_deletion_expired`) still exist but are
+     * emitted on the API-key path + live-session enforcement, not on login.
      *
      * Mirrors `packages/typescript/src/client.ts::login`.
      */

@@ -9,14 +9,12 @@ use Gisl\Sdk\Generated\SdkSpec\Enums\AudioSampleRate;
 use Gisl\Sdk\Generated\SdkSpec\Enums\ImageFormat;
 use Gisl\Sdk\Generated\SdkSpec\Enums\ImageMetadataPolicy;
 use Gisl\Sdk\Generated\SdkSpec\Enums\OptimizeFor;
-use Gisl\Sdk\Generated\SdkSpec\Enums\PdfProfile;
 use Gisl\Sdk\Generated\SdkSpec\Enums\VideoPreset;
 use Gisl\Sdk\Generated\SdkSpec\Presets;
 use Gisl\Sdk\Preset\AudioCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions;
-use Gisl\Sdk\Preset\DocumentPdfCompressPresetOptions;
 use Gisl\Sdk\Preset\ImageCompressPresetOptions;
 use Gisl\Sdk\Preset\PresetCellTranslator;
 use Gisl\Sdk\Preset\VideoCompressPresetOptions;
@@ -27,7 +25,6 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(ImageCompressPresetOptions::class)]
 #[CoversClass(AudioCompressPresetOptions::class)]
 #[CoversClass(VideoCompressPresetOptions::class)]
-#[CoversClass(DocumentPdfCompressPresetOptions::class)]
 #[CoversClass(DocumentOfficeCompressPresetOptions::class)]
 #[CoversClass(DocumentOdfCompressPresetOptions::class)]
 #[CoversClass(DocumentEpubCompressPresetOptions::class)]
@@ -155,13 +152,6 @@ final class PresetCompressOptionsTest extends TestCase
         $this->assertNull($dto->height);
         $this->assertNull($dto->fit);
         $this->assertNull($dto->fps);
-    }
-
-    public function testPdfShippedDefaultsForSize(): void
-    {
-        $dto = DocumentPdfCompressPresetOptions::shippedDefaultsFor(OptimizeFor::Size);
-        $this->assertSame(PdfProfile::Screen, $dto->profile);
-        $this->assertTrue($dto->grayscale);
     }
 
     public function testOfficeShippedDefaultsForSize(): void

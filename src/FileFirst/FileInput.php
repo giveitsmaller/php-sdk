@@ -115,7 +115,7 @@ final class FileInput
      * For a resource the MIME hint is canonical (preferred), then the filename
      * extension — mirroring the TS `_detectCompressMedia` Blob branch (MIME-first).
      *
-     * @return 'image'|'audio'|'video'|'document_pdf'|'document_office'|'document_odf'|'document_epub'|null
+     * @return 'image'|'audio'|'video'|'document_office'|'document_odf'|'document_epub'|'document_pdf'|null
      */
     public function compressMediaHint(): ?string
     {

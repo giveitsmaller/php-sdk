@@ -52,7 +52,7 @@ final class RecipeChainOptionsTest extends TestCase
     }
 
     /**
-     * @param 'image'|'audio'|'video'|'document_pdf'|'document_office'|'document_odf'|'document_epub' $media
+     * @param 'image'|'audio'|'video'|'document_office'|'document_odf'|'document_epub' $media
      * @param array<string, mixed> $explicit
      * @param array<string, mixed>|null $presetOverrides
      *
@@ -397,6 +397,26 @@ final class RecipeChainOptionsTest extends TestCase
             self::fail('compress(optimize) on a media-unknown input must throw');
         } catch (GislConfigError $err) {
             self::assertSame('media_unknown', $err->reason);
+        }
+    }
+
+    #[Test]
+    public function compress_on_pdf_fails_fast_pdf_compress_removed(): void
+    {
+        // PDF is a DETECTABLE media (document_pdf) but no longer compressible
+        // (contracts v2.166.0 dropped PDF lossy compress). Unlike a truly
+        // media-unknown input, a PDF fails fast with a specific, actionable
+        // message even WITHOUT optimize — mirrors the TS builder fail-fast test.
+        $recipe = (new Recipe(FileInput::path('report.pdf')))->compress(null, ['crf' => 23]);
+        try {
+            $recipe->toWorkflowPayload(self::FILE_ID);
+            self::fail('compress() on a PDF must fail fast (PDF compression removed)');
+        } catch (GislConfigError $err) {
+            self::assertSame('unsupported_media', $err->reason);
+            self::assertStringContainsString(
+                'PDF compression was removed at contracts v2.166.0',
+                $err->getMessage(),
+            );
         }
     }
 
