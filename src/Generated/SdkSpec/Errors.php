@@ -500,6 +500,17 @@ to a single artifact OR use .mapEach() to fan out.
                 'actual' => 'string',
             ],
         ],
+        'image_dimensions_too_large' => [
+            'code' => 'image_dimensions_too_large',
+            'category' => 'api',
+            'source' => 'ErrorEnvelope.error',
+            'status' => 'wired',
+            'httpStatus' => 413,
+            'retryable' => false,
+            'sdkClass' => 'GislUploadCapExceededError',
+            'description' => '413 — POST /api/uploads rejected a decodable raster image whose pixel area (width × height) exceeds the configured ceiling (UPLOAD_MAX_IMAGE_PIXELS, default 16 MP), read from the file header before decode (I0Rqj4jo). Wire `IMAGE_DIMENSIONS_TOO_LARGE`; flat ErrorEnvelope (no details[]). A pixel-dimension member of the upload-cap family — GislUploadCapExceededError, alongside the size/duration caps — matching the SDKs\' existing status-based 413 dispatch (NOT GislValidationError, which is the structured-422 class). Retry only after downscaling the input.',
+            'metadataSchema' => [],
+        ],
         'upload_failed' => [
             'code' => 'upload_failed',
             'category' => 'network',
@@ -546,6 +557,7 @@ to a single artifact OR use .mapEach() to fan out.
             'upload_duration_exceeds_tier',
             'probe_pending',
             'requires_reencode',
+            'image_dimensions_too_large',
             'workflow_failed',
         ],
         'config' => [
