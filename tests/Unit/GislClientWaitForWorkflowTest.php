@@ -194,6 +194,28 @@ final class GislClientWaitForWorkflowTest extends TestCase
         );
     }
 
+    public function testWaitForWorkflowTimeoutCarriesWorkflowIdForRecovery(): void
+    {
+        // oYumKo6y: the workflow exists server-side; the timeout carries its id
+        // so the caller can poll it to recover the result instead of re-running
+        // (a re-run re-uploads and, for authenticated callers, charges again).
+        $http = $this->stubClient([
+            $this->statusEnvelope('in_progress'),
+            $this->statusEnvelope('in_progress'),
+        ]);
+        $client = $this->makeClient($http);
+
+        try {
+            $client->waitForWorkflow(
+                '01936fb2-0000-7000-8000-000000000001',
+                new WaitOptions(intervalMs: 0, timeoutMs: 0),
+            );
+            self::fail('expected GislTimeoutError');
+        } catch (GislTimeoutError $e) {
+            self::assertSame('01936fb2-0000-7000-8000-000000000001', $e->workflowId);
+        }
+    }
+
     public function testWaitForWorkflowOnPollFiresWithStatusString(): void
     {
         $http = $this->stubClient([

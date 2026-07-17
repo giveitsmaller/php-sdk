@@ -119,6 +119,7 @@ final class Handle
         if (BuilderInternals::nowMs() >= $deadlineMs) {
             throw new GislTimeoutError(
                 "Workflow {$this->workflowId} reached terminal status but maxWait elapsed before downloads could be fetched.",
+                $this->workflowId,
             );
         }
         $downloads = $client->getWorkflowDownloads($this->workflowId);
@@ -128,6 +129,7 @@ final class Handle
         if (BuilderInternals::nowMs() >= $deadlineMs) {
             throw new GislTimeoutError(
                 "Workflow {$this->workflowId} downloads fetch completed after maxWait elapsed.",
+                $this->workflowId,
             );
         }
 

@@ -418,8 +418,11 @@ final class RecipeRunTest extends TestCase
                 ->compress()
                 ->run(maxWait: 1, pollIntervalMs: 0);
             self::fail('expected GislTimeoutError');
-        } catch (GislTimeoutError) {
+        } catch (GislTimeoutError $e) {
             // Expected — the deadline elapsed before a terminal status.
+            // oYumKo6y: the workflow was created; the timeout carries its id so
+            // the caller can poll it to recover rather than re-run (double charge).
+            self::assertSame(self::WORKFLOW_ID, $e->workflowId);
         }
 
         // A timeout MUST short-circuit before fetching downloads — mirrors the

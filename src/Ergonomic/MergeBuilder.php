@@ -154,6 +154,7 @@ final class MergeBuilder
         if (BuilderInternals::nowMs() >= $deadlineMs) {
             throw new GislTimeoutError(
                 "Merge workflow {$workflowId} reached terminal status but maxWait elapsed before downloads could be fetched.",
+                $workflowId,
             );
         }
         $downloads = $this->client->getWorkflowDownloads($workflowId);
@@ -163,6 +164,7 @@ final class MergeBuilder
         if (BuilderInternals::nowMs() >= $deadlineMs) {
             throw new GislTimeoutError(
                 "Merge workflow {$workflowId} downloads fetch completed after maxWait elapsed.",
+                $workflowId,
             );
         }
 

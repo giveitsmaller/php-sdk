@@ -516,6 +516,7 @@ final class Recipe
         if (BuilderInternals::nowMs() >= $deadlineMs) {
             throw new GislTimeoutError(
                 "Workflow {$workflowId} reached terminal status but maxWait elapsed before downloads could be fetched.",
+                $workflowId,
             );
         }
         $downloads = $this->client->getWorkflowDownloads($workflowId);
@@ -525,6 +526,7 @@ final class Recipe
         if (BuilderInternals::nowMs() >= $deadlineMs) {
             throw new GislTimeoutError(
                 "Workflow {$workflowId} downloads fetch completed after maxWait elapsed.",
+                $workflowId,
             );
         }
 

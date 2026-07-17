@@ -1974,6 +1974,7 @@ class GislClient
             if ($nowNs + $intervalNs > $deadlineNs) {
                 throw new GislTimeoutError(
                     "Workflow {$workflowId} did not complete within {$timeoutMs}ms",
+                    $workflowId,
                 );
             }
 

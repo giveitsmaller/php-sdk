@@ -266,6 +266,7 @@ final class BuilderInternals
         if (self::nowMs() >= $deadlineMs) {
             throw new GislTimeoutError(
                 "Workflow {$workflowId} did not complete before maxWait deadline.",
+                $workflowId,
             );
         }
 
@@ -293,6 +294,7 @@ final class BuilderInternals
             if (self::nowMs() >= $deadlineMs) {
                 throw new GislTimeoutError(
                     "Workflow {$workflowId} did not complete before maxWait deadline.",
+                    $workflowId,
                 );
             }
         }
@@ -330,6 +332,7 @@ final class BuilderInternals
             if (self::nowMs() >= $deadlineMs) {
                 throw new GislTimeoutError(
                     "Workflow {$workflowId} did not complete before maxWait deadline.",
+                    $workflowId,
                 );
             }
             $status = $client->getWorkflowStatus($workflowId);
@@ -340,11 +343,13 @@ final class BuilderInternals
             if (self::nowMs() >= $deadlineMs) {
                 throw new GislTimeoutError(
                     "Workflow {$workflowId} did not complete before maxWait deadline.",
+                    $workflowId,
                 );
             }
             if (self::nowMs() + $intervalMs >= $deadlineMs) {
                 throw new GislTimeoutError(
                     "Workflow {$workflowId} did not complete before maxWait deadline.",
+                    $workflowId,
                 );
             }
             // Abort before sleeping out the interval — a cancel that arrived
