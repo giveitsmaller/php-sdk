@@ -36,6 +36,20 @@ use Gisl\Sdk\Errors\GislSinkError;
  */
 final class RunResult
 {
+    /**
+     * Job id/ref for the DOWNSTREAM job carrying post-`sole_op` steps. A
+     * `sole_op` op (image_watermark / video_watermark / merge — ADR-0025) MUST
+     * be the only op in its job, so when a caller chains `compress()` /
+     * `convert()` / `thumbnail()` / `transform()` after `watermark()` /
+     * `merge()`, those steps lower into this separate job that consumes the
+     * sole_op output via `job_output`. When present it is the TERMINAL
+     * deliverable, so `run()` / the {@see \Gisl\Sdk\Ergonomic\Handle} project
+     * THIS job's output, and the status-shape detectors accept it alongside the
+     * sole_op + `src_{i}` refs. Mirrors the TS `_POST_STEP_JOB_REF` in
+     * `file-first.ts`. PIiUit28.
+     */
+    public const POST_STEP_JOB_REF = 'post';
+
     /** Single-output sugar: the lone artifact's URL, or null for 0 / >1 outputs. */
     public readonly ?string $url;
 
@@ -318,6 +332,10 @@ final class RunResult
                 $hasMerge = true;
                 continue;
             }
+            // The downstream post-`sole_op` steps job (PIiUit28) is part of a merge DAG.
+            if ($ref === self::POST_STEP_JOB_REF) {
+                continue;
+            }
             if (\preg_match('/^src_\d+$/', $ref) !== 1) {
                 return false;
             }
@@ -375,6 +393,10 @@ final class RunResult
             $ref = BuilderInternals::coerceString($job->getRef());
             if ($ref === 'watermark') {
                 $hasWatermark = true;
+                continue;
+            }
+            // The downstream post-`sole_op` steps job (PIiUit28) is part of a watermark DAG.
+            if ($ref === self::POST_STEP_JOB_REF) {
                 continue;
             }
             if (\preg_match('/^src_\d+$/', $ref) !== 1) {

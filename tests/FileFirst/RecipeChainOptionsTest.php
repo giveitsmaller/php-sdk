@@ -354,8 +354,9 @@ final class RecipeChainOptionsTest extends TestCase
     public function merged_compress_omitted_param_preserves_a_bag_supplied_optimize(): void
     {
         // Codex bug 1, MergedRecipe arm: merge().compress(null, ['optimize' => ...])
-        // must resolve the bag-supplied preset on the merge job's post-compress
-        // op (not skip it). Lowers identically to the shorthand form.
+        // must resolve the bag-supplied preset on the post-compress op (not skip
+        // it). `merge` is sole_op — the compress lowers into the downstream `post`
+        // job (PIiUit28). Lowers identically to the shorthand form.
         $expected = $this->expectedCompressWire('video', OptimizeFor::Balanced);
 
         $payload = (new MergedRecipe(
@@ -367,11 +368,14 @@ final class RecipeChainOptionsTest extends TestCase
 
         $mergeJob = $payload->jobs[2]; // 2 src jobs + the merge job
         self::assertSame('merge', $mergeJob->id);
-        self::assertCount(2, $mergeJob->operations);
-        self::assertSame('compress', $mergeJob->operations[1]->type);
-        $compressOptions = $mergeJob->operations[1]->options;
+        self::assertCount(1, $mergeJob->operations);
+
+        $postJob = $payload->jobs[3]; // the downstream post-steps job (PIiUit28)
+        self::assertSame('post', $postJob->id);
+        self::assertSame('compress', $postJob->operations[0]->type);
+        $compressOptions = $postJob->operations[0]->options;
         self::assertIsArray($compressOptions);
-        self::assertSame($expected, $compressOptions, 'the bag-supplied Balanced preset was resolved on the merge job');
+        self::assertSame($expected, $compressOptions, 'the bag-supplied Balanced preset was resolved on the post-steps job');
         self::assertNotEmpty($compressOptions, 'preset resolution ran — options are not empty/skipped');
     }
 
@@ -544,9 +548,10 @@ final class RecipeChainOptionsTest extends TestCase
     }
 
     #[Test]
-    public function merged_compress_carries_crf_onto_the_merge_job(): void
+    public function merged_compress_carries_crf_onto_the_post_job(): void
     {
         // Merged media is video, so use a video-valid knob (crf), not image quality.
+        // `merge` is sole_op — the compress lowers into the downstream `post` job.
         $expected = $this->expectedCompressWire('video', OptimizeFor::Balanced, explicit: ['crf' => 28]);
 
         $payload = (new MergedRecipe(
@@ -558,17 +563,20 @@ final class RecipeChainOptionsTest extends TestCase
 
         $mergeJob = $payload->jobs[2]; // 2 src jobs + the merge job
         self::assertSame('merge', $mergeJob->id);
-        self::assertCount(2, $mergeJob->operations);
+        self::assertCount(1, $mergeJob->operations);
         self::assertSame('merge', $mergeJob->operations[0]->type);
-        self::assertSame('compress', $mergeJob->operations[1]->type);
-        self::assertEqualsCanonicalizing($expected, $mergeJob->operations[1]->options);
-        $compressOptions = $mergeJob->operations[1]->options;
+
+        $postJob = $payload->jobs[3]; // the downstream post-steps job (PIiUit28)
+        self::assertSame('post', $postJob->id);
+        self::assertSame('compress', $postJob->operations[0]->type);
+        self::assertEqualsCanonicalizing($expected, $postJob->operations[0]->options);
+        $compressOptions = $postJob->operations[0]->options;
         self::assertIsArray($compressOptions);
         self::assertSame(28, $compressOptions['crf']);
     }
 
     #[Test]
-    public function merged_convert_carries_the_bag_onto_the_merge_job(): void
+    public function merged_convert_carries_the_bag_onto_the_post_job(): void
     {
         $payload = (new MergedRecipe(
             [FileInput::path('a.mp4'), FileInput::path('b.mp4')],
@@ -577,14 +585,16 @@ final class RecipeChainOptionsTest extends TestCase
             ->convert('webm', ['crf' => 28])
             ->toWorkflowPayload(['f0', 'f1'], null);
 
-        $mergeJob = $payload->jobs[2];
-        self::assertSame('convert', $mergeJob->operations[1]->type);
+        $postJob = $payload->jobs[3]; // the downstream post-steps job (PIiUit28)
+        self::assertSame('post', $postJob->id);
+        self::assertSame(['type' => 'job_output', 'from' => 'merge'], $postJob->source);
+        self::assertSame('convert', $postJob->operations[0]->type);
         // $format is spread LAST (authoritative); assert order-independently.
-        self::assertEqualsCanonicalizing(['output_format' => 'webm', 'crf' => 28], $mergeJob->operations[1]->options);
+        self::assertEqualsCanonicalizing(['output_format' => 'webm', 'crf' => 28], $postJob->operations[0]->options);
     }
 
     #[Test]
-    public function merged_thumbnail_carries_extra_keys_onto_the_merge_job(): void
+    public function merged_thumbnail_carries_extra_keys_onto_the_post_job(): void
     {
         $payload = (new MergedRecipe(
             [FileInput::path('a.mp4'), FileInput::path('b.mp4')],
@@ -593,9 +603,10 @@ final class RecipeChainOptionsTest extends TestCase
             ->thumbnail(['width' => 320, 'height' => 240, 'format' => 'jpeg'])
             ->toWorkflowPayload(['f0', 'f1'], null);
 
-        $mergeJob = $payload->jobs[2];
-        self::assertSame('thumbnail', $mergeJob->operations[1]->type);
-        self::assertSame(['width' => 320, 'height' => 240, 'format' => 'jpeg'], $mergeJob->operations[1]->options);
+        $postJob = $payload->jobs[3]; // the downstream post-steps job (PIiUit28)
+        self::assertSame('post', $postJob->id);
+        self::assertSame('thumbnail', $postJob->operations[0]->type);
+        self::assertSame(['width' => 320, 'height' => 240, 'format' => 'jpeg'], $postJob->operations[0]->options);
     }
 
     // --- chain media inference from prior step output (56N4chXY / N8eESzQN) ------
@@ -682,9 +693,12 @@ final class RecipeChainOptionsTest extends TestCase
             ->compress(OptimizeFor::Size)
             ->toWorkflowPayload(['f0', 'f1'], null);
 
-        $mergeJob = $payload->jobs[count($payload->jobs) - 1];
+        // merge is sole_op — the post-merge convert+compress lower into the
+        // downstream `post` job (the LAST job); the compress reads there (PIiUit28).
+        $postJob = $payload->jobs[count($payload->jobs) - 1];
+        self::assertSame('post', $postJob->id);
         $compress = null;
-        foreach ($mergeJob->operations as $op) {
+        foreach ($postJob->operations as $op) {
             if ($op->type === 'compress') {
                 $compress = $op;
                 break;

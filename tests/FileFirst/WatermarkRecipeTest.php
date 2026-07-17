@@ -61,6 +61,27 @@ final class WatermarkRecipeTest extends TestCase
         self::fail('no watermark job in payload');
     }
 
+    /**
+     * PIiUit28 — image_watermark/video_watermark are `sole_op`, so post-watermark
+     * steps lower into a DOWNSTREAM `post` job that consumes the watermark output
+     * via `job_output` (from: watermark) rather than co-bundling into the
+     * watermark job. This locates that job.
+     *
+     * @param array<string, mixed> $wire
+     * @return array<string, mixed>
+     */
+    private function postJob(array $wire): array
+    {
+        /** @var list<array<string, mixed>> $jobs */
+        $jobs = $wire['jobs'];
+        foreach ($jobs as $job) {
+            if (($job['id'] ?? null) === 'post') {
+                return $job;
+            }
+        }
+        self::fail('no post job in payload');
+    }
+
     // ── routing ───────────────────────────────────────────────────────────
 
     public function test_image_base_routes_to_image_watermark(): void
@@ -179,19 +200,31 @@ final class WatermarkRecipeTest extends TestCase
         self::assertSame([['type' => 'convert', 'options' => ['output_format' => 'png']]], $jobs[1]['operations']);
     }
 
-    public function test_appends_post_watermark_steps_after_the_watermark_op(): void
+    public function test_post_watermark_steps_lower_into_a_downstream_post_job(): void
     {
+        // image_watermark is `sole_op` (ADR-0025 / PIiUit28): the watermark job
+        // carries ONLY the watermark op; the post-step (convert) lowers into a
+        // downstream `post` job that consumes the watermark output via job_output.
         $wire = $this->recipe('photo.jpg')->watermark($this->overlay())->convert('webp')
             ->toWorkflowPayload(['b', 'o'])->toWire();
-        $types = \array_map(static fn (array $op): string => $op['type'], $this->watermarkJob($wire)['operations']);
-        self::assertSame(['image_watermark', 'convert'], $types);
+
+        $wmTypes = \array_map(static fn (array $op): string => $op['type'], $this->watermarkJob($wire)['operations']);
+        self::assertSame(['image_watermark'], $wmTypes);
+
+        $post = $this->postJob($wire);
+        self::assertSame(['type' => 'job_output', 'from' => 'watermark'], $post['source']);
+        $postTypes = \array_map(static fn (array $op): string => $op['type'], $post['operations']);
+        self::assertSame(['convert'], $postTypes);
     }
 
     public function test_post_watermark_compress_resolves_against_output_media(): void
     {
         $wire = $this->recipe('photo.jpg')->watermark($this->overlay())->compress(OptimizeFor::Size)
             ->toWorkflowPayload(['b', 'o'])->toWire();
-        $ops = $this->watermarkJob($wire)['operations'];
+        // watermark job carries ONLY the sole_op watermark op.
+        self::assertSame('image_watermark', $this->watermarkJob($wire)['operations'][0]['type']);
+        // the compress lowers into the downstream `post` job.
+        $ops = $this->postJob($wire)['operations'];
         $compress = null;
         foreach ($ops as $op) {
             if ($op['type'] === 'compress') {
@@ -209,8 +242,10 @@ final class WatermarkRecipeTest extends TestCase
         // so compress(Size) resolves the VIDEO Size cell (carries crf).
         $wire = $this->recipe('clip.mp4')->watermark($this->overlay())->compress(OptimizeFor::Size)
             ->toWorkflowPayload(['b', 'o'])->toWire();
-        $ops = $this->watermarkJob($wire)['operations'];
-        self::assertSame('video_watermark', $ops[0]['type']);
+        // watermark job carries ONLY the sole_op watermark op.
+        self::assertSame('video_watermark', $this->watermarkJob($wire)['operations'][0]['type']);
+        // the compress lowers into the downstream `post` job.
+        $ops = $this->postJob($wire)['operations'];
         $compress = null;
         foreach ($ops as $op) {
             if ($op['type'] === 'compress') {
@@ -219,6 +254,38 @@ final class WatermarkRecipeTest extends TestCase
         }
         self::assertNotNull($compress);
         self::assertArrayHasKey('crf', $compress['options'] ?? []);
+    }
+
+    public function test_all_post_watermark_steps_lower_into_the_post_job_in_order(): void
+    {
+        // Every chained post-step lowers into the downstream `post` job in chain
+        // order; the sole_op watermark job stays a single op, and the `post` job
+        // is appended last.
+        $wire = $this->recipe('photo.jpg')->watermark($this->overlay())->convert('webp')->compress(OptimizeFor::Size)
+            ->toWorkflowPayload(['b', 'o'])->toWire();
+
+        $wmTypes = \array_map(static fn (array $op): string => $op['type'], $this->watermarkJob($wire)['operations']);
+        self::assertSame(['image_watermark'], $wmTypes);
+
+        $post = $this->postJob($wire);
+        self::assertSame(['type' => 'job_output', 'from' => 'watermark'], $post['source']);
+        $postTypes = \array_map(static fn (array $op): string => $op['type'], $post['operations']);
+        self::assertSame(['convert', 'compress'], $postTypes);
+
+        /** @var list<array<string, mixed>> $jobs */
+        $jobs = $wire['jobs'];
+        $ids = \array_map(static fn (array $j): string => (string) ($j['id'] ?? ''), $jobs);
+        self::assertSame(['src_0', 'src_1', 'watermark', 'post'], $ids);
+    }
+
+    public function test_no_post_job_when_there_are_no_post_watermark_steps(): void
+    {
+        $wire = $this->recipe('photo.jpg')->watermark($this->overlay())
+            ->toWorkflowPayload(['b', 'o'])->toWire();
+        /** @var list<array<string, mixed>> $jobs */
+        $jobs = $wire['jobs'];
+        $ids = \array_map(static fn (array $j): string => (string) ($j['id'] ?? ''), $jobs);
+        self::assertSame(['src_0', 'src_1', 'watermark'], $ids);
     }
 
     public function test_wires_callback_url(): void

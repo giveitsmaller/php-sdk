@@ -30,7 +30,8 @@ use Gisl\Sdk\WorkflowCreatePayload;
  * `passthrough` source job (`src_0` base, `src_1` overlay; their own preceding
  * steps lower into those jobs), and the `watermark` job consumes them via
  * `job_output` inputs tagged `role: base` / `role: overlay`. Post-watermark
- * `compress`/`convert`/`thumbnail` chain onto the watermark output.
+ * `compress`/`convert`/`thumbnail`/`transform` steps lower into a downstream
+ * `post` job on the watermark output (`image_watermark` is `sole_op`).
  *
  * Immutable / clone-on-write. Mirrors the TS `WatermarkedRecipe` in
  * `packages/typescript/src/file-first.ts`. `textWatermark` is intentionally NOT
@@ -138,8 +139,9 @@ final class WatermarkedRecipe
     /**
      * Lower to the watermark DAG: a `src_0` passthrough/base-steps job + a `src_1`
      * passthrough/overlay-steps job + one `watermark` job whose `inputs[]` consume
-     * them via `job_output` (role base/overlay) and whose `operations[]` is
-     * `[image_watermark|video_watermark, ...post-watermark ops]`. `$fileIds` is
+     * them via `job_output` (role base/overlay). The watermark op is `sole_op`
+     * (ADR-0025), so `operations[]` is exactly `[image_watermark|video_watermark]`;
+     * any post-watermark ops lower into a downstream `post` job. `$fileIds` is
      * `[baseId, overlayId]` (upload order). Throws pre-lowering if the base media
      * is undetectable/unsupported (the planned-op gate). Mirrors the TS lowering.
      *
@@ -170,13 +172,27 @@ final class WatermarkedRecipe
             ['source' => Sources::jobOutput('src_0'), 'role' => 'base'],
             ['source' => Sources::jobOutput('src_1'), 'role' => 'overlay'],
         ];
-        $operations = [
-            WatermarkGate::lowerWatermarkOp($wireOp, $this->watermarkOptions),
-            ...$this->lowerPostSteps($wireOp),
-        ];
-        $watermarkJob = new JobDefinitionPayload(operations: $operations, id: 'watermark', inputs: $inputs);
+        // `image_watermark` / `video_watermark` are `sole_op` (ADR-0025): the op
+        // MUST be alone in its job. Post-watermark steps lower into a DOWNSTREAM
+        // job (see {@see RunResult::POST_STEP_JOB_REF}) that consumes the watermark
+        // output via `job_output`. PIiUit28.
+        $watermarkJob = new JobDefinitionPayload(
+            operations: [WatermarkGate::lowerWatermarkOp($wireOp, $this->watermarkOptions)],
+            id: 'watermark',
+            inputs: $inputs,
+        );
 
-        return new WorkflowCreatePayload(jobs: [$srcBase, $srcOverlay, $watermarkJob], callbackUrl: $callbackUrl);
+        $jobs = [$srcBase, $srcOverlay, $watermarkJob];
+        $postOps = $this->lowerPostSteps($wireOp);
+        if ($postOps !== []) {
+            $jobs[] = new JobDefinitionPayload(
+                operations: $postOps,
+                id: RunResult::POST_STEP_JOB_REF,
+                source: Sources::jobOutput('watermark'),
+            );
+        }
+
+        return new WorkflowCreatePayload(jobs: $jobs, callbackUrl: $callbackUrl);
     }
 
     /**
@@ -235,11 +251,15 @@ final class WatermarkedRecipe
             );
         }
 
-        // Project ONLY the watermark job's output — the `src_*` passthrough jobs
-        // re-expose the raw base/overlay uploads, which are plumbing.
+        // Project ONLY the terminal deliverable — the `src_*` passthrough jobs
+        // re-expose the raw base/overlay uploads (plumbing). When post-watermark
+        // steps were chained they lowered into the downstream post-steps job
+        // (PIiUit28), which is now the deliverable; otherwise the `watermark` job
+        // is.
+        $outputRef = $this->postSteps !== [] ? RunResult::POST_STEP_JOB_REF : 'watermark';
         $watermarkDownloads = \array_values(\array_filter(
             $downloads->getDownloads() ?? [],
-            static fn ($d): bool => BuilderInternals::coerceString($d->getRef()) === 'watermark',
+            static fn ($d): bool => BuilderInternals::coerceString($d->getRef()) === $outputRef,
         ));
 
         return RunResult::fromTerminalDownloads(

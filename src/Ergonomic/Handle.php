@@ -194,9 +194,12 @@ final class Handle
         // so a submitted/reattached merge handle never surfaces the input
         // artifacts alongside the combined output (codex c1).
         if (RunResult::isMergeStatus($finalStatus)) {
+            // Post-merge steps (PIiUit28) lower into the downstream post-steps
+            // job, which is then the deliverable; otherwise the `merge` job is.
+            $mergeOutputRef = self::terminalOutputRef($jobDownloads, 'merge');
             $mergeDownloads = \array_values(\array_filter(
                 $jobDownloads,
-                static fn ($d): bool => BuilderInternals::coerceString($d->getRef()) === 'merge',
+                static fn ($d): bool => BuilderInternals::coerceString($d->getRef()) === $mergeOutputRef,
             ));
 
             return RunResult::fromTerminalDownloads(
@@ -230,9 +233,12 @@ final class Handle
         // output, filtering the `src_*` (base/overlay) passthrough plumbing.
         // Matches WatermarkedRecipe::run()'s `ref === 'watermark'` filter.
         if (RunResult::isWatermarkStatus($finalStatus)) {
+            // Post-watermark steps (PIiUit28) lower into the downstream post-steps
+            // job, which is then the deliverable; otherwise the `watermark` job is.
+            $watermarkOutputRef = self::terminalOutputRef($jobDownloads, 'watermark');
             $watermarkDownloads = \array_values(\array_filter(
                 $jobDownloads,
-                static fn ($d): bool => BuilderInternals::coerceString($d->getRef()) === 'watermark',
+                static fn ($d): bool => BuilderInternals::coerceString($d->getRef()) === $watermarkOutputRef,
             ));
 
             return RunResult::fromTerminalDownloads(
@@ -251,6 +257,28 @@ final class Handle
             key: $this->key,
             downloader: $downloader,
         );
+    }
+
+    /**
+     * The terminal deliverable's job ref for a `sole_op` DAG: the downstream
+     * post-steps job ({@see RunResult::POST_STEP_JOB_REF}, present when the
+     * caller chained ops after `watermark()` / `merge()`) when it exists, else
+     * the `sole_op` job itself. Lets a submitted/reattached {@see Handle}
+     * project the final output — not the intermediate `sole_op` artifact —
+     * without builder state. Mirrors the TS `terminalOutputRef` in `handle.ts`.
+     * PIiUit28.
+     *
+     * @param list<JobDownload> $jobDownloads
+     */
+    private static function terminalOutputRef(array $jobDownloads, string $soleOpRef): string
+    {
+        foreach ($jobDownloads as $download) {
+            if (BuilderInternals::coerceString($download->getRef()) === RunResult::POST_STEP_JOB_REF) {
+                return RunResult::POST_STEP_JOB_REF;
+            }
+        }
+
+        return $soleOpRef;
     }
 
     /**

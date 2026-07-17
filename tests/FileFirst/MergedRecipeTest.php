@@ -14,6 +14,8 @@ use Gisl\Sdk\FileFirst\RecipeStep;
 use Gisl\Sdk\Generated\SdkSpec\Enums\OptimizeFor;
 use Gisl\Sdk\GislClientConfig;
 use Gisl\Sdk\GislErgonomicClient;
+use Gisl\Sdk\JobDefinitionPayload;
+use Gisl\Sdk\OperationDef;
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -78,10 +80,12 @@ final class MergedRecipeTest extends TestCase
         self::assertSame(0.5, $opts['crossfade_duration']);
     }
 
-    public function test_merge_then_compress_appends_compress_after_merge_in_the_same_job(): void
+    public function test_merge_then_compress_lowers_compress_into_a_downstream_post_job(): void
     {
         // The flagship chain (example 14): merge N videos, then compress the
-        // single merged output — compress lands AFTER merge in the merge job.
+        // single merged output. `merge` is `sole_op` (ADR-0025 / PIiUit28): the
+        // merge job carries ONLY the merge op and the compress lowers into a
+        // downstream `post` job that consumes the merge output via job_output.
         $merged = (new MergedRecipe(
             [FileInput::path('a.mp4'), FileInput::path('b.mp4')],
             new MergeOptions(mediaKind: 'video'),
@@ -91,9 +95,51 @@ final class MergedRecipeTest extends TestCase
 
         $mergeJob = $payload->jobs[2]; // 2 src jobs + merge
         self::assertSame('merge', $mergeJob->id);
-        self::assertCount(2, $mergeJob->operations);
+        self::assertCount(1, $mergeJob->operations);
         self::assertSame('merge', $mergeJob->operations[0]->type);
-        self::assertSame('compress', $mergeJob->operations[1]->type);
+
+        $postJob = $payload->jobs[3];
+        self::assertSame('post', $postJob->id);
+        self::assertSame(['type' => 'job_output', 'from' => 'merge'], $postJob->source);
+        self::assertCount(1, $postJob->operations);
+        self::assertSame('compress', $postJob->operations[0]->type);
+    }
+
+    public function test_all_post_combine_steps_lower_into_the_post_job_in_order(): void
+    {
+        // Every chained post-combine step lowers into the downstream `post` job
+        // in chain order; the sole_op merge job stays a single op, and the `post`
+        // job is appended last.
+        $merged = (new MergedRecipe(
+            [FileInput::path('a.mp4'), FileInput::path('b.mp4')],
+            new MergeOptions(mediaKind: 'video'),
+        ))->compress(OptimizeFor::Size)->convert('webm');
+
+        $payload = $merged->toWorkflowPayload(['f0', 'f1'], null);
+
+        $mergeJob = $payload->jobs[2];
+        self::assertSame('merge', $mergeJob->id);
+        self::assertCount(1, $mergeJob->operations);
+
+        $postJob = $payload->jobs[3];
+        self::assertSame('post', $postJob->id);
+        self::assertSame(['type' => 'job_output', 'from' => 'merge'], $postJob->source);
+        $postTypes = \array_map(static fn (OperationDef $op): string => $op->type, $postJob->operations);
+        self::assertSame(['compress', 'convert'], $postTypes);
+
+        $ids = \array_map(static fn (JobDefinitionPayload $j): ?string => $j->id, $payload->jobs);
+        self::assertSame(['src_0', 'src_1', 'merge', 'post'], $ids);
+    }
+
+    public function test_no_post_job_for_a_bare_merge(): void
+    {
+        $merged = new MergedRecipe(
+            [FileInput::path('a.mp4'), FileInput::path('b.mp4')],
+            new MergeOptions(mediaKind: 'video'),
+        );
+        $payload = $merged->toWorkflowPayload(['f0', 'f1'], null);
+        $ids = \array_map(static fn (JobDefinitionPayload $j): ?string => $j->id, $payload->jobs);
+        self::assertSame(['src_0', 'src_1', 'merge'], $ids);
     }
 
     public function test_callback_url_is_wired_into_the_payload(): void

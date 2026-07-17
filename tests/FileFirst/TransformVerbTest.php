@@ -163,7 +163,7 @@ final class TransformVerbTest extends TestCase
     // --- MergedRecipe (post-merge) ------------------------------------------
 
     #[Test]
-    public function merged_recipe_appends_a_transform_op_to_the_merge_job(): void
+    public function merged_recipe_lowers_transform_into_a_downstream_post_job(): void
     {
         $wire = (new MergedRecipe(
             [FileInput::path('a.mp4'), FileInput::path('b.mp4')],
@@ -173,8 +173,10 @@ final class TransformVerbTest extends TestCase
             ->toWorkflowPayload(['f0', 'f1'], null)
             ->toWire();
 
+        // `merge` is sole_op: alone in the `merge` job; the transform post-step
+        // lowers into a downstream `post` job (now the last job).
         $ops = $this->lastJobOps($wire);
-        self::assertSame(['merge', 'transform'], array_column($ops, 'type'));
+        self::assertSame(['transform'], array_column($ops, 'type'));
         self::assertSame(
             ['type' => 'transform', 'options' => ['rotate' => 180]],
             $this->transformOp($ops),
@@ -184,7 +186,7 @@ final class TransformVerbTest extends TestCase
     // --- WatermarkedRecipe (post-watermark) ---------------------------------
 
     #[Test]
-    public function watermarked_recipe_appends_a_transform_op_after_the_watermark_op(): void
+    public function watermarked_recipe_lowers_transform_into_a_downstream_post_job(): void
     {
         $wire = (new Recipe(FileInput::path('photo.jpg')))
             ->watermark(new Recipe(FileInput::path('logo.png')))
@@ -192,10 +194,10 @@ final class TransformVerbTest extends TestCase
             ->toWorkflowPayload(['base', 'ovl'])
             ->toWire();
 
-        // The watermark job is the last job ([src_0, src_1, watermark]); post-verbs
-        // append to it, so the wire order is image_watermark → transform.
+        // `image_watermark` is sole_op: alone in the `watermark` job; the
+        // transform post-step lowers into a downstream `post` job (last job).
         $ops = $this->lastJobOps($wire);
-        self::assertSame(['image_watermark', 'transform'], array_column($ops, 'type'));
+        self::assertSame(['transform'], array_column($ops, 'type'));
         self::assertSame(
             ['type' => 'transform', 'options' => ['rotate' => 90]],
             $this->transformOp($ops),

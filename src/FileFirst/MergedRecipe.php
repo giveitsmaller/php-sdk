@@ -33,9 +33,10 @@ use Gisl\Sdk\WorkflowCreatePayload;
  *
  * **Lowering (one workflow):** each input is uploaded once and wrapped in its
  * own single-input `passthrough` source job (`src_N`); the `merge` job consumes
- * those via `job_output` inputs (array order = play order) and carries the merge
- * op FIRST in its `operations[]`, followed by any post-combine ops (compress /
- * convert / thumbnail) so they run on the merged output in the same job. The
+ * those via `job_output` inputs (array order = play order). `merge` is
+ * `sole_op` (ADR-0025), so it is the ONLY op in its job; any post-combine ops
+ * (compress / convert / thumbnail / transform) lower into a downstream `post`
+ * job that consumes the merged output via `job_output`. The
  * merge-level wire options reuse {@see MergeBuilder::wireMergeOptions()} so a
  * fluent merge lowers identically to the operation-first `client->merge()`.
  *
@@ -214,11 +215,14 @@ final class MergedRecipe
             );
         }
 
-        // Project ONLY the merge job's output — the `src_*` passthrough jobs
-        // re-expose the raw uploads, which are plumbing, not the deliverable.
+        // Project ONLY the terminal deliverable — the `src_*` passthrough jobs
+        // re-expose the raw uploads (plumbing). Post-merge steps lower into the
+        // downstream post-steps job (PIiUit28), which is then the deliverable;
+        // otherwise the `merge` job is.
+        $outputRef = $this->postSteps !== [] ? RunResult::POST_STEP_JOB_REF : 'merge';
         $mergeDownloads = \array_values(\array_filter(
             $downloads->getDownloads() ?? [],
-            static fn ($d): bool => BuilderInternals::coerceString($d->getRef()) === 'merge',
+            static fn ($d): bool => BuilderInternals::coerceString($d->getRef()) === $outputRef,
         ));
 
         return RunResult::fromTerminalDownloads(
@@ -348,7 +352,8 @@ final class MergedRecipe
 
     /**
      * Lower to the merge DAG: one `passthrough` source job per input + one
-     * `merge` job whose `operations[]` is `[merge, ...post-combine ops]`.
+     * `merge` job whose `operations[]` is exactly `[merge]` (sole_op); any
+     * post-combine ops lower into a downstream `post` job.
      *
      * @param list<string> $fileIds One uploaded file id per input, in order.
      */
@@ -368,18 +373,27 @@ final class MergedRecipe
             $inputs[] = ['source' => Sources::jobOutput($srcId)];
         }
 
-        $operations = [
-            new OperationDef(type: 'merge', options: MergeBuilder::wireMergeOptions($this->mergeOptions, $mediaKind)),
-            ...$this->lowerPostSteps($mediaKind),
-        ];
-
+        // `merge` is `sole_op` (ADR-0025): the op MUST be alone in its job.
+        // Post-merge steps lower into a DOWNSTREAM job (see
+        // {@see RunResult::POST_STEP_JOB_REF}) that consumes the merge output via
+        // `job_output`. PIiUit28.
         $mergeJob = new JobDefinitionPayload(
-            operations: $operations,
+            operations: [new OperationDef(type: 'merge', options: MergeBuilder::wireMergeOptions($this->mergeOptions, $mediaKind))],
             id: 'merge',
             inputs: $inputs,
         );
 
-        return new WorkflowCreatePayload(jobs: [...$sourceJobs, $mergeJob], callbackUrl: $callbackUrl);
+        $jobs = [...$sourceJobs, $mergeJob];
+        $postOps = $this->lowerPostSteps($mediaKind);
+        if ($postOps !== []) {
+            $jobs[] = new JobDefinitionPayload(
+                operations: $postOps,
+                id: RunResult::POST_STEP_JOB_REF,
+                source: Sources::jobOutput('merge'),
+            );
+        }
+
+        return new WorkflowCreatePayload(jobs: $jobs, callbackUrl: $callbackUrl);
     }
 
     /**
