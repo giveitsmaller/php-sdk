@@ -303,9 +303,12 @@ final class WatermarkRecipeTest extends TestCase
         $this->recipe('song.mp3')->watermark($this->overlay());
     }
 
-    public function test_throws_for_document_base(): void
+    public function test_throws_for_document_base_without_misdirecting_to_text_watermark(): void
     {
+        // ZRkctunz: the message must NOT tell the caller to use textWatermark()
+        // (image-only) — it says textWatermark is not an alternative here.
         $this->expectException(GislConfigError::class);
+        $this->expectExceptionMessageMatches('/not an alternative for document/');
         $this->recipe('report.pdf')->watermark($this->overlay());
     }
 
