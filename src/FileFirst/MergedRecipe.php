@@ -173,7 +173,7 @@ final class MergedRecipe
         ?bool $useSSE = null,
     ): RunResult {
         $client = $this->requireClient();
-        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? 300_000);
+        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? 600_000);
         $onProgressClosure = BuilderInternals::callableOrNull($onProgress, 'MergedRecipe::run() $onProgress');
 
         $created = $this->uploadAllAndCreate(

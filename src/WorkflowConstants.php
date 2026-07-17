@@ -24,7 +24,7 @@ use Gisl\Generated\OpenApi\Model\WorkflowStatus;
 final class WorkflowConstants
 {
     public const DEFAULT_POLL_INTERVAL_MS = 2_000;
-    public const DEFAULT_POLL_TIMEOUT_MS = 300_000; // 5 min
+    public const DEFAULT_POLL_TIMEOUT_MS = 600_000; // 10 min
 
     /**
      * Statuses that {@see GislClient::waitForWorkflow()} returns immediately

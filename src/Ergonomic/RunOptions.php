@@ -10,7 +10,7 @@ use Gisl\Sdk\Cancellation;
  * Call-time options for {@see OperationBuilder::run()}.
  *
  * `maxWait` is MANDATORY (no default). The underlying poll path in
- * {@see \Gisl\Sdk\GislClient::waitForWorkflow()} has a 300_000 ms
+ * {@see \Gisl\Sdk\GislClient::waitForWorkflow()} has a 600_000 ms
  * default that would otherwise leak silently — the ergonomic layer
  * makes the deadline a conscious caller choice. Accepts:
  *  - `int` (milliseconds)

@@ -115,7 +115,7 @@ final class BatchRecipe
         // never leaves earlier entries' inputs uploaded (codex FF7 #4/#5).
         $this->validateAndPreflight();
 
-        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? 300_000);
+        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? 600_000);
         $onProgressClosure = BuilderInternals::callableOrNull($onProgress, 'BatchRecipe::run() $onProgress');
 
         // 1+2. Upload EVERY entry's input + create ONE multi-job workflow.

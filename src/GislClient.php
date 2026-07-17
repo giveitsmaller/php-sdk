@@ -1923,7 +1923,7 @@ class GislClient
      * paused_insufficient_credits — see {@see WorkflowConstants::TERMINAL_STATUSES}).
      *
      * Pass a {@see WaitOptions} to override the default 2 s poll interval
-     * and 5 min overall deadline, and to register an `onPoll` callback that
+     * and 10 min overall deadline, and to register an `onPoll` callback that
      * fires once per polling cycle (including the very first status fetch)
      * with the current status string.
      *

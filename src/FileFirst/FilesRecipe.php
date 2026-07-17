@@ -264,7 +264,7 @@ final class FilesRecipe
             );
         }
 
-        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? 300_000);
+        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? 600_000);
         $onProgressClosure = BuilderInternals::callableOrNull($onProgress, 'FilesRecipe::run() $onProgress');
 
         // 1+2. Upload EVERY input + create ONE multi-job workflow. Shared with

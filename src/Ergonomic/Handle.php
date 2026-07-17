@@ -86,7 +86,7 @@ final class Handle
      * @param string|int|null $maxWait Wall-clock deadline for the wait +
      *                                 downloads. String suffix
      *                                 (`'2h'`/`'30m'`/`'120s'`) or
-     *                                 milliseconds; defaults to 300s.
+     *                                 milliseconds; defaults to 600s.
      * @param (callable(ProgressEvent): void)|null $onProgress
      * @param Cancellation|null $cancellation Cooperative cancellation token —
      *        cancel it to abort the wait early with a
@@ -102,7 +102,7 @@ final class Handle
         ?Cancellation $cancellation = null,
     ): RunResult {
         $client = $this->requireClient();
-        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? 300_000);
+        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? 600_000);
         $onProgressClosure = BuilderInternals::callableOrNull($onProgress, 'Handle::wait() $onProgress');
 
         $finalStatus = BuilderInternals::awaitTerminal(

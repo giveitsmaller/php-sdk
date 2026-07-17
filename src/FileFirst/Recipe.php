@@ -456,7 +456,7 @@ final class Recipe
      * @param string|int|null $maxWait Wall-clock deadline for the whole run
      *                                 (upload + create + wait + downloads).
      *                                 String suffix (`'2h'`/`'30m'`/`'120s'`)
-     *                                 or milliseconds; defaults to 300s.
+     *                                 or milliseconds; defaults to 600s.
      * @param (callable(\Gisl\Sdk\Ergonomic\ProgressEvent): void)|null $onProgress
      * @param int|null $pollIntervalMs Override the poll-fallback interval (ms).
      * @param Cancellation|null $cancellation Cooperative cancellation token —
@@ -483,7 +483,7 @@ final class Recipe
             );
         }
 
-        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? 300_000);
+        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? 600_000);
         $onProgressClosure = BuilderInternals::callableOrNull($onProgress, 'Recipe::run() $onProgress');
 
         // 1+2. Upload (when required) + create the workflow. Shared with
@@ -573,7 +573,7 @@ final class Recipe
         // submit() is fire-and-forget — NO whole-run deadline. The upload may be
         // large (a multi-GB master, example 12) and is bounded by the HTTP
         // client's own request timeout, not an arbitrary submit-side cap. Pass
-        // null so the post-upload deadline check is skipped: a 300s cap here
+        // null so the post-upload deadline check is skipped: a 600s cap here
         // would throw on a slow-but-successful big upload before createWorkflow
         // (codex).
         $created = $this->uploadAndCreate($webhook, null, null, null, $probeBeforeCreate, $probeTimeoutMs);
