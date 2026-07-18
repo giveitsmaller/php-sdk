@@ -7,6 +7,7 @@ namespace Gisl\Sdk\Tests\FileFirst;
 use Gisl\Sdk\Errors\GislConfigError;
 use Gisl\Sdk\FileFirst\FileInput;
 use Gisl\Sdk\FileFirst\Recipe;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -304,10 +305,73 @@ final class RecipeOutputTest extends TestCase
     }
 
     #[Test]
-    public function quality_preset_honored_on_same_format_jpeg(): void
+    public function quality_preset_infers_encoding_mode_auto_quality(): void
     {
+        // 86gAu5Tr: quality_preset depends_on encoding_mode=auto_quality; the SDK
+        // infers it so the preset forms a valid request instead of a 422.
         $op = $this->soleOp($this->recipe('a.jpg')->output('jpeg', ['quality_preset' => 'good']));
+        self::assertSame(
+            ['output_format' => 'original', 'quality_preset' => 'good', 'encoding_mode' => 'auto_quality'],
+            $op['options'],
+        );
+    }
+
+    #[Test]
+    public function quality_preset_with_explicit_non_auto_quality_mode_is_rejected(): void
+    {
+        // The contract depends_on requires encoding_mode=auto_quality with quality_preset.
+        try {
+            $this->operations($this->recipe('a.jpg')->output('jpeg', ['quality_preset' => 'good', 'encoding_mode' => 'quality']));
+            self::fail('quality_preset + non-auto_quality encoding_mode must throw');
+        } catch (GislConfigError $err) {
+            self::assertSame('invalid_option_combination', $err->reason);
+        }
+    }
+
+    #[Test]
+    public function quality_preset_with_explicit_auto_quality_mode_is_allowed(): void
+    {
+        $op = $this->soleOp($this->recipe('a.jpg')->output('jpeg', ['quality_preset' => 'good', 'encoding_mode' => 'auto_quality']));
         self::assertSame('good', $op['options']['quality_preset'] ?? null);
+        self::assertSame('auto_quality', $op['options']['encoding_mode'] ?? null);
+    }
+
+    /**
+     * auto_quality forbids the mode-specific siblings whose depends_on names a
+     * different encoding_mode; the SDK rejects them client-side rather than
+     * shipping a payload the worker refuses as invalid_options (86gAu5Tr).
+     *
+     * @return iterable<string, array{string, mixed}>
+     */
+    public static function autoQualityIncompatibleSiblings(): iterable
+    {
+        yield 'quality' => ['quality', 80];
+        yield 'lossless' => ['lossless', true];
+        yield 'target_size_bytes' => ['target_size_bytes', 50_000];
+    }
+
+    #[Test]
+    #[DataProvider('autoQualityIncompatibleSiblings')]
+    public function quality_preset_plus_mode_specific_sibling_is_rejected(string $field, mixed $value): void
+    {
+        try {
+            $this->operations($this->recipe('a.jpg')->output('jpeg', ['quality_preset' => 'good', $field => $value]));
+            self::fail("quality_preset + {$field} must throw (auto_quality forbids it)");
+        } catch (GislConfigError $err) {
+            self::assertSame('invalid_option_combination', $err->reason);
+            self::assertSame(['encoding_mode', $field], $err->conflictingFields);
+        }
+    }
+
+    #[Test]
+    public function explicit_auto_quality_plus_quality_is_rejected_without_quality_preset(): void
+    {
+        try {
+            $this->operations($this->recipe('a.jpg')->output('jpeg', ['encoding_mode' => 'auto_quality', 'quality' => 80]));
+            self::fail('encoding_mode auto_quality + quality must throw');
+        } catch (GislConfigError $err) {
+            self::assertSame('invalid_option_combination', $err->reason);
+        }
     }
 
     #[Test]

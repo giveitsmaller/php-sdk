@@ -52,6 +52,18 @@ use Gisl\Sdk\WorkflowCreatePayload;
 final class Recipe
 {
     /**
+     * Compress-output option keys whose contract `depends_on` names a
+     * NON-auto_quality `encoding_mode` (`quality` + `lossless` => `quality`,
+     * `target_size_bytes` => `target_size`). They cannot co-exist with
+     * `encoding_mode: auto_quality`, so lowering rejects them client-side
+     * rather than shipping a payload the worker refuses as `invalid_options`
+     * (86gAu5Tr). The full cross-mode matrix is ehHU08Hu.
+     *
+     * @var list<string>
+     */
+    private const AUTO_QUALITY_INCOMPATIBLE_KEYS = ['quality', 'lossless', 'target_size_bytes'];
+
+    /**
      * @param list<RecipeStep> $steps Ordered operations applied so far.
      */
     public function __construct(
@@ -214,7 +226,7 @@ final class Recipe
      * @param array{
      *   quality?: int,
      *   quality_preset?: 'best'|'good'|'fair'|'low',
-     *   encoding_mode?: 'quality'|'target_size',
+     *   encoding_mode?: 'quality'|'target_size'|'auto_quality',
      *   target_size_bytes?: int,
      *   chroma_subsampling?: '420'|'422'|'444',
      *   width?: int,
@@ -938,6 +950,48 @@ final class Recipe
             }
             $wireOptions[$key] = $value;
         }
+        // quality_preset's contract `depends_on: { encoding_mode: auto_quality }`
+        // (86gAu5Tr). Infer the encoding_mode when the caller set none so the
+        // preset forms a VALID request instead of a server 422; REJECT an
+        // explicit non-auto_quality mode, which the dependency forbids.
+        // (quality_preset is honored only on routes that also honor
+        // encoding_mode, so the inferred key is never unhonored.)
+        if (isset($wireOptions['quality_preset'])) {
+            if (!isset($wireOptions['encoding_mode'])) {
+                $wireOptions['encoding_mode'] = 'auto_quality';
+            } elseif ($wireOptions['encoding_mode'] !== 'auto_quality') {
+                $shown = ImageOutputRoutes::stringifyForMessage($wireOptions['encoding_mode']);
+                throw new GislConfigError(
+                    "output(): 'quality_preset' requires encoding_mode 'auto_quality' (its contract "
+                    . "dependency), but got '{$shown}'. Omit encoding_mode to let quality_preset drive it, "
+                    . 'or drop quality_preset.',
+                    reason: 'invalid_option_combination',
+                    conflictingFields: ['quality_preset', 'encoding_mode'],
+                );
+            }
+        }
+        // auto_quality drives the quality from quality_preset alone; the
+        // mode-specific siblings each name a DIFFERENT encoding_mode in their
+        // contract depends_on (quality + lossless => 'quality', target_size_bytes
+        // => 'target_size'), so the worker rejects them alongside auto_quality as
+        // invalid_options. Reject them client-side so the facade never advertises
+        // a combination the server refuses (86gAu5Tr). The full cross-mode
+        // depends_on matrix is ehHU08Hu.
+        if (($wireOptions['encoding_mode'] ?? null) === 'auto_quality') {
+            foreach (self::AUTO_QUALITY_INCOMPATIBLE_KEYS as $field) {
+                if (isset($wireOptions[$field])) {
+                    throw new GislConfigError(
+                        "output(): '{$field}' cannot be combined with encoding_mode 'auto_quality' — "
+                        . "'{$field}' requires a different encoding_mode (its contract dependency), and "
+                        . 'auto_quality drives the quality from quality_preset alone. '
+                        . "Drop '{$field}', or drop quality_preset/auto_quality.",
+                        reason: 'invalid_option_combination',
+                        conflictingFields: ['encoding_mode', $field],
+                    );
+                }
+            }
+        }
+
         return new OperationDef($resolved['sourceOp'], $wireOptions);
     }
 
