@@ -494,6 +494,25 @@ final class RecipeRunTest extends TestCase
     }
 
     #[Test]
+    public function route_invalid_output_option_fails_before_upload(): void
+    {
+        // 0azjb6Rg parity: progressive is a same-format jpeg knob; on a jpg→webp
+        // format change it is not honored. Route lowering rejects it, and the
+        // preflight runs that lowering BEFORE the upload — so no bytes are spent
+        // (empty stub queue: any HTTP request means the upload ran).
+        $http = $this->stubClient([]);
+        $client = $this->makeClient($http);
+        try {
+            $this->recipe($client, FileInput::path($this->tempImage()))
+                ->output('webp', ['progressive' => true])
+                ->run();
+            self::fail('expected GislConfigError option_not_on_route before upload');
+        } catch (GislConfigError $e) {
+            self::assertSame('option_not_on_route', $e->getReason());
+        }
+    }
+
+    #[Test]
     public function resource_input_arm_rejects_non_seekable_stream(): void
     {
         // A non-seekable stream (a pipe) is rejected with an actionable error
