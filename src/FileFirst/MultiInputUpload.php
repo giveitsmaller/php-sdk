@@ -21,17 +21,24 @@ use Gisl\Sdk\WorkflowCreatePayload;
  * {@see WatermarkedRecipe}). The PHP analogue of the TS `_uploadInputsAndCreate`
  * free function in `packages/typescript/src/file-first.ts` (xxy5Rlsy).
  *
- * Scope is deliberately the TAIL only — the upload loop (verbatim pre-uploaded
+ * Scope is the upload-then-create TAIL — the upload loop (verbatim pre-uploaded
  * id; path or seekable resource stream otherwise, with the byte-counter progress
  * closure + resource filename/contentType hints), the post-upload deadline/cancel
- * checks, the best-effort sequential probe-before-create, and `createWorkflow`.
+ * checks, the best-effort sequential probe-before-create, and `createWorkflow` —
+ * PLUS a shared composed-payload preflight HEAD (see below).
  *
- * The PREFLIGHT stays with each recipe and is NOT shared: it differs by recipe
- * (FilesRecipe additionally lowers each input's op chain for per-input
- * `media_unknown` validation, which the combine recipes do not), and it MUST run
- * before this is called so a bad input fails before any upload fires. Likewise
- * `validatePreUpload()` and the `no_client` guard stay caller-side. The
- * recipe-specific cancel-stage strings and timeout-message nouns are passed in
+ * Two preflight layers, by design:
+ *  1. Recipe-specific INPUT validation stays caller-side and runs before this: it
+ *     differs by recipe (FilesRecipe additionally lowers each input's op chain for
+ *     per-input `media_unknown` validation, which the combine recipes do not),
+ *     plus `validatePreUpload()` and the `no_client` guard.
+ *  2. This helper then OPENS with a shared composed-payload preflight — it lowers
+ *     `$toPayload` with placeholder ids so a COMPOSITION-level lowering error (a
+ *     fan-out `nested_sole_op`, a route-invalid option in a watermark base/overlay
+ *     or a merge/archive member) fails before ANY upload, closing the gap the
+ *     per-recipe input preflight leaves (T3ltXsou).
+ *
+ * The recipe-specific cancel-stage strings and timeout-message nouns are passed in
  * so every thrown message is byte-identical to the per-recipe originals.
  *
  * Lives in the FileFirst namespace (not {@see BuilderInternals}) because it
@@ -60,6 +67,16 @@ final class MultiInputUpload
         string $uploadsLabel,
         string $workflowLabel,
     ): WorkflowCreateResponse {
+        // Preflight: lower the composed chains with placeholder ids so a
+        // route-invalid option (or any lowering-time gate — overlays, sole_op
+        // split, route/enum) in ANY input's chain — a watermark base/overlay, a
+        // merge/archive member — throws BEFORE we spend a single upload byte. The
+        // multi-input analog of the single-input Recipe preflight (0azjb6Rg);
+        // mirrors TS. The placeholder ids never reach the wire — the payload is
+        // discarded (T3ltXsou). toWorkflowPayload is pure, so re-lowering at
+        // create is cheap.
+        $toPayload(array_map(static fn (int $i): string => "preflight_{$i}", array_keys($inputs)), null);
+
         // Upload EVERY input: verbatim for a pre-uploaded id; a path or a
         // seekable stream resource otherwise, via the byte-counter progress
         // closure. A pre-uploaded id carries no local mime/size, so it is never

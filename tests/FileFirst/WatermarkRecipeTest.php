@@ -613,6 +613,30 @@ final class WatermarkRecipeTest extends TestCase
         }
     }
 
+    public function test_run_preflights_the_chain_before_any_upload(): void
+    {
+        // The shared MultiInputUpload helper lowers with placeholder ids before
+        // uploading, so a lowering-time gate (here overlays[]) throws pre-upload —
+        // ZERO HTTP requests are made. Mirrors the TS file-first preflight (T3ltXsou).
+        $captured = [];
+        $http = $this->stubClient([], $captured);
+        $client = $this->makeClient($http);
+        $base = $this->tempFile('jpg');
+        $overlay = $this->tempFile('png');
+        try {
+            $client->file($base)
+                ->watermark(new Recipe(FileInput::path($overlay)), ['overlays' => [['anchor' => 'center']]])
+                ->run();
+            self::fail('overlays[] must throw at the pre-upload preflight');
+        } catch (GislConfigError $err) {
+            self::assertSame('overlays_unsupported', $err->reason);
+        } finally {
+            @\unlink($base);
+            @\unlink($overlay);
+        }
+        self::assertCount(0, $captured);
+    }
+
     // ── run() stub plumbing (mirrors RecipeRunTest / FilesRecipeTest) ───────
 
     private function makeClient(ClientInterface $http): GislErgonomicClient
