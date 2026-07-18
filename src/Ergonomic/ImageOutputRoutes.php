@@ -302,6 +302,105 @@ final class ImageOutputRoutes
     }
 
     /**
+     * Contract `depends_on` per compress-image output option (ehHU08Hu), mirroring
+     * `availability.json` `operations.compress.mime_groups.<group>.options.<opt>.depends_on`.
+     * Each entry is scalar-equality `['requiresKey' => k, 'requiresValue' => v]`
+     * (contract `{ <key>: <value> }`) or set/logic:or `['requiresAnyOf' => [k1, k2]]`
+     * (contract `{ k1: set, k2: set, logic: or }`). The rule is option-consistent
+     * across every image group, so this is a FLAT table (pinned to availability.json
+     * by `ImageOutputRouteConformanceTest`). Mirrors TS `OUTPUT_OPTION_DEPENDS_ON`.
+     *
+     * @var array<string, array{requiresKey: string, requiresValue: string}|array{requiresAnyOf: list<string>}>
+     */
+    public const OUTPUT_OPTION_DEPENDS_ON = [
+        'quality' => ['requiresKey' => 'encoding_mode', 'requiresValue' => 'quality'],
+        'lossless' => ['requiresKey' => 'encoding_mode', 'requiresValue' => 'quality'],
+        'quality_preset' => ['requiresKey' => 'encoding_mode', 'requiresValue' => 'auto_quality'],
+        'target_size_bytes' => ['requiresKey' => 'encoding_mode', 'requiresValue' => 'target_size'],
+        'fit' => ['requiresAnyOf' => ['width', 'height']],
+    ];
+
+    /**
+     * Default of each depended-on key — an ABSENT key resolves to this before the
+     * dependency check (the server applies the same default). `encoding_mode`
+     * defaults to `quality`. Mirrors TS `DEPENDS_ON_KEY_DEFAULTS`.
+     *
+     * @var array<string, string>
+     */
+    public const DEPENDS_ON_KEY_DEFAULTS = ['encoding_mode' => 'quality'];
+
+
+    /**
+     * The first contract `depends_on` an already-lowered compress-image wire-option
+     * set violates for the resolved `$route`, or null when every dependency is
+     * satisfied (ehHU08Hu). Only options PRESENT in `$wireOptions` are checked; a
+     * scalar dependency reads the depended-on key's effective value
+     * (self::DEPENDS_ON_KEY_DEFAULTS when absent). A scalar dependency on a
+     * self::SAME_FORMAT_ONLY_DEPENDS_ON_KEYS key is skipped on a `format_change`;
+     * universal deps (e.g. `fit → width|height`) run on BOTH routes. Mirrors the
+     * TS `dependsOnViolation`.
+     *
+     * @param array<string, mixed>          $wireOptions
+     * @param 'same_format'|'format_change' $route
+     *
+     * @return array{message: string, conflictingFields: list<string>}|null
+     */
+    public static function dependsOnViolation(array $wireOptions, string $route): ?array
+    {
+        foreach (self::OUTPUT_OPTION_DEPENDS_ON as $option => $rule) {
+            // array_key_exists (not isset): match the TS `wireOptions[opt] !==
+            // undefined` presence test — a present key counts as set regardless of
+            // value (parity; isset would skip a present null).
+            if (!\array_key_exists($option, $wireOptions)) {
+                continue;
+            }
+            if (isset($rule['requiresAnyOf'])) {
+                $anyPresent = false;
+                foreach ($rule['requiresAnyOf'] as $key) {
+                    if (\array_key_exists($key, $wireOptions)) {
+                        $anyPresent = true;
+                        break;
+                    }
+                }
+                if (!$anyPresent) {
+                    $keys = \implode(', ', $rule['requiresAnyOf']);
+                    $keysOr = \implode(' or ', $rule['requiresAnyOf']);
+                    return [
+                        'message' => "output(): '{$option}' requires at least one of {$keys} to be set "
+                            . "(its contract dependency). Set {$keysOr}, or drop '{$option}'.",
+                        'conflictingFields' => \array_merge([$option], $rule['requiresAnyOf']),
+                    ];
+                }
+                continue;
+            }
+            $key = $rule['requiresKey'];
+            $required = $rule['requiresValue'];
+            // Scalar deps in this (compress-image) table are all on `encoding_mode`,
+            // a same_format optimiser key — validate them on same_format ONLY. A
+            // format_change routes via `convert`, which has no encoding_mode and its
+            // own output_format-based deps (a follow-up). The universal requiresAnyOf
+            // dep (fit -> width|height) above runs on BOTH routes.
+            if ($route !== 'same_format') {
+                continue;
+            }
+            // Every scalar-dependency key carries a default in DEPENDS_ON_KEY_DEFAULTS
+            // (a missing entry is a PHPStan error against the literal const), so the
+            // depended-on key's effective value is its wire value or that default.
+            $effective = $wireOptions[$key] ?? self::DEPENDS_ON_KEY_DEFAULTS[$key];
+            if ($effective !== $required) {
+                $shown = self::stringifyForMessage($effective);
+                return [
+                    'message' => "output(): '{$option}' requires {$key} '{$required}' (its contract "
+                        . "dependency), but {$key} is '{$shown}'. Set {$key}: '{$required}', or drop '{$option}'.",
+                    'conflictingFields' => [$key, $option],
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Input token → its `compress.image*` mime-group name (for per-value
      * availability lookup). Mirrors the TS `compressGroupForToken`.
      */

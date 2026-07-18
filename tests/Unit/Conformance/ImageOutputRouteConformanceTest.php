@@ -283,4 +283,109 @@ final class ImageOutputRouteConformanceTest extends TestCase
             }
         }
     }
+
+    // --- general depends_on conformance (ehHU08Hu) --------------------------
+
+    /**
+     * Normalise an availability `depends_on` to the flat-table rule shape.
+     *
+     * @param array<string, mixed> $dep
+     *
+     * @return array{requiresKey: string, requiresValue: string}|array{requiresAnyOf: list<string>}
+     */
+    private static function normaliseDependsOn(array $dep): array
+    {
+        // FAIL CLOSED on any shape the flat model can't represent (multi-key AND,
+        // array / set-membership values, a `logic` other than `or`) — a contract
+        // regen that introduces an unsupported form fails HERE, not silently.
+        if (\array_key_exists('logic', $dep)) {
+            self::assertSame('or', $dep['logic']);
+            $keys = [];
+            foreach ($dep as $k => $v) {
+                if ($k === 'logic') {
+                    continue;
+                }
+                self::assertSame('set', $v, "unsupported condition value for '{$k}'");
+                $keys[] = (string) $k;
+            }
+            \sort($keys);
+
+            return ['requiresAnyOf' => $keys];
+        }
+        self::assertCount(1, $dep, 'unsupported multi-key depends_on');
+        $key = (string) \array_key_first($dep);
+        self::assertIsString($dep[$key], "unsupported non-scalar depends_on value for '{$key}'");
+
+        return ['requiresKey' => $key, 'requiresValue' => $dep[$key]];
+    }
+
+    /**
+     * Every image-group option → depends_on, asserting the SAME option carries the
+     * same depends_on in every group (which justifies the FLAT hand table).
+     *
+     * @return array<string, array{requiresKey: string, requiresValue: string}|array{requiresAnyOf: list<string>}>
+     */
+    private static function contractDependsOn(): array
+    {
+        $rules = [];
+        foreach (self::$compressGroups as $group => $groupData) {
+            if (($group !== 'image' && !\str_starts_with((string) $group, 'image_')) || !\is_array($groupData['options'] ?? null)) {
+                continue;
+            }
+            foreach ($groupData['options'] as $opt => $optDef) {
+                if (!\is_array($optDef) || !\is_array($optDef['depends_on'] ?? null)) {
+                    continue;
+                }
+                $rule = self::normaliseDependsOn($optDef['depends_on']);
+                if (isset($rules[$opt])) {
+                    self::assertSame($rules[$opt], $rule, "depends_on for '{$opt}' differs across image groups");
+                }
+                $rules[(string) $opt] = $rule;
+            }
+        }
+
+        return $rules;
+    }
+
+    public function test_output_option_depends_on_covers_exactly_the_image_options_with_depends_on(): void
+    {
+        $expected = \array_keys(self::contractDependsOn());
+        \sort($expected);
+        $actual = \array_keys(ImageOutputRoutes::OUTPUT_OPTION_DEPENDS_ON);
+        \sort($actual);
+        self::assertSame($expected, $actual, 'OUTPUT_OPTION_DEPENDS_ON coverage drifted from availability.json');
+    }
+
+    public function test_output_option_depends_on_matches_availability(): void
+    {
+        foreach (self::contractDependsOn() as $opt => $rule) {
+            $hand = ImageOutputRoutes::OUTPUT_OPTION_DEPENDS_ON[$opt] ?? null;
+            self::assertIsArray($hand, "OUTPUT_OPTION_DEPENDS_ON missing '{$opt}'");
+            if (isset($hand['requiresAnyOf'])) {
+                $keys = $hand['requiresAnyOf'];
+                \sort($keys);
+                $hand = ['requiresAnyOf' => $keys];
+            }
+            self::assertSame($rule, $hand, "depends_on for '{$opt}' drifted");
+        }
+    }
+
+    public function test_encoding_mode_default_matches_availability(): void
+    {
+        // The general gate reads this default when encoding_mode is absent.
+        foreach (self::$compressGroups as $group => $groupData) {
+            if (($group !== 'image' && !\str_starts_with((string) $group, 'image_')) || !\is_array($groupData['options'] ?? null)) {
+                continue;
+            }
+            $mode = $groupData['options']['encoding_mode'] ?? null;
+            if (!\is_array($mode)) {
+                continue;
+            }
+            self::assertSame(
+                ImageOutputRoutes::DEPENDS_ON_KEY_DEFAULTS['encoding_mode'],
+                $mode['default'] ?? null,
+                "encoding_mode default drifted for {$group}",
+            );
+        }
+    }
 }

@@ -52,18 +52,6 @@ use Gisl\Sdk\WorkflowCreatePayload;
 final class Recipe
 {
     /**
-     * Compress-output option keys whose contract `depends_on` names a
-     * NON-auto_quality `encoding_mode` (`quality` + `lossless` => `quality`,
-     * `target_size_bytes` => `target_size`). They cannot co-exist with
-     * `encoding_mode: auto_quality`, so lowering rejects them client-side
-     * rather than shipping a payload the worker refuses as `invalid_options`
-     * (86gAu5Tr). The full cross-mode matrix is ehHU08Hu.
-     *
-     * @var list<string>
-     */
-    private const AUTO_QUALITY_INCOMPATIBLE_KEYS = ['quality', 'lossless', 'target_size_bytes'];
-
-    /**
      * @param list<RecipeStep> $steps Ordered operations applied so far.
      */
     public function __construct(
@@ -953,45 +941,28 @@ final class Recipe
             $wireOptions[$key] = $value;
         }
         // quality_preset's contract `depends_on: { encoding_mode: auto_quality }`
-        // (86gAu5Tr). Infer the encoding_mode when the caller set none so the
-        // preset forms a VALID request instead of a server 422; REJECT an
-        // explicit non-auto_quality mode, which the dependency forbids.
-        // (quality_preset is honored only on routes that also honor
-        // encoding_mode, so the inferred key is never unhonored.)
-        if (isset($wireOptions['quality_preset'])) {
-            if (!isset($wireOptions['encoding_mode'])) {
-                $wireOptions['encoding_mode'] = 'auto_quality';
-            } elseif ($wireOptions['encoding_mode'] !== 'auto_quality') {
-                $shown = ImageOutputRoutes::stringifyForMessage($wireOptions['encoding_mode']);
-                throw new GislConfigError(
-                    "output(): 'quality_preset' requires encoding_mode 'auto_quality' (its contract "
-                    . "dependency), but got '{$shown}'. Omit encoding_mode to let quality_preset drive it, "
-                    . 'or drop quality_preset.',
-                    reason: 'invalid_option_combination',
-                    conflictingFields: ['quality_preset', 'encoding_mode'],
-                );
-            }
+        // (86gAu5Tr) — infer the mode when the caller set NONE so the preset forms
+        // a VALID request. SAME_FORMAT only: encoding_mode is a compress optimiser
+        // and quality_preset isn't honored on a format_change. An explicitly-
+        // conflicting mode is rejected by the general depends_on gate below.
+        if ($resolved['route'] === 'same_format'
+            && isset($wireOptions['quality_preset'])
+            && !isset($wireOptions['encoding_mode'])
+        ) {
+            $wireOptions['encoding_mode'] = 'auto_quality';
         }
-        // auto_quality drives the quality from quality_preset alone; the
-        // mode-specific siblings each name a DIFFERENT encoding_mode in their
-        // contract depends_on (quality + lossless => 'quality', target_size_bytes
-        // => 'target_size'), so the worker rejects them alongside auto_quality as
-        // invalid_options. Reject them client-side so the facade never advertises
-        // a combination the server refuses (86gAu5Tr). The full cross-mode
-        // depends_on matrix is ehHU08Hu.
-        if (($wireOptions['encoding_mode'] ?? null) === 'auto_quality') {
-            foreach (self::AUTO_QUALITY_INCOMPATIBLE_KEYS as $field) {
-                if (isset($wireOptions[$field])) {
-                    throw new GislConfigError(
-                        "output(): '{$field}' cannot be combined with encoding_mode 'auto_quality' — "
-                        . "'{$field}' requires a different encoding_mode (its contract dependency), and "
-                        . 'auto_quality drives the quality from quality_preset alone. '
-                        . "Drop '{$field}', or drop quality_preset/auto_quality.",
-                        reason: 'invalid_option_combination',
-                        conflictingFields: ['encoding_mode', $field],
-                    );
-                }
-            }
+        // General contract `depends_on` validation (ehHU08Hu), scoped per route:
+        // the universal fit->width|height dep runs on BOTH routes; the
+        // encoding_mode-family deps run on same_format only. Subsumes the 86gAu5Tr
+        // auto_quality gate plus target_size_bytes-without-target_size,
+        // fit-without-width/height, and any future depends_on.
+        $dependency = ImageOutputRoutes::dependsOnViolation($wireOptions, $resolved['route']);
+        if ($dependency !== null) {
+            throw new GislConfigError(
+                $dependency['message'],
+                reason: 'invalid_option_combination',
+                conflictingFields: $dependency['conflictingFields'],
+            );
         }
 
         return new OperationDef($resolved['sourceOp'], $wireOptions);

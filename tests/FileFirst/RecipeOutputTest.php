@@ -386,6 +386,99 @@ final class RecipeOutputTest extends TestCase
         }
     }
 
+    // --- output(): general depends_on validation (ehHU08Hu) ------------------
+
+    #[Test]
+    public function target_size_bytes_without_target_size_mode_is_rejected(): void
+    {
+        // target_size_bytes depends_on encoding_mode=target_size; with no explicit
+        // mode the default is 'quality', so it must be rejected pre-upload.
+        try {
+            $this->operations($this->recipe('a.jpg')->output('jpeg', ['target_size_bytes' => 50_000]));
+            self::fail('target_size_bytes needs encoding_mode target_size');
+        } catch (GislConfigError $err) {
+            self::assertSame('invalid_option_combination', $err->reason);
+            self::assertSame(['encoding_mode', 'target_size_bytes'], $err->conflictingFields);
+        }
+    }
+
+    #[Test]
+    public function quality_with_no_encoding_mode_is_allowed_default_quality(): void
+    {
+        // encoding_mode defaults to 'quality', so `quality` alone is VALID — the
+        // general gate must NOT over-reject when the depended-on key is absent.
+        $op = $this->soleOp($this->recipe('a.jpg')->output('jpeg', ['quality' => 80]));
+        self::assertSame(80, $op['options']['quality'] ?? null);
+        self::assertArrayNotHasKey('encoding_mode', $op['options']);
+    }
+
+    #[Test]
+    public function fit_without_width_or_height_is_rejected(): void
+    {
+        // fit depends_on { width: set, height: set, logic: or } — at least one
+        // dimension must be present.
+        try {
+            $this->operations($this->recipe('a.jpg')->output('jpeg', ['fit' => 'max']));
+            self::fail('fit needs width or height');
+        } catch (GislConfigError $err) {
+            self::assertSame('invalid_option_combination', $err->reason);
+            self::assertSame(['fit', 'width', 'height'], $err->conflictingFields);
+        }
+    }
+
+    #[Test]
+    public function fit_with_a_width_is_allowed(): void
+    {
+        $op = $this->soleOp($this->recipe('a.jpg')->output('jpeg', ['fit' => 'max', 'width' => 800]));
+        self::assertSame('max', $op['options']['fit'] ?? null);
+        self::assertSame(800, $op['options']['width'] ?? null);
+    }
+
+    #[Test]
+    public function fit_with_a_null_width_is_still_rejected(): void
+    {
+        // null is NOT "set" — parity with TS (both reject a null dimension).
+        try {
+            $this->operations($this->recipe('a.jpg')->output('jpeg', ['fit' => 'max', 'width' => null]));
+            self::fail('fit with a null width must reject');
+        } catch (GislConfigError $err) {
+            self::assertSame('invalid_option_combination', $err->reason);
+            self::assertSame(['fit', 'width', 'height'], $err->conflictingFields);
+        }
+    }
+
+    #[Test]
+    public function fit_without_a_dimension_is_rejected_on_a_format_change_too(): void
+    {
+        // fit -> width|height is IDENTICAL in compress + convert, so it validates
+        // on BOTH routes (the encoding_mode-family deps stay same_format-only).
+        try {
+            $this->operations($this->recipe('a.jpg')->output('webp', ['fit' => 'max']));
+            self::fail('fit needs a dimension on a format_change too');
+        } catch (GislConfigError $err) {
+            self::assertSame('invalid_option_combination', $err->reason);
+            self::assertSame(['fit', 'width', 'height'], $err->conflictingFields);
+        }
+    }
+
+    #[Test]
+    public function fit_with_a_width_is_allowed_on_a_format_change(): void
+    {
+        $op = $this->soleOp($this->recipe('a.jpg')->output('webp', ['fit' => 'max', 'width' => 800]));
+        self::assertSame('max', $op['options']['fit'] ?? null);
+        self::assertSame(800, $op['options']['width'] ?? null);
+    }
+
+    #[Test]
+    public function a_null_dependent_option_is_dropped_not_shipped(): void
+    {
+        // target_size_bytes: null is dropped at build, so it never reaches the
+        // wire and triggers no dependency error — full null parity with TS.
+        $op = $this->soleOp($this->recipe('a.jpg')->output('jpeg', ['target_size_bytes' => null]));
+        self::assertArrayNotHasKey('target_size_bytes', $op['options']);
+        self::assertSame(['output_format' => 'original'], $op['options']);
+    }
+
     // --- output(): color_profile (un-gated v2.128.0) + auto_orient (STABLE since v2.120.0) --
 
     #[Test]
