@@ -399,24 +399,26 @@ final class RecipeRunTest extends TestCase
     public function timeout_throws_when_deadline_elapses_before_terminal(): void
     {
         $captured = [];
+        // maxWait (100ms) is ~100x the instant (uploadId → no upload) createWorkflow,
+        // so the workflow is created (id captured) well before the deadline and the
+        // timeout fires from the never-terminal poll carrying the id — not the
+        // pre-create deadline check with no workflowId, the 1ms-race this test used
+        // to flake on (M6CxXj3u). The poll interval floors at 100ms, so the poll
+        // reaches the 100ms deadline after only a couple of status calls; a handful
+        // of non-terminal responses is ample. (The deadline is still wall-clock;
+        // 100ms is the generous safety margin.)
         $http = $this->stubClient([
             $this->createResponse(),
-            // SSE ends without terminal → poll fallback with a 0ms budget.
             $this->sseResponse("event: operation.progress\ndata: {\"progress\":1}\n\n"),
-            $this->statusResponse('in_progress'),
-            $this->statusResponse('in_progress'),
+            ...\array_fill(0, 6, $this->statusResponse('in_progress')),
         ], $captured);
 
         $client = $this->makeClient($http);
 
-        // uploadId arm (no upload) keeps the queue tight; maxWait 1 (1ms) →
-        // the deadline elapses almost immediately and a non-terminal status
-        // trips the poll fallback's timeout. (maxWait 0 is rejected by
-        // MaxWait::parse, which requires a positive budget.)
         try {
             $this->recipe($client, FileInput::uploadId('file_existing'))
                 ->compress()
-                ->run(maxWait: 1, pollIntervalMs: 0);
+                ->run(maxWait: 100, pollIntervalMs: 5);
             self::fail('expected GislTimeoutError');
         } catch (GislTimeoutError $e) {
             // Expected — the deadline elapsed before a terminal status.
