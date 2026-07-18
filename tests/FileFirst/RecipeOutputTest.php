@@ -354,6 +354,75 @@ final class RecipeOutputTest extends TestCase
         self::assertSame(true, $this->soleOp($this->recipe('a.png')->output('webp', ['auto_orient' => true]))['options']['auto_orient'] ?? null);
     }
 
+    // --- output(): out-of-enum value gate (rtkzl9gr) ------------------------
+
+    #[Test]
+    public function metadata_keep_rejected_pre_upload_on_same_format_avif(): void
+    {
+        // avif metadata enum is ['strip','all'] — 'keep' is out-of-enum.
+        try {
+            $this->operations($this->recipe('a.avif')->output('avif', ['metadata' => 'keep']));
+            self::fail("metadata 'keep' is not offered on avif");
+        } catch (GislConfigError $err) {
+            self::assertSame('invalid_option_value', $err->reason);
+            self::assertSame(['metadata'], $err->conflictingFields);
+        }
+    }
+
+    #[Test]
+    public function metadata_keep_rejected_pre_upload_on_same_format_svg(): void
+    {
+        // svg routes through the generic `image` group for PLANNED gating, but
+        // the enum gate must use the narrow image_svg enum — this pins the split.
+        try {
+            $this->operations($this->recipe('logo.svg')->output('svg', ['metadata' => 'keep']));
+            self::fail("metadata 'keep' is not offered on svg");
+        } catch (GislConfigError $err) {
+            self::assertSame('invalid_option_value', $err->reason);
+        }
+    }
+
+    #[Test]
+    public function metadata_keep_still_honored_on_same_format_png(): void
+    {
+        // png routes through image_png whose metadata enum includes 'keep'.
+        $op = $this->soleOp($this->recipe('a.png')->output('png', ['metadata' => 'keep']));
+        self::assertSame('keep', $op['options']['metadata'] ?? null);
+    }
+
+    #[Test]
+    public function metadata_all_deprecated_alias_still_passes_on_avif(): void
+    {
+        // 'all' is IN the avif enum (a deprecated alias) — deprecated is not invalid.
+        $op = $this->soleOp($this->recipe('a.avif')->output('avif', ['metadata' => 'all']));
+        self::assertSame('all', $op['options']['metadata'] ?? null);
+    }
+
+    #[Test]
+    public function an_out_of_enum_value_on_any_gated_option_is_rejected(): void
+    {
+        // fit enum is ['max','crop','scale'] — 'bogus' is out-of-enum.
+        try {
+            $this->operations($this->recipe('a.jpg')->output('jpeg', ['fit' => 'bogus']));
+            self::fail('an out-of-enum fit value must throw');
+        } catch (GislConfigError $err) {
+            self::assertSame('invalid_option_value', $err->reason);
+        }
+    }
+
+    #[Test]
+    public function auto_orient_on_an_svg_format_change_is_rejected_pre_upload(): void
+    {
+        // svg is vector: it cannot be auto-oriented, so the option is stripped
+        // from the svg→raster route and caught locally, not 422-ed server-side.
+        try {
+            $this->operations($this->recipe('logo.svg')->output('png', ['auto_orient' => true]));
+            self::fail('auto_orient is not honored on an svg format-change');
+        } catch (GislConfigError $err) {
+            self::assertSame('option_not_on_route', $err->reason);
+        }
+    }
+
     // --- output(): unrepresentable routes + svg (vector, no resize) ---------
 
     #[Test]

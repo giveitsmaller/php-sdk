@@ -810,6 +810,23 @@ final class Recipe
                     conflictingFields: [$key],
                 );
             }
+            // Enum-membership gate (rtkzl9gr): reject a value outside the
+            // option's enum before upload (e.g. `metadata: 'keep'` on avif/svg,
+            // whose enum is ['strip','all']). same_format only — the compress
+            // option enums apply definitionally there; a format_change routes
+            // via convert, whose enums may differ, so we leave it to the
+            // (conservative) planned gate.
+            if ($resolved['route'] === 'same_format'
+                && ImageOutputRoutes::isUnknownEnumValue($resolved['inputToken'], $key, $value)
+            ) {
+                $shown = ImageOutputRoutes::stringifyForMessage($value);
+                throw new GislConfigError(
+                    "output(): '{$key}: {$shown}' is not an accepted value for '{$key}' on "
+                    . "'{$resolved['inputToken']}' images. Check the values this format's route accepts.",
+                    reason: 'invalid_option_value',
+                    conflictingFields: [$key],
+                );
+            }
             if (ImageOutputRoutes::isPlannedValue($resolved['inputToken'], $key, $value)) {
                 $shown = ImageOutputRoutes::stringifyForMessage($value);
                 throw new GislConfigError(

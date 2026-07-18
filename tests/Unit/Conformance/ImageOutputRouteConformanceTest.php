@@ -34,6 +34,9 @@ final class ImageOutputRouteConformanceTest extends TestCase
     /** @var array<string, mixed> The `media.image` block of the projection. */
     private static array $image = [];
 
+    /** @var array<string, mixed> `operations.compress.mime_groups` of availability.json. */
+    private static array $compressGroups = [];
+
     public static function setUpBeforeClass(): void
     {
         // operations/src/CompressMetadata.php -> dirname x3 = generated/php root.
@@ -45,6 +48,13 @@ final class ImageOutputRouteConformanceTest extends TestCase
         self::assertIsArray($json['media'] ?? null);
         self::assertIsArray($json['media']['image'] ?? null);
         self::$image = $json['media']['image'];
+
+        $availPath = $root . '/availability/availability.json';
+        $avail = \json_decode((string) \file_get_contents($availPath), true);
+        self::assertIsArray($avail, 'availability.json must decode to an array');
+        $groups = $avail['operations']['compress']['mime_groups'] ?? null;
+        self::assertIsArray($groups, 'availability.json compress mime_groups must be an array');
+        self::$compressGroups = $groups;
     }
 
     // --- top-level facade constants -----------------------------------------
@@ -219,6 +229,58 @@ final class ImageOutputRouteConformanceTest extends TestCase
             $value = \in_array($key, ImageOutputRoutes::RESIZE_KEYS, true) ? 100 : 'x';
             OptionValidation::validateVerbOptions('output', [$key => $value]);
             self::addToAssertionCount(1);
+        }
+    }
+
+    // --- enum-membership table conformance (rtkzl9gr) -----------------------
+
+    public function test_compress_option_values_cover_exactly_the_image_groups(): void
+    {
+        $imageGroups = \array_values(\array_filter(
+            \array_keys(self::$compressGroups),
+            static fn (string $g): bool => $g === 'image' || \str_starts_with($g, 'image_'),
+        ));
+        \sort($imageGroups);
+        $actual = \array_keys(ImageOutputRoutes::COMPRESS_OPTION_VALUES);
+        \sort($actual);
+        self::assertSame($imageGroups, $actual, 'COMPRESS_OPTION_VALUES image-group coverage drifted from availability.json');
+    }
+
+    public function test_compress_option_values_mirror_availability_enum_members(): void
+    {
+        foreach (ImageOutputRoutes::COMPRESS_OPTION_VALUES as $group => $options) {
+            $groupData = self::$compressGroups[$group] ?? null;
+            self::assertIsArray($groupData, "availability.json missing compress group {$group}");
+            self::assertIsArray($groupData['options'] ?? null);
+
+            // Collect availability's enum options (name -> members). The runtime
+            // gate uses STRICT string membership, so pin that the contract keeps
+            // these members as strings — a string→number contract change (which
+            // the gate would then reject) surfaces HERE, not silently via a cast.
+            $enumOpts = [];
+            foreach ($groupData['options'] as $optName => $optDef) {
+                if (\is_array($optDef) && ($optDef['type'] ?? null) === 'enum') {
+                    $values = \is_array($optDef['values'] ?? null) ? $optDef['values'] : [];
+                    foreach ($values as $v) {
+                        self::assertIsString($v, "{$group}.{$optName} enum member must be a string (strict gate)");
+                    }
+                    $enumOpts[(string) $optName] = \array_values($values);
+                }
+            }
+
+            // Every enum option must be mirrored, and vice versa.
+            $expectedKeys = \array_keys($enumOpts);
+            \sort($expectedKeys);
+            $actualKeys = \array_keys($options);
+            \sort($actualKeys);
+            self::assertSame($expectedKeys, $actualKeys, "{$group} enum-option coverage drifted");
+
+            foreach ($enumOpts as $opt => $expectedValues) {
+                \sort($expectedValues);
+                $actualValues = $options[$opt];
+                \sort($actualValues);
+                self::assertSame($expectedValues, $actualValues, "{$group}.{$opt} enum members drifted");
+            }
         }
     }
 }

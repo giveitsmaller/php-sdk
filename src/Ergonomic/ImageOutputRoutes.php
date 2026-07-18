@@ -39,6 +39,19 @@ final class ImageOutputRoutes
     /** The resize option keys — input-keyed, raster-only (see class doc). */
     public const RESIZE_KEYS = ['width', 'height', 'fit'];
 
+    /**
+     * Options whose availability follows the INPUT format's raster capability,
+     * not the output format — resize (`width`/`height`/`fit`) plus
+     * `auto_orient`. The projection lists them on every `format_change` cell
+     * (keyed by OUTPUT), so on a format change they must be re-gated against the
+     * INPUT's `same_format` cell: a raster input carries them, an SVG (vector)
+     * input does not. Before rtkzl9gr only the resize keys were input-gated, so
+     * `auto_orient` leaked onto the `svg → raster` route and 422-ed server-side.
+     *
+     * @var list<string>
+     */
+    public const INPUT_GATED_KEYS = ['width', 'height', 'fit', 'auto_orient'];
+
     /** Image area cap shared by every resizable route (projection `max_output_pixels`). */
     public const MAX_OUTPUT_PIXELS = 16_000_000;
 
@@ -99,6 +112,34 @@ final class ImageOutputRoutes
             'tiff' => ['honored' => ['auto_orient', 'color_profile', 'fit', 'height', 'output_format', 'width'], 'planned' => ['metadata']],
             'webp' => ['honored' => ['auto_orient', 'color_profile', 'fit', 'height', 'output_format', 'quality', 'width'], 'planned' => ['metadata']],
         ],
+    ];
+
+    /**
+     * Compress-route enum members per image mime-group, mirroring the shipped
+     * `availability/availability.json` `operations.compress.mime_groups.<group>.
+     * options.<opt>.values`. Kept as a hand table (NOT a runtime read of the
+     * ~238KB availability sidecar) so the enum-membership gate stays offline +
+     * deterministic, exactly like self::IMAGE_OUTPUT_ROUTES — and so the gate
+     * has NO dependency on a contracts version carrying the enum in a compact
+     * form. PINNED to `availability.json` by ImageOutputRouteConformanceTest;
+     * a contract regen that adds/changes an enum member fails there. Mirrors the
+     * TS `COMPRESS_OPTION_VALUES`.
+     *
+     * `image_svg`/`image_avif` carry the NARROW `metadata: ['strip', 'all']`
+     * (no `keep`) — the reason a value gate that consulted only the generic
+     * `image` group (`['strip', 'keep', 'all']`) let `metadata: 'keep'` reach a
+     * server 422 on those bases (rtkzl9gr). `output_format` is listed for a
+     * faithful mirror but is never gated here (Output owns it positionally).
+     *
+     * @var array<string, array<string, list<string>>>
+     */
+    public const COMPRESS_OPTION_VALUES = [
+        'image' => ['color_profile' => ['keep', 'srgb', 'strip'], 'fit' => ['max', 'crop', 'scale'], 'metadata' => ['strip', 'keep', 'all'], 'output_format' => ['original', 'webp', 'auto', 'smallest']],
+        'image_jpeg' => ['chroma_subsampling' => ['420', '422', '444'], 'color_profile' => ['keep', 'srgb', 'strip'], 'encoding_mode' => ['quality', 'target_size', 'auto_quality'], 'fit' => ['max', 'crop', 'scale'], 'metadata' => ['strip', 'keep', 'all'], 'output_format' => ['original', 'webp', 'auto', 'smallest'], 'quality_preset' => ['best', 'good', 'fair', 'low']],
+        'image_png' => ['color_profile' => ['keep', 'srgb', 'strip'], 'fit' => ['max', 'crop', 'scale'], 'metadata' => ['strip', 'keep', 'all'], 'output_format' => ['original', 'webp', 'auto', 'smallest']],
+        'image_avif' => ['color_profile' => ['keep', 'srgb', 'strip'], 'encoding_mode' => ['quality', 'target_size', 'auto_quality'], 'fit' => ['max', 'crop', 'scale'], 'metadata' => ['strip', 'all'], 'output_format' => ['original', 'webp', 'auto', 'smallest'], 'quality_preset' => ['best', 'good', 'fair', 'low']],
+        'image_svg' => ['metadata' => ['strip', 'all'], 'output_format' => ['original', 'webp', 'auto', 'smallest']],
+        'image_webp' => ['color_profile' => ['keep', 'srgb', 'strip'], 'encoding_mode' => ['quality', 'target_size', 'auto_quality'], 'fit' => ['max', 'crop', 'scale'], 'metadata' => ['strip', 'keep', 'all'], 'output_format' => ['original', 'webp', 'auto', 'smallest'], 'quality_preset' => ['best', 'good', 'fair', 'low']],
     ];
 
     /** The bare format token for a MIME type, or null if not a known image MIME. */
@@ -170,26 +211,28 @@ final class ImageOutputRoutes
         if ($cell === null) {
             return null;
         }
-        // Resize is INPUT-gated. Since v2.103.0 convert is the resize engine, so
-        // the projection lists width/height/fit on EVERY format_change cell — but
-        // an SVG INPUT cannot be raster-resized (the convert worker rejects it).
-        // So strip the cell's resize keys and re-add only those the INPUT's
-        // same_format cell honors: raster inputs carry them, svg does not. The
-        // transcoder options (output_format/quality/background) ride the cell.
+        // Resize + auto_orient are INPUT-gated (see self::INPUT_GATED_KEYS).
+        // Since v2.103.0 convert is the resize engine, so the projection lists
+        // width/height/fit AND auto_orient on EVERY format_change cell — but an
+        // SVG INPUT cannot be raster-resized or auto-oriented (the convert
+        // worker rejects it). So strip the cell's input-gated keys and re-add
+        // only those the INPUT's same_format cell honors: raster inputs carry
+        // them, svg does not. The transcoder options (output_format/quality/
+        // background/color_profile) ride the cell.
         $transcoderHonored = \array_values(\array_filter(
             $cell['honored'],
-            static fn (string $k): bool => !\in_array($k, self::RESIZE_KEYS, true),
+            static fn (string $k): bool => !\in_array($k, self::INPUT_GATED_KEYS, true),
         ));
         $inCell = self::IMAGE_OUTPUT_ROUTES['same_format'][$inputToken] ?? null;
-        $resize = $inCell !== null
-            ? \array_values(\array_filter(self::RESIZE_KEYS, static fn (string $k): bool => \in_array($k, $inCell['honored'], true)))
+        $inputGated = $inCell !== null
+            ? \array_values(\array_filter(self::INPUT_GATED_KEYS, static fn (string $k): bool => \in_array($k, $inCell['honored'], true)))
             : [];
         return [
             'route' => 'format_change',
             'sourceOp' => 'convert',
             'outputFormatWire' => $outToken,
             'inputToken' => $inputToken,
-            'honored' => self::keySet([...$transcoderHonored, ...$resize]),
+            'honored' => self::keySet([...$transcoderHonored, ...$inputGated]),
             'planned' => self::keySet($cell['planned']),
         ];
     }
@@ -215,6 +258,47 @@ final class ImageOutputRoutes
         }
         $entry = $opt->per_value_availability[self::stringifyForMessage($value)] ?? null;
         return $entry !== null && $entry->availability === 'planned';
+    }
+
+    /**
+     * The compress mime-group whose enum members are authoritative for an image
+     * token's SAME_FORMAT route — the exact `image_<token>` group when
+     * self::COMPRESS_OPTION_VALUES carries one, else the generic `image` group
+     * (gif/tiff). Mirrors the TS `enumGroupForToken`.
+     *
+     * Deliberately DISTINCT from {@see compressGroupForToken()} (the planned
+     * gate). The planned gate routes webp/gif/svg/tiff through the generic
+     * `image` group, where cross-format `planned` markers live (e.g. `srgb`).
+     * Enum MEMBERSHIP is the opposite: it needs the format-specific enum,
+     * because `image_svg`'s `metadata` enum is the narrow `['strip', 'all']`
+     * while the generic group's is `['strip', 'keep', 'all']` — so only the
+     * specific group rejects `metadata: 'keep'` on SVG (and AVIF, which already
+     * maps specifically).
+     */
+    public static function enumGroupForToken(string $token): string
+    {
+        $specific = "image_{$token}";
+        return isset(self::COMPRESS_OPTION_VALUES[$specific]) ? $specific : 'image';
+    }
+
+    /**
+     * Whether a VALUE lies OUTSIDE the option's compress-route enum for the
+     * given input format — the pre-upload enum-membership gate (rtkzl9gr).
+     * Reads the hand self::COMPRESS_OPTION_VALUES table. Returns false when the
+     * option is not an enum on this group (no entry), so a non-enum option
+     * (e.g. integer `quality`) is never gated. Meaningful only on the
+     * same_format (compress) route, where the compress option enums
+     * definitionally apply. Membership is STRICT: a value whose type differs
+     * from the string enum members (e.g. numeric `420`) is treated as unknown
+     * rather than coerced to a match. Mirrors the TS `isUnknownEnumValue`.
+     */
+    public static function isUnknownEnumValue(string $inputToken, string $optionKey, mixed $value): bool
+    {
+        $members = self::COMPRESS_OPTION_VALUES[self::enumGroupForToken($inputToken)][$optionKey] ?? null;
+        if ($members === null) {
+            return false;
+        }
+        return !(\is_string($value) && \in_array($value, $members, true));
     }
 
     /**
