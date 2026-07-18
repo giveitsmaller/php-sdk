@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Gisl\Sdk\Ergonomic;
 
+use Gisl\Sdk\Errors\GislFanOutTimeoutError;
 use Gisl\Sdk\Errors\GislTimeoutError;
 
 /**
@@ -79,8 +80,14 @@ final class MapEachBuilder
             BuilderInternals::throwIfCancelled($options->cancellation, 'fan-out child run');
             $remaining = $deadlineMs - self::nowMs();
             if ($remaining <= 0) {
-                throw new GislTimeoutError(
-                    'maxWait elapsed during fan-out (after ' . \count($collectedArtifacts) . ' child runs).',
+                // Fan-out timed out mid-batch: the parent + the children completed
+                // so far are recoverable — carry their ids so the caller polls them
+                // and re-runs ONLY the never-created children, instead of the whole
+                // batch (4G4FaA9X).
+                throw new GislFanOutTimeoutError(
+                    'maxWait elapsed during fan-out (after ' . \count($childWorkflowIds) . ' child runs).',
+                    completedWorkflowIds: $childWorkflowIds,
+                    parentWorkflowId: $parentResult->workflowId,
                 );
             }
             $childBuilder = $fn($art);
@@ -89,15 +96,31 @@ final class MapEachBuilder
                     'MapEachBuilder fn must return an OperationBuilder; got ' . \get_debug_type($childBuilder),
                 );
             }
-            $childResult = $childBuilder->run(new RunOptions(
-                maxWait: $remaining,
-                onProgress: $options->onProgress,
-                useSSE: $options->useSSE,
-                pollIntervalMs: $options->pollIntervalMs,
-                cancellation: $options->cancellation,
-                probeBeforeCreate: $options->probeBeforeCreate,
-                probeTimeoutMs: $options->probeTimeoutMs,
-            ));
+            try {
+                $childResult = $childBuilder->run(new RunOptions(
+                    maxWait: $remaining,
+                    onProgress: $options->onProgress,
+                    useSSE: $options->useSSE,
+                    pollIntervalMs: $options->pollIntervalMs,
+                    cancellation: $options->cancellation,
+                    probeBeforeCreate: $options->probeBeforeCreate,
+                    probeTimeoutMs: $options->probeTimeoutMs,
+                ));
+            } catch (GislTimeoutError $childTimeout) {
+                // A CHILD's own deadline elapsed mid-run — the COMMON fan-out
+                // timeout path. Re-throw as a fan-out timeout so the parent +
+                // already-completed children + this in-flight child are ALL
+                // recoverable, instead of losing them behind the child's bare
+                // GislTimeoutError (4G4FaA9X). Other errors propagate unchanged.
+                throw new GislFanOutTimeoutError(
+                    'maxWait elapsed during fan-out while a child was running ('
+                        . \count($childWorkflowIds) . ' completed).',
+                    completedWorkflowIds: $childWorkflowIds,
+                    parentWorkflowId: $parentResult->workflowId,
+                    workflowId: $childTimeout->workflowId,
+                    previous: $childTimeout,
+                );
+            }
             foreach ($childResult->artifacts as $a) {
                 $collectedArtifacts[] = $a;
             }

@@ -28,7 +28,9 @@ namespace Gisl\Sdk\Errors;
  * `$previous` are preserved from the base {@see \RuntimeException} for
  * exception chaining; `$workflowId` is the SDK-added recovery handle.
  */
-final class GislTimeoutError extends GislError
+// Not final: {@see GislFanOutTimeoutError} subclasses it so a `catch
+// (GislTimeoutError)` still catches the fan-out variant (4G4FaA9X).
+class GislTimeoutError extends GislError
 {
     public readonly ?string $workflowId;
 
