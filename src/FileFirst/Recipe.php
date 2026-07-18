@@ -384,25 +384,113 @@ final class Recipe
             $operations[] = $this->lowerStep($step, $i);
         }
 
-        $job = new JobDefinitionPayload(
-            operations: $operations,
-            source: Sources::upload($fileId),
-        );
+        // Split at any `sole_op` boundary into a `job_output`-linked chain
+        // (IQc01rj0); a chain with no sole_op stays a single byte-identical job.
+        $jobs = self::splitSingleInputJobs($operations, $fileId);
 
-        return new WorkflowCreatePayload(jobs: [$job], callbackUrl: $callbackUrl);
+        return new WorkflowCreatePayload(jobs: $jobs, callbackUrl: $callbackUrl);
+    }
+
+    /**
+     * Split a single-input operation chain into a `job_output`-linked job chain
+     * at its `sole_op` boundary (IQc01rj0). A `sole_op` op (ADR-0025) MUST be the
+     * ONLY op in its job, so `->textWatermark('x')->compress()` cannot lower to
+     * one co-bundled job — the `text_watermark` runs alone (job id = its op type)
+     * and the trailing steps lower into a downstream `post` job that consumes it
+     * via `job_output`; steps that PRECEDE the sole_op run in an upstream `pre`
+     * job. Returns a single job verbatim (no `id`) when no split is needed — no
+     * sole_op, or a lone sole_op already alone. Throws when the chain carries
+     * more than one sole_op op. Mirrors the TS `_splitSingleInputJobs`.
+     *
+     * @param list<OperationDef> $operations
+     *
+     * @return list<JobDefinitionPayload>
+     */
+    private static function splitSingleInputJobs(array $operations, string $fileId): array
+    {
+        $soleCount = 0;
+        $firstSoleIdx = -1;
+        foreach ($operations as $idx => $op) {
+            if (\in_array($op->type, RunResult::SOLE_OP_TYPES, true)) {
+                $soleCount++;
+                if ($firstSoleIdx === -1) {
+                    $firstSoleIdx = $idx;
+                }
+            }
+        }
+        if ($soleCount > 1) {
+            throw new GislConfigError(
+                'This recipe chains more than one sole_op operation (e.g. two textWatermark() steps), '
+                . 'which is not supported yet — apply them as separate workflows.',
+                reason: 'multi_sole_op_unsupported',
+            );
+        }
+        if ($firstSoleIdx === -1 || ($firstSoleIdx === 0 && \count($operations) === 1)) {
+            // No sole_op, or a lone sole_op already alone → one job, no id.
+            return [new JobDefinitionPayload(operations: $operations, source: Sources::upload($fileId))];
+        }
+        $preOps = \array_values(\array_slice($operations, 0, $firstSoleIdx));
+        $soleOp = $operations[$firstSoleIdx];
+        $postOps = \array_values(\array_slice($operations, $firstSoleIdx + 1));
+        $jobs = [];
+        if ($preOps !== []) {
+            $jobs[] = new JobDefinitionPayload(
+                operations: $preOps,
+                id: RunResult::PRE_STEP_JOB_REF,
+                source: Sources::upload($fileId),
+            );
+        }
+        $jobs[] = new JobDefinitionPayload(
+            operations: [$soleOp],
+            id: $soleOp->type,
+            source: $preOps !== [] ? Sources::jobOutput(RunResult::PRE_STEP_JOB_REF) : Sources::upload($fileId),
+        );
+        if ($postOps !== []) {
+            $jobs[] = new JobDefinitionPayload(
+                operations: $postOps,
+                id: RunResult::POST_STEP_JOB_REF,
+                source: Sources::jobOutput($soleOp->type),
+            );
+        }
+
+        return $jobs;
+    }
+
+    /**
+     * The single job of a NESTED single-input lowering, asserting it did not
+     * split (IQc01rj0). A nested Recipe used as a watermark base/overlay or a
+     * fan-out entry that itself carries a `sole_op` op alongside OTHER steps
+     * splits into a job chain; folding that chain into the OUTER DAG is not
+     * supported yet, so fail fast rather than silently drop the split-off job.
+     * Mirrors the TS `_nestedSingleJob`.
+     */
+    public static function nestedSingleJob(WorkflowCreatePayload $payload, string $context): JobDefinitionPayload
+    {
+        if (\count($payload->jobs) !== 1) {
+            throw new GislConfigError(
+                "A {$context} recipe chains a sole_op op (e.g. textWatermark()) alongside other steps, which "
+                . 'is not supported here yet — apply the sole_op step in a standalone recipe.',
+                reason: 'nested_sole_op_unsupported',
+            );
+        }
+
+        return $payload->jobs[0];
     }
 
     /**
      * Trigger the per-step lowering purely for its validation side effects
      * (e.g. {@see lowerCompressOptions()}'s `media_unknown` guard), discarding
      * the result. Used to fail fast BEFORE uploading bytes. Lowering does not
-     * depend on the upload id, so this is a faithful preflight.
+     * depend on the upload id, so this is a faithful preflight. Also runs the
+     * sole_op split so a multi-sole_op recipe fails pre-upload (IQc01rj0).
      */
     private function assertOperationsLowerable(): void
     {
+        $operations = [];
         foreach ($this->steps as $i => $step) {
-            $this->lowerStep($step, $i);
+            $operations[] = $this->lowerStep($step, $i);
         }
+        self::splitSingleInputJobs($operations, 'preflight');
     }
 
     /** The result-addressing key passed to `file()`, or null. */
@@ -534,10 +622,23 @@ final class Recipe
         // SDK auth, so the downloader issues a plain unauthenticated stream.
         // The flatten + succeeded/failed partition lives in the shared
         // RunResult::fromTerminalDownloads() helper (also used by Handle).
+        $jobDownloads = \array_values($downloads->getDownloads() ?? []);
+        // A single-input `sole_op` split (IQc01rj0, e.g. textWatermark()->compress())
+        // produces a job chain — project ONLY the terminal deliverable, filtering
+        // the intermediate sole_op artifact (mirrors the merge/watermark filter +
+        // Handle so submit()/reattach agree with run()).
+        if (RunResult::isSoleOpChainStatus($finalStatus)) {
+            $ref = RunResult::soleOpChainDeliverableRef($finalStatus);
+            $jobDownloads = \array_values(\array_filter(
+                $jobDownloads,
+                static fn ($d): bool => BuilderInternals::coerceString($d->getRef()) === $ref,
+            ));
+        }
+
         return RunResult::fromTerminalDownloads(
             workflowId: $workflowId,
             finalStatus: $finalStatus,
-            jobDownloads: \array_values($downloads->getDownloads() ?? []),
+            jobDownloads: $jobDownloads,
             key: $this->key,
             downloader: new StreamingDownloader(),
         );

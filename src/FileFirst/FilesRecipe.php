@@ -212,7 +212,7 @@ final class FilesRecipe
         $jobs = [];
         foreach ($this->inputs as $i => $input) {
             $single = new Recipe($input, null, $this->steps, $this->presetDefaults, $this->scopedPresetDefaults);
-            $oneJob = $single->toWorkflowPayload($fileIds[$i])->jobs[0];
+            $oneJob = Recipe::nestedSingleJob($single->toWorkflowPayload($fileIds[$i]), 'fan-out');
             // Key order (id, source, operations) matches the TS lowering so the
             // JSON-string serialisation is byte-identical across languages.
             $jobs[] = new JobDefinitionPayload(

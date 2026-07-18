@@ -161,6 +161,75 @@ final class RecipeTest extends TestCase
         self::assertSame([['type' => 'text_watermark', 'options' => ['text' => 'PROOF']]], $ops);
     }
 
+    // --- Single-input sole_op split (IQc01rj0) ------------------------------
+
+    #[Test]
+    public function text_watermark_then_compress_splits_into_sole_op_plus_post_job(): void
+    {
+        $wire = $this->recipe('photo.jpg')->textWatermark('X')->compress(OptimizeFor::Size)
+            ->toWorkflowPayload(self::FILE_ID)->toWire();
+        self::assertIsArray($wire['jobs']);
+        self::assertCount(2, $wire['jobs'], 'text_watermark (sole_op) + compress splits into two jobs');
+        // text_watermark is sole_op: alone in its job, consuming the upload.
+        self::assertSame('text_watermark', $wire['jobs'][0]['id']);
+        self::assertSame(['type' => 'upload', 'file_id' => self::FILE_ID], $wire['jobs'][0]['source']);
+        self::assertSame([['type' => 'text_watermark', 'options' => ['text' => 'X']]], $wire['jobs'][0]['operations']);
+        // post steps consume the sole_op output via job_output (the hidden DAG).
+        self::assertSame('post', $wire['jobs'][1]['id']);
+        self::assertSame(['type' => 'job_output', 'from' => 'text_watermark'], $wire['jobs'][1]['source']);
+        self::assertSame(['compress'], \array_column($wire['jobs'][1]['operations'], 'type'));
+    }
+
+    #[Test]
+    public function text_watermark_alone_stays_a_single_job_no_split(): void
+    {
+        $wire = $this->recipe('photo.jpg')->textWatermark('X')->toWorkflowPayload(self::FILE_ID)->toWire();
+        self::assertCount(1, $wire['jobs']);
+        self::assertArrayNotHasKey('id', $wire['jobs'][0]);
+        self::assertSame(['type' => 'upload', 'file_id' => self::FILE_ID], $wire['jobs'][0]['source']);
+        self::assertSame([['type' => 'text_watermark', 'options' => ['text' => 'X']]], $wire['jobs'][0]['operations']);
+    }
+
+    #[Test]
+    public function sole_op_mid_chain_splits_with_an_upstream_pre_job(): void
+    {
+        $wire = $this->recipe('photo.jpg')->compress(OptimizeFor::Size)->textWatermark('X')->convert('webp')
+            ->toWorkflowPayload(self::FILE_ID)->toWire();
+        self::assertCount(3, $wire['jobs']);
+        self::assertSame('pre', $wire['jobs'][0]['id']);
+        self::assertSame(['type' => 'upload', 'file_id' => self::FILE_ID], $wire['jobs'][0]['source']);
+        self::assertSame(['compress'], \array_column($wire['jobs'][0]['operations'], 'type'));
+        self::assertSame('text_watermark', $wire['jobs'][1]['id']);
+        self::assertSame(['type' => 'job_output', 'from' => 'pre'], $wire['jobs'][1]['source']);
+        self::assertSame('post', $wire['jobs'][2]['id']);
+        self::assertSame(['type' => 'job_output', 'from' => 'text_watermark'], $wire['jobs'][2]['source']);
+        self::assertSame(['convert'], \array_column($wire['jobs'][2]['operations'], 'type'));
+    }
+
+    #[Test]
+    public function chaining_two_sole_op_ops_throws_multi_sole_op_unsupported(): void
+    {
+        try {
+            $this->recipe('photo.jpg')->textWatermark('a')->textWatermark('b')->toWorkflowPayload(self::FILE_ID);
+            self::fail('two sole_op ops must throw');
+        } catch (GislConfigError $err) {
+            self::assertSame('multi_sole_op_unsupported', $err->reason);
+        }
+    }
+
+    #[Test]
+    public function a_splitting_recipe_nested_as_a_watermark_base_fails_fast(): void
+    {
+        $wm = $this->recipe('photo.jpg')->compress(OptimizeFor::Size)->textWatermark('X')
+            ->watermark($this->recipe('logo.png'));
+        try {
+            $wm->toWorkflowPayload([self::FILE_ID, 'file_overlay']);
+            self::fail('a splitting watermark base must fail fast');
+        } catch (GislConfigError $err) {
+            self::assertSame('nested_sole_op_unsupported', $err->reason);
+        }
+    }
+
     #[Test]
     public function thumbnail_carries_both_dimensions(): void
     {

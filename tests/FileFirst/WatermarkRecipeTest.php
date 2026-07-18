@@ -412,6 +412,34 @@ final class WatermarkRecipeTest extends TestCase
         self::assertFalse(RunResult::isWatermarkStatus($this->statusOf([])));
     }
 
+    // ── isSoleOpChainStatus (IQc01rj0) ──────────────────────────────────────
+
+    public function test_is_sole_op_chain_status_true_for_text_watermark_plus_post(): void
+    {
+        self::assertTrue(RunResult::isSoleOpChainStatus($this->statusOf(['text_watermark', 'post'])));
+    }
+
+    public function test_is_sole_op_chain_status_true_for_pre_text_watermark_post(): void
+    {
+        self::assertTrue(RunResult::isSoleOpChainStatus($this->statusOf(['pre', 'text_watermark', 'post'])));
+    }
+
+    public function test_is_sole_op_chain_status_false_for_multi_input_watermark_dag(): void
+    {
+        // A multi-input watermark DAG carries src_* fan-in refs → not a single-input chain.
+        self::assertFalse(RunResult::isSoleOpChainStatus($this->statusOf(['src_0', 'src_1', 'watermark'])));
+    }
+
+    public function test_is_sole_op_chain_status_false_for_plain_chain(): void
+    {
+        self::assertFalse(RunResult::isSoleOpChainStatus($this->statusOf(['op'])));
+    }
+
+    public function test_is_sole_op_chain_status_false_for_empty_job_list(): void
+    {
+        self::assertFalse(RunResult::isSoleOpChainStatus($this->statusOf([])));
+    }
+
     // ── run() through the shared MultiInputUpload helper ────────────────────
     // xxy5Rlsy follow-up (Wi4OnaJE): run() reaches the shared helper at runtime
     // (the other tests are lowering-only). Mirrors the TS file-first-watermark.

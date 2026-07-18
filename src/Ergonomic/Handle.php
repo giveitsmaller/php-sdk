@@ -250,6 +250,27 @@ final class Handle
             );
         }
 
+        // A single-input `sole_op` chain — e.g. `->textWatermark('x')->compress()`
+        // lowered to a `text_watermark` job + downstream `post` job (IQc01rj0).
+        // Project ONLY the terminal deliverable, filtering the intermediate
+        // sole_op artifact. The recipe key is preserved (unlike the multi-input
+        // branches): this is the single-file path with a terminal-ref filter.
+        if (RunResult::isSoleOpChainStatus($finalStatus)) {
+            $soleOpRef = RunResult::soleOpChainDeliverableRef($finalStatus);
+            $soleOpDownloads = \array_values(\array_filter(
+                $jobDownloads,
+                static fn ($d): bool => BuilderInternals::coerceString($d->getRef()) === $soleOpRef,
+            ));
+
+            return RunResult::fromTerminalDownloads(
+                workflowId: $this->workflowId,
+                finalStatus: $finalStatus,
+                jobDownloads: $soleOpDownloads,
+                key: $this->key,
+                downloader: $downloader,
+            );
+        }
+
         return RunResult::fromTerminalDownloads(
             workflowId: $this->workflowId,
             finalStatus: $finalStatus,

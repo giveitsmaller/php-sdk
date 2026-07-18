@@ -50,6 +50,39 @@ final class RunResult
      */
     public const POST_STEP_JOB_REF = 'post';
 
+    /**
+     * Job id/ref for the UPSTREAM job carrying any steps that PRECEDE a
+     * single-input `sole_op` op (e.g. `->compress()->textWatermark()`): the
+     * pre-steps run here, the `sole_op` job then consumes its output via
+     * `job_output`. Distinct from the multi-input `src_{i}` fan-in refs.
+     * Mirrors the TS `_PRE_STEP_JOB_REF`. IQc01rj0.
+     */
+    public const PRE_STEP_JOB_REF = 'pre';
+
+    /**
+     * Wire op types the API marks `sole_op` (ADR-0025) — the op MUST be the ONLY
+     * op in its job. Mirrors `operation-capabilities.json`
+     * `operations.<op>.sole_op`, inlined as an offline const (the raw-JSON
+     * sidecar is Node-only) and PINNED to that projection by
+     * SoleOpConformanceTest. The single-input {@see \Gisl\Sdk\FileFirst\Recipe::toWorkflowPayload}
+     * reads THIS set to split a chain at every sole_op boundary into a
+     * `job_output`-linked chain. Mirrors the TS `SOLE_OP_TYPES`. IQc01rj0.
+     *
+     * @var list<string>
+     */
+    public const SOLE_OP_TYPES = [
+        'archive',
+        'audio_overlay',
+        'audio_to_video',
+        'custom_luma',
+        'image_watermark',
+        'merge',
+        'split',
+        'text_watermark',
+        'video_text_watermark',
+        'video_watermark',
+    ];
+
     /** Single-output sugar: the lone artifact's URL, or null for 0 / >1 outputs. */
     public readonly ?string $url;
 
@@ -405,6 +438,64 @@ final class RunResult
         }
 
         return $hasWatermark;
+    }
+
+    /**
+     * True when a terminal status describes a SINGLE-INPUT `sole_op` chain —
+     * e.g. `->textWatermark('x')->compress()` lowered to a `text_watermark` job
+     * + a downstream `post` job (and an optional upstream `pre` job). Every job
+     * ref is a `sole_op` wire type ({@see SOLE_OP_TYPES}) or the `pre`/`post`
+     * chain refs, with NO `src_{i}` fan-in ref (which distinguishes it from the
+     * multi-input merge/watermark/archive DAGs). Mirrors the TS
+     * `isSoleOpChainStatus`. IQc01rj0.
+     */
+    public static function isSoleOpChainStatus(WorkflowStatusResponse $finalStatus): bool
+    {
+        $jobs = $finalStatus->getJobs() ?? [];
+        if ($jobs === []) {
+            return false;
+        }
+        $hasSoleOp = false;
+        foreach ($jobs as $job) {
+            $ref = BuilderInternals::coerceString($job->getRef());
+            if (\in_array($ref, self::SOLE_OP_TYPES, true)) {
+                $hasSoleOp = true;
+                continue;
+            }
+            if ($ref === self::PRE_STEP_JOB_REF || $ref === self::POST_STEP_JOB_REF) {
+                continue;
+            }
+
+            return false;
+        }
+
+        return $hasSoleOp;
+    }
+
+    /**
+     * The terminal deliverable ref for a single-input `sole_op` chain status:
+     * the downstream `post` job when the DAG has one, else the `sole_op` job
+     * itself (the ref in {@see SOLE_OP_TYPES}). Determined from the job refs (the
+     * graph), NOT from which downloads exist: a `post` job that FAILED and
+     * produced no download is still the terminal, so filtering to it yields no
+     * artifact + the failure surfaces via the status, rather than silently
+     * exposing the successful intermediate sole_op artifact (codex). Mirrors the
+     * TS `soleOpChainDeliverableRef`.
+     */
+    public static function soleOpChainDeliverableRef(WorkflowStatusResponse $finalStatus): string
+    {
+        $soleOpRef = '';
+        $hasPost = false;
+        foreach ($finalStatus->getJobs() ?? [] as $job) {
+            $ref = BuilderInternals::coerceString($job->getRef());
+            if ($ref === self::POST_STEP_JOB_REF) {
+                $hasPost = true;
+            } elseif ($soleOpRef === '' && \in_array($ref, self::SOLE_OP_TYPES, true)) {
+                $soleOpRef = $ref;
+            }
+        }
+
+        return $hasPost ? self::POST_STEP_JOB_REF : $soleOpRef;
     }
 
     /**

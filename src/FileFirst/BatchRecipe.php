@@ -196,7 +196,7 @@ final class BatchRecipe
     {
         $jobs = [];
         foreach ($this->recipes as $i => $entry) {
-            $oneJob = $entry->toWorkflowPayload($fileIds[$i])->jobs[0];
+            $oneJob = Recipe::nestedSingleJob($entry->toWorkflowPayload($fileIds[$i]), 'batch');
             // Key order (id, source, operations) matches the TS lowering so the
             // JSON-string serialisation is byte-identical across languages.
             $jobs[] = new JobDefinitionPayload(

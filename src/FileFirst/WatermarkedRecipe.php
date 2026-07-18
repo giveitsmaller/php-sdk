@@ -157,12 +157,15 @@ final class WatermarkedRecipe
 
         // src_0: the base (its preceding steps, else a lossless passthrough).
         $baseOps = $this->baseSteps !== []
-            ? (new Recipe($this->baseInput, null, $this->baseSteps, $this->presetDefaults, $this->scopedPresetDefaults))
-                ->toWorkflowPayload($baseId)->jobs[0]->operations
+            ? Recipe::nestedSingleJob(
+                (new Recipe($this->baseInput, null, $this->baseSteps, $this->presetDefaults, $this->scopedPresetDefaults))
+                    ->toWorkflowPayload($baseId),
+                'watermark base',
+            )->operations
             : [new OperationDef(type: 'passthrough')];
         // src_1: the overlay recipe (its own steps, else a lossless passthrough).
         $overlayOps = $this->overlay->recipeSteps() !== []
-            ? $this->overlay->toWorkflowPayload($overlayId)->jobs[0]->operations
+            ? Recipe::nestedSingleJob($this->overlay->toWorkflowPayload($overlayId), 'watermark overlay')->operations
             : [new OperationDef(type: 'passthrough')];
 
         $srcBase = new JobDefinitionPayload(operations: $baseOps, id: 'src_0', source: Sources::upload($baseId));
