@@ -206,15 +206,34 @@ final class WatermarkGate
     }
 
     /**
-     * Lower the watermark op itself. Options (anchor/opacity/margin_x/margin_y/
-     * overlay_width, or the multi-overlay overlays[] stack) are already wire
-     * keys; empty options omit the `options` key (byte-identical to the TS
-     * `_lowerWatermarkOp`).
+     * Lower the watermark op itself. The remaining options (anchor/opacity/
+     * margin_x/margin_y/overlay_width) are already wire keys; empty options omit
+     * the `options` key (byte-identical to the TS `_lowerWatermarkOp`).
+     *
+     * `overlays[]` (the multi-overlay stack) is a live contract option but is NOT
+     * reachable through watermark(): the facade composites exactly ONE overlay —
+     * the positional `overlay` (wire source src_1) — so overlays[1..] reference
+     * sources it cannot create, any entry is invalid on a non-image base, and the
+     * contract's `minItems: 1` makes an empty array invalid too. Reject it here at
+     * lowering (mutation-safe — reads the FINAL options, catching a post-watermark()
+     * `$opts['overlays'] = [...]`). Real multi-overlay stacking is a future feature.
      *
      * @param array<string, mixed> $options
      */
     public static function lowerWatermarkOp(string $wireOp, array $options): OperationDef
     {
+        // array_key_exists (not isset): a present `overlays => null` must reject
+        // too, matching the TS `overlays !== undefined` reject-all intent.
+        if (array_key_exists('overlays', $options)) {
+            throw new GislConfigError(
+                "watermark(): 'overlays[]' (multi-overlay stacking) is not supported — watermark() composites a "
+                . 'single overlay (the positional overlay argument). Use the top-level anchor / opacity / margin_x / '
+                . 'margin_y / overlay_width options to place it. Multi-overlay stacking is a future feature.',
+                reason: 'overlays_unsupported',
+                conflictingFields: ['overlays'],
+            );
+        }
+
         return new OperationDef(type: $wireOp, options: $options === [] ? null : $options);
     }
 }

@@ -369,6 +369,62 @@ final class WatermarkRecipeTest extends TestCase
         self::assertSame([['type' => 'passthrough']], $jobs[1]['operations']);
     }
 
+    // ── overlays[] gate (Vbbdq9C4) ──────────────────────────────────────────
+    // watermark() composites exactly ONE overlay (the positional overlay, src_1),
+    // so overlays[] references sources the facade can't build — reject at lowering.
+
+    public function test_rejects_non_empty_overlays_at_lowering(): void
+    {
+        try {
+            $this->recipe('photo.jpg')->watermark($this->overlay(), ['overlays' => [['anchor' => 'center']]])
+                ->toWorkflowPayload(['b', 'o'])->toWire();
+            self::fail('overlays[] must be rejected at lowering');
+        } catch (GislConfigError $err) {
+            self::assertSame('overlays_unsupported', $err->reason);
+            self::assertSame(['overlays'], $err->conflictingFields);
+            self::assertMatchesRegularExpression('/overlays\[\]/', $err->getMessage());
+        }
+    }
+
+    public function test_rejects_empty_overlays_at_lowering(): void
+    {
+        // Contract `minItems: 1` makes an empty overlays[] invalid too.
+        $this->expectException(GislConfigError::class);
+        $this->expectExceptionMessageMatches('/overlays\[\]/');
+        $this->recipe('photo.jpg')->watermark($this->overlay(), ['overlays' => []])
+            ->toWorkflowPayload(['b', 'o'])->toWire();
+    }
+
+    public function test_overlays_gate_is_deferred_to_lowering_not_the_verb_call(): void
+    {
+        // The verb call constructs the recipe without throwing; the gate fires
+        // when toWorkflowPayload() lowers the watermark op.
+        $wr = $this->recipe('photo.jpg')->watermark($this->overlay(), ['overlays' => [['anchor' => 'center']]]);
+        self::assertInstanceOf(WatermarkedRecipe::class, $wr);
+        $this->expectException(GislConfigError::class);
+        $wr->toWorkflowPayload(['b', 'o'])->toWire();
+    }
+
+    public function test_rejects_present_null_overlays_at_lowering(): void
+    {
+        // array_key_exists (not isset): a present `overlays => null` must reject
+        // too, matching the TS `overlays !== undefined` reject-all intent.
+        $this->expectException(GislConfigError::class);
+        $this->expectExceptionMessageMatches('/overlays\[\]/');
+        $this->recipe('photo.jpg')->watermark($this->overlay(), ['overlays' => null])
+            ->toWorkflowPayload(['b', 'o'])->toWire();
+    }
+
+    public function test_still_lowers_flat_single_overlay_options(): void
+    {
+        $wire = $this->recipe('photo.jpg')->watermark($this->overlay(), ['anchor' => 'center', 'overlay_width' => '30%'])
+            ->toWorkflowPayload(['b', 'o'])->toWire();
+        self::assertSame(
+            ['type' => 'image_watermark', 'options' => ['anchor' => 'center', 'overlay_width' => '30%']],
+            $this->watermarkJob($wire)['operations'][0],
+        );
+    }
+
     // ── immutability ────────────────────────────────────────────────────────
 
     public function test_post_verbs_return_a_new_instance(): void
