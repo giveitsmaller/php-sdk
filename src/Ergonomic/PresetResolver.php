@@ -135,6 +135,46 @@ final class PresetResolver
     ];
 
     /**
+     * Compress-catalog options real for the media but surfaced by a DIFFERENT
+     * ergonomic verb: media => camelCase override key => verb. Mirrors TS
+     * `CROSS_VERB_OVERRIDES`.
+     *
+     * Without this, `compress(['width' => 800])` on an image fell through to
+     * the "all unknown keys belong to a single OTHER media" branch and reported
+     * that the caller had passed VIDEO options — because MEDIA_FIELDS['video']
+     * owns width/height/fit and image does not. A legal image resize got a
+     * wrong-media accusation instead of a pointer to `output()`, which does
+     * carry it (cySAEZHR).
+     *
+     * Each entry is `[verb, keyOnThatVerb]`. The second element matters: the
+     * `output()` surface is snake_case (`auto_orient`, not `autoOrient`), so
+     * echoing the preset spelling back would hand the caller a call that does
+     * not work. `null` means the verb takes it positionally, not as an option.
+     *
+     * @var array<string, array<string, array{0: string, 1: string|null}>>
+     */
+    private const CROSS_VERB_OVERRIDES = [
+        'image' => [
+            'width' => ['output', 'width'],
+            'height' => ['output', 'height'],
+            'fit' => ['output', 'fit'],
+            'autoOrient' => ['output', 'auto_orient'],
+            'colorProfile' => ['output', 'color_profile'],
+            'progressive' => ['output', 'progressive'],
+            'lossless' => ['output', 'lossless'],
+            'qualityPreset' => ['output', 'quality_preset'],
+            'encodingMode' => ['output', 'encoding_mode'],
+            'targetSizeBytes' => ['output', 'target_size_bytes'],
+            'chromaSubsampling' => ['output', 'chroma_subsampling'],
+            'optimizationLevel' => ['output', 'optimization_level'],
+            'avifSpeed' => ['output', 'avif_speed'],
+        ],
+        // convert() takes the target format positionally, not as an option.
+        'audio' => ['outputFormat' => ['convert', null]],
+        'video' => ['outputFormat' => ['convert', null]],
+    ];
+
+    /**
      * snake_case wire-field surface per media — used by {@see validateMerged()}
      * unknown-field defence. Verbatim from `preset_resolver.ts:423-431`.
      *
@@ -578,6 +618,53 @@ final class PresetResolver
         ));
         if (\count($unknownFields) === 0) {
             return;
+        }
+        // Options real for THIS media but owned by another verb are answered
+        // with that verb, ahead of the other-media guess below — otherwise a
+        // key both this media and another recognises (image `width` vs video
+        // `width`) is blamed on the wrong media. Mirrors TS CROSS_VERB_OVERRIDES.
+        // Classified PER FIELD, not all-or-nothing: ['width', 'codec'] on an
+        // image must still tell the caller that `width` is a legal resize on
+        // output(), rather than reverting to "you passed video options".
+        $crossVerb = self::CROSS_VERB_OVERRIDES[$media] ?? [];
+        $crossVerbFields = [];
+        $strays = [];
+        /** @var array<string, list<string>> $byVerb */
+        $byVerb = [];
+        foreach ($unknownFields as $k) {
+            $target = $crossVerb[(string) $k] ?? null;
+            if ($target === null) {
+                $strays[] = (string) $k;
+                continue;
+            }
+            $crossVerbFields[] = (string) $k;
+            [$verb, $verbKey] = $target;
+            $byVerb[$verb][] = $verbKey ?? (string) $k;
+        }
+        if (\count($crossVerbFields) > 0) {
+            $clauses = [];
+            foreach ($byVerb as $verb => $verbKeys) {
+                $keyList = \implode(', ', $verbKeys);
+                $clauses[] = $verb === 'convert'
+                    ? "{$keyList} is the format argument of convert()"
+                    : $keyList . ' ' . (\count($verbKeys) === 1 ? 'is an option' : 'are options') . " on {$verb}()";
+            }
+            $outputKeys = $byVerb['output'] ?? null;
+            $suggestion = $outputKeys !== null
+                ? 'Move ' . \implode(', ', $outputKeys) . ": .output(format, ['{$outputKeys[0]}' => …])."
+                : 'Use convert(format) to change the output format.';
+            $message = "presetOverrides for '{$media}' contained " . \implode(', ', $crossVerbFields) . ', which '
+                . (\count($crossVerbFields) === 1 ? 'does' : 'do')
+                . ' not belong on the compress preset surface: ' . \implode('; ', $clauses) . '.';
+            if (\count($strays) > 0) {
+                $message .= " Also unrecognised for '{$media}': " . \implode(', ', $strays) . '.';
+            }
+            throw new GislConfigError(
+                $message,
+                reason: 'type_mismatch',
+                conflictingFields: \array_map(static fn (int|string $k): string => (string) $k, $unknownFields),
+                suggestion: $suggestion,
+            );
         }
         foreach (self::MEDIA_FIELDS as $otherMedia => $otherSet) {
             if ($otherMedia === $media) {

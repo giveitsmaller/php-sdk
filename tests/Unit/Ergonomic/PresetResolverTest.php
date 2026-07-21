@@ -368,6 +368,89 @@ final class PresetResolverTest extends TestCase
         }
     }
 
+    /**
+     * cySAEZHR: `width` is a legal image resize, expressible via output(). It
+     * used to be blamed on video, because MEDIA_FIELDS['video'] owns
+     * width/height/fit and image does not — so a user attempting a resize was
+     * told they had passed video options to an image.
+     */
+    public function testImageResizeOverrideNamesOutputVerbNotVideo(): void
+    {
+        try {
+            PresetResolver::resolveCompress('image', null, null, ['width' => 800], null, []);
+            $this->fail('expected GislConfigError');
+        } catch (GislConfigError $e) {
+            $this->assertSame('type_mismatch', $e->reason);
+            $this->assertSame(['width'], $e->conflictingFields);
+            $this->assertStringContainsString('output()', $e->getMessage());
+            $this->assertStringNotContainsString('video', $e->getMessage());
+            $this->assertStringContainsString('output(format', (string) $e->suggestion);
+        }
+    }
+
+    public function testImageMultipleCrossVerbOverridesNameOutputOnce(): void
+    {
+        try {
+            PresetResolver::resolveCompress(
+                'image',
+                null,
+                null,
+                ['width' => 800, 'height' => 600, 'fit' => 'max'],
+                null,
+                [],
+            );
+            $this->fail('expected GislConfigError');
+        } catch (GislConfigError $e) {
+            $this->assertSame(['width', 'height', 'fit'], $e->conflictingFields);
+            $this->assertStringContainsString('are options on output()', $e->getMessage());
+        }
+    }
+
+    /**
+     * Classification is PER FIELD: a legal image `width` must still be reported
+     * as a resize on output() even when it arrives next to a bogus key.
+     */
+    public function testImageResizeMixedWithVideoOnlyKeyReportsBothSeparately(): void
+    {
+        try {
+            PresetResolver::resolveCompress('image', null, null, ['width' => 800, 'codec' => 'h264'], null, []);
+            $this->fail('expected GislConfigError');
+        } catch (GislConfigError $e) {
+            $this->assertSame('type_mismatch', $e->reason);
+            $this->assertStringContainsString('output()', $e->getMessage());
+            $this->assertStringContainsString('codec', $e->getMessage());
+            $this->assertSame(['width', 'codec'], $e->conflictingFields);
+        }
+    }
+
+    /**
+     * The suggestion must be copy-pasteable: the output() surface is
+     * snake_case, so echoing the camelCase preset spelling back would hand the
+     * caller a call that does not work.
+     */
+    public function testImageCrossVerbSuggestionUsesOutputSpelling(): void
+    {
+        try {
+            PresetResolver::resolveCompress('image', null, null, ['autoOrient' => true], null, []);
+            $this->fail('expected GislConfigError');
+        } catch (GislConfigError $e) {
+            $this->assertStringContainsString('auto_orient', $e->getMessage());
+            $this->assertStringContainsString('auto_orient', (string) $e->suggestion);
+            $this->assertStringNotContainsString('autoOrient', (string) $e->suggestion);
+        }
+    }
+
+    public function testAudioOutputFormatOverrideNamesConvertVerb(): void
+    {
+        try {
+            PresetResolver::resolveCompress('audio', null, null, ['outputFormat' => 'mp3'], null, []);
+            $this->fail('expected GislConfigError');
+        } catch (GislConfigError $e) {
+            $this->assertSame('type_mismatch', $e->reason);
+            $this->assertStringContainsString('convert()', $e->getMessage());
+        }
+    }
+
     public function testUnknownMediaThrows(): void
     {
         $this->expectException(GislConfigError::class);
