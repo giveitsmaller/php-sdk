@@ -37,6 +37,9 @@ final class ImageOutputRouteConformanceTest extends TestCase
     /** @var array<string, mixed> `operations.compress.mime_groups` of availability.json. */
     private static array $compressGroups = [];
 
+    /** @var array<string, mixed> `operations.convert.mime_groups` of availability.json. */
+    private static array $convertGroups = [];
+
     public static function setUpBeforeClass(): void
     {
         // operations/src/CompressMetadata.php -> dirname x3 = generated/php root.
@@ -55,6 +58,10 @@ final class ImageOutputRouteConformanceTest extends TestCase
         $groups = $avail['operations']['compress']['mime_groups'] ?? null;
         self::assertIsArray($groups, 'availability.json compress mime_groups must be an array');
         self::$compressGroups = $groups;
+
+        $convertGroups = $avail['operations']['convert']['mime_groups'] ?? null;
+        self::assertIsArray($convertGroups, 'availability.json convert mime_groups must be an array');
+        self::$convertGroups = $convertGroups;
     }
 
     // --- top-level facade constants -----------------------------------------
@@ -367,6 +374,153 @@ final class ImageOutputRouteConformanceTest extends TestCase
                 $hand = ['requiresAnyOf' => $keys];
             }
             self::assertSame($rule, $hand, "depends_on for '{$opt}' drifted");
+        }
+    }
+
+    /**
+     * Convert (`format_change`) depends_on conformance — card L2Ay7Uak.
+     *
+     * L2Ay7Uak proposed a SECOND hand table of convert depends_on rules validated on
+     * the format_change route, since dependsOnViolation() deliberately skips scalar
+     * deps there. A runtime table would be dead code: every convert image depends_on
+     * is keyed on `output_format`, and the per-target `honored_options` projection the
+     * lowering already enforces IS that constraint materialised — output('gif', ['quality' => 80])
+     * is rejected by the honored gate before dependsOnViolation() is reached.
+     *
+     * That equivalence was the load-bearing claim and nothing pinned it. This does,
+     * and FAILS CLOSED on a dependency shape the honored projection cannot encode
+     * (a key other than output_format), which WOULD need the runtime gate.
+     *
+     * Mirrors the TS `convert format_change depends_on is subsumed by the honored
+     * projection` suite.
+     */
+    public function test_convert_depends_on_is_subsumed_by_the_honored_projection(): void
+    {
+        $formatChange = self::$image['format_change'];
+        self::assertIsArray($formatChange);
+        $targets = \array_keys($formatChange);
+
+        $checked = 0;
+        foreach (self::$convertGroups as $group => $groupData) {
+            if (($group !== 'image' && !\str_starts_with((string) $group, 'image_')) || !\is_array($groupData['options'] ?? null)) {
+                continue;
+            }
+            foreach ($groupData['options'] as $option => $def) {
+                if (!\is_array($def) || !\is_array($def['depends_on'] ?? null)) {
+                    continue;
+                }
+                $dep = $def['depends_on'];
+                // `logic: or` set-conditions (fit -> width|height) are media-agnostic,
+                // already validated on BOTH routes, and are not output_format rules.
+                if (isset($dep['logic'])) {
+                    self::assertSame('or', $dep['logic'], "{$group}.{$option}: only 'or' set-logic is modelled");
+                    $conditions = [];
+                    foreach ($dep as $k => $v) {
+                        if ($k === 'logic') {
+                            continue;
+                        }
+                        self::assertSame('set', $v, "{$group}.{$option}: set-condition '{$k}'");
+                        $conditions[] = (string) $k;
+                    }
+                    // A set-condition is NOT an output_format rule, so the honored
+                    // projection does not encode it — it is gated at runtime by
+                    // OUTPUT_OPTION_DEPENDS_ON on BOTH routes. Skipping it without
+                    // checking would let a convert-side set-condition drift pass
+                    // conformance while the runtime gate stayed stale (codex).
+                    $handRule = ImageOutputRoutes::OUTPUT_OPTION_DEPENDS_ON[(string) $option] ?? null;
+                    self::assertIsArray(
+                        $handRule,
+                        "convert {$group}.{$option} carries a set-condition depends_on, which the honored "
+                            . 'projection cannot encode, but OUTPUT_OPTION_DEPENDS_ON has no rule for it — '
+                            . 'the format_change route would be ungated',
+                    );
+                    $handAnyOf = $handRule['requiresAnyOf'] ?? null;
+                    self::assertIsArray($handAnyOf, "convert {$group}.{$option}: runtime rule must be a set-condition");
+                    $handAnyOf = \array_map(strval(...), $handAnyOf);
+                    \sort($handAnyOf);
+                    \sort($conditions);
+                    self::assertSame(
+                        $conditions,
+                        $handAnyOf,
+                        "convert {$group}.{$option}: runtime rule must be the same set-condition as the contract",
+                    );
+                    ++$checked;
+                    continue;
+                }
+                self::assertCount(1, $dep, "{$group}.{$option}: only single-key depends_on is modelled");
+                $key = (string) \array_key_first($dep);
+                self::assertSame(
+                    'output_format',
+                    $key,
+                    "{$group}.{$option}: depends_on '{$key}' is not keyed on output_format, so the "
+                        . 'honored projection does not encode it — this needs a runtime gate on the '
+                        . 'format_change route, not just this conformance check',
+                );
+                $value = $dep[$key];
+                $allowed = \is_array($value) ? \array_map(strval(...), $value) : [(string) $value];
+
+                foreach ($targets as $target) {
+                    $cell = $formatChange[$target];
+                    self::assertIsArray($cell);
+                    $honoredOptions = $cell['honored_options'];
+                    self::assertIsArray($honoredOptions);
+                    $honored = \in_array((string) $option, \array_map(strval(...), $honoredOptions), true);
+                    self::assertSame(
+                        \in_array((string) $target, $allowed, true),
+                        $honored,
+                        "convert {$group}.{$option} depends_on output_format " . \json_encode($allowed)
+                            . ", but the format_change '{$target}' route "
+                            . ($honored ? 'HONORS' : 'does not honor')
+                            . ' it — the honored gate and the contract dependency disagree',
+                    );
+                }
+                ++$checked;
+            }
+        }
+
+        // Guard a vacuous pass: if the convert catalogue ever loses every
+        // output_format dependency, that is itself a contract change worth seeing.
+        self::assertGreaterThan(0, $checked, 'no convert output_format depends_on found to check');
+    }
+
+    /**
+     * The check above is driven BY the contract, so an option that LOSES its
+     * depends_on is simply not visited — and the flat runtime rule, pinned to the
+     * COMPRESS groups, would keep rejecting a request convert now considers legal
+     * (an over-rejection, pre-upload). Drive this one from the RUNTIME table
+     * instead: every convert image group defining an option that carries a
+     * set-condition rule must still declare that same condition (codex).
+     */
+    public function test_convert_still_declares_the_set_conditions_the_runtime_rule_enforces(): void
+    {
+        foreach (ImageOutputRoutes::OUTPUT_OPTION_DEPENDS_ON as $option => $rule) {
+            $requiresAnyOf = $rule['requiresAnyOf'] ?? null;
+            if (!\is_array($requiresAnyOf)) {
+                continue;
+            }
+            $expected = \array_map(strval(...), $requiresAnyOf);
+            \sort($expected);
+
+            foreach (self::$convertGroups as $group => $groupData) {
+                if (($group !== 'image' && !\str_starts_with((string) $group, 'image_')) || !\is_array($groupData['options'] ?? null)) {
+                    continue;
+                }
+                $def = $groupData['options'][$option] ?? null;
+                if (!\is_array($def)) {
+                    continue;
+                }
+                $dep = $def['depends_on'] ?? null;
+                self::assertIsArray(
+                    $dep,
+                    "OUTPUT_OPTION_DEPENDS_ON gates '{$option}' on " . \json_encode($expected) . ' for BOTH routes, '
+                        . "but convert group '{$group}' no longer declares a depends_on for it — the format_change "
+                        . 'route would reject a request the contract now allows',
+                );
+                self::assertSame('or', $dep['logic'] ?? null, "{$group}.{$option}: expected an 'or' set-condition");
+                $conditions = \array_map(strval(...), \array_keys(\array_diff_key($dep, ['logic' => true])));
+                \sort($conditions);
+                self::assertSame($expected, $conditions, "{$group}.{$option}: set-condition drifted from the runtime rule");
+            }
         }
     }
 

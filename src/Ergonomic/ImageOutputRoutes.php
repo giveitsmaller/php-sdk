@@ -376,10 +376,17 @@ final class ImageOutputRoutes
             $key = $rule['requiresKey'];
             $required = $rule['requiresValue'];
             // Scalar deps in this (compress-image) table are all on `encoding_mode`,
-            // a same_format optimiser key — validate them on same_format ONLY. A
-            // format_change routes via `convert`, which has no encoding_mode and its
-            // own output_format-based deps (a follow-up). The universal requiresAnyOf
-            // dep (fit -> width|height) above runs on BOTH routes.
+            // a same_format optimiser key — validate them on same_format ONLY. The
+            // universal requiresAnyOf dep (fit -> width|height) above runs on BOTH.
+            //
+            // A format_change routes via `convert`, which has no encoding_mode and
+            // its own deps — but those need NO table here (L2Ay7Uak, resolved as a
+            // no-op). Every convert image dep is keyed on `output_format`, and the
+            // per-target `honored` set the lowering already enforces IS that
+            // constraint materialised, rejecting e.g. output('gif', ['quality' => 80])
+            // with a better message before this method runs. The equivalence is
+            // PINNED by ImageOutputRouteConformanceTest, which fails closed if convert
+            // gains a dep keyed on anything other than output_format.
             if ($route !== 'same_format') {
                 continue;
             }
