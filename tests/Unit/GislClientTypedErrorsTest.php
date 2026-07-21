@@ -1318,6 +1318,13 @@ final class GislClientTypedErrorsTest extends TestCase
             self::assertSame('LONG_FORM_CONCURRENCY_LIMIT_EXCEEDED', $e->errorCode);
             self::assertInstanceOf(LongFormConcurrencyLimitResponse::class, $e->typedPayload);
             self::assertSame('https://x/upgrade', $e->upgradeUrl());
+            // UO1xYecu — the base accessor is isApiRetryableStatus() || taxonomy,
+            // and 429 is in the status arm, so this reported TRUE and told callers
+            // to back off from the ONE error where backing off can never help: it
+            // carries no Retry-After and clears only when an in-flight long-form
+            // workflow finishes. The class docblock said "do NOT back off" while
+            // the API said retry.
+            self::assertFalse($e->retryable());
         }
     }
 
@@ -1354,6 +1361,9 @@ final class GislClientTypedErrorsTest extends TestCase
             self::assertSame('TOO_MANY_REQUESTS', $e->errorCode);
             // Retry-After still resolves off the base-error header surface.
             self::assertSame(30, $e->retryAfterSeconds());
+            // The UO1xYecu carve-out is per-CODE, not a 429 blanket: a genuine
+            // infra rate limit stays retryable.
+            self::assertTrue($e->retryable());
         }
     }
 
