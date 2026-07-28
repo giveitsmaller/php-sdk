@@ -248,16 +248,26 @@ final class ImageOutputRoutes
      */
     public static function isPlannedValue(string $inputToken, string $optionKey, mixed $value): bool
     {
-        $group = CompressMetadata::instance()->mime_groups[self::compressGroupForToken($inputToken)] ?? null;
-        if ($group === null) {
-            return false;
+        // PURELY ADDITIVE (SB1wmTJz): planned if ANY consulted group marks this value
+        // planned. The historical group is still consulted, so every verdict this
+        // returned before still holds — the change can only turn a missed gate into a
+        // gate, never a gate into a pass. A new false ACCEPT would send a request the
+        // server rejects, which is the failure this function exists to prevent.
+        //
+        // Deliberately NOT "most specific wins", which reads cleaner but would flip
+        // webp + color_profile 'srgb' from gated to un-gated (image_webp defines
+        // color_profile with an empty per_value_availability). RecipeOutputTest pins
+        // webp srgb as GATED, and whether it works server-side is not knowable here.
+        // Raised as a question rather than inferred. Mirrors image_output_routes.ts.
+        foreach (self::compressGroupsForToken($inputToken) as $groupName) {
+            $opt = CompressMetadata::instance()->mime_groups[$groupName]->options[$optionKey] ?? null;
+            $entry = $opt?->per_value_availability[self::stringifyForMessage($value)] ?? null;
+            if ($entry !== null && $entry->availability === 'planned') {
+                return true;
+            }
         }
-        $opt = $group->options[$optionKey] ?? null;
-        if ($opt === null) {
-            return false;
-        }
-        $entry = $opt->per_value_availability[self::stringifyForMessage($value)] ?? null;
-        return $entry !== null && $entry->availability === 'planned';
+
+        return false;
     }
 
     /**
@@ -408,21 +418,59 @@ final class ImageOutputRoutes
     }
 
     /**
-     * Input token → its `compress.image*` mime-group name (for per-value
-     * availability lookup). Mirrors the TS `compressGroupForToken`.
+     * Input token → EVERY `compress.image*` mime-group that can carry a per-value
+     * availability marker for it: the format-specific group when the metadata has one,
+     * PLUS the generic `image` group. Most specific first.
+     *
+     * Both are needed, and the old single-group version lost one or the other whichever
+     * way it chose (SB1wmTJz): the generic group carries CROSS-FORMAT markers
+     * (`color_profile: 'srgb'` is planned there and nowhere else), while a specific
+     * group carries FORMAT-ONLY ones (`image_svg` marks `output_format: 'original'`
+     * planned because SVG->SVG optimisation is not built).
+     *
+     * The previous version hard-coded jpeg|png|avif and fell through to `image` with a
+     * trailing "// webp / gif / svg / tiff". That comment was true when written and
+     * silently stopped being true when image_svg and image_webp were added to the
+     * metadata. Deriving the list FROM the metadata rather than a hand-written token
+     * list is what stops it going stale again; pinned by ImageOutputRouteConformanceTest.
+     *
+     * gif/tiff correctly yield ['image'] alone — the metadata genuinely has no concrete
+     * group for them (verified against its key set, not inferred).
+     *
+     * Mirrors the TS `compressGroupsForToken`.
+     *
+     * @return list<string>
+     */
+    public static function compressGroupsForToken(string $token): array
+    {
+        // The historical mapping, PRESERVED EXACTLY — every verdict it produced must
+        // keep being produced (see the additivity note in isPlannedValue).
+        $legacy = match ($token) {
+            'jpeg' => 'image_jpeg',
+            'png' => 'image_png',
+            'avif' => 'image_avif',
+            default => 'image',
+        };
+        $specific = 'image_' . $token;
+
+        return $specific !== $legacy && isset(CompressMetadata::instance()->mime_groups[$specific])
+            ? [$specific, $legacy]
+            : [$legacy];
+    }
+
+    /**
+     * The single most-specific group for a token.
+     *
+     * @deprecated Back-compat shim — use {@see compressGroupsForToken()}, which is what
+     *             the gates consult. This was public and unmarked-internal before the
+     *             rename, so an external caller would have fataled. It deliberately does
+     *             NOT reproduce the old wrong answer for webp/svg (previously the generic
+     *             `image`): that answer was the SB1wmTJz defect. It preserves the METHOD,
+     *             not the bug.
      */
     public static function compressGroupForToken(string $token): string
     {
-        if ($token === 'jpeg') {
-            return 'image_jpeg';
-        }
-        if ($token === 'png') {
-            return 'image_png';
-        }
-        if ($token === 'avif') {
-            return 'image_avif';
-        }
-        return 'image'; // webp / gif / svg / tiff
+        return self::compressGroupsForToken($token)[0];
     }
 
     /**

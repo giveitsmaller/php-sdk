@@ -542,4 +542,64 @@ final class ImageOutputRouteConformanceTest extends TestCase
             );
         }
     }
+
+    // --- group-mapping reachability pin (SB1wmTJz) ---------------------------
+
+    /**
+     * The pin that stops a FOURTH visit to this defect.
+     *
+     * `rtkzl9gr` fixed this class for the enum-membership gate and left the sibling
+     * per-value gate reading a hand-written token list whose trailing comment
+     * ("// webp / gif / svg / tiff") was true when written and silently became false
+     * once image_svg and image_webp were added to the metadata. SVG inputs therefore
+     * missed the one marker that mattered for them, on the preset gate AND on output().
+     *
+     * So this does NOT pin a token list — a token list is exactly what went stale. It
+     * asserts the PROPERTY, driven from the metadata's real groups: every planned
+     * per-value marker on a concrete image_<token> group must be reachable through
+     * isPlannedValue for that token. Add a group to CompressMetadata and forget the
+     * mapping, and this fails. It exercises the shared function, so it covers EVERY
+     * gate that consults it, not just the one being fixed today.
+     */
+    public function test_every_concrete_group_marker_is_reachable_for_its_token(): void
+    {
+        $checked = 0;
+        foreach (CompressMetadata::instance()->mime_groups as $groupName => $group) {
+            if (!\str_starts_with((string) $groupName, 'image_')) {
+                continue;
+            }
+            $token = \substr((string) $groupName, \strlen('image_'));
+            foreach ($group->options as $optionKey => $option) {
+                foreach ($option->per_value_availability as $value => $entry) {
+                    if ($entry->availability !== 'planned') {
+                        continue;
+                    }
+                    ++$checked;
+                    self::assertTrue(
+                        ImageOutputRoutes::isPlannedValue($token, (string) $optionKey, $value),
+                        "planned marker {$groupName}.{$optionKey}={$value} is unreachable for token "
+                        . "'{$token}' — the group mapping has gone stale again",
+                    );
+                }
+            }
+        }
+
+        // Positive control: if the metadata ever stops carrying concrete-group markers
+        // the loop above becomes a no-op and would pass while proving nothing.
+        self::assertGreaterThan(0, $checked, 'no concrete-group planned markers found — pin is vacuous');
+    }
+
+    /**
+     * The historical verdicts must be UNCHANGED — the widening is purely additive.
+     * webp + color_profile 'srgb' stays GATED (RecipeOutputTest pins it) and jpeg srgb
+     * stays LIVE. If a future change flips either, it is a behaviour change and must be
+     * argued, not absorbed.
+     */
+    public function test_widening_is_additive_historical_verdicts_hold(): void
+    {
+        self::assertTrue(ImageOutputRoutes::isPlannedValue('webp', 'color_profile', 'srgb'));
+        self::assertFalse(ImageOutputRoutes::isPlannedValue('jpeg', 'color_profile', 'srgb'));
+        // …and the marker this ticket exists for is now reachable.
+        self::assertTrue(ImageOutputRoutes::isPlannedValue('svg', 'output_format', 'original'));
+    }
 }
