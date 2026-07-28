@@ -25,6 +25,18 @@ final class VideoCompressPresetOptions
 {
     public function __construct(
         public readonly ?VideoCodec $codec = null,
+        /**
+         * Target output size ("50MB"-style string — BINARY units, 1 KB = 1024 — or a
+         * byte count). Derived by the resolver into `target_size_bytes` +
+         * `encoding_mode: 'target_size'`.
+         *
+         * NOT AVAILABLE FOR LONG INPUTS. A compress whose input duration routes to the
+         * long-form path rejects it (reject_long_form_target_size): that path is
+         * single-pass-CRF by construction and two-pass target-size is unbuilt. The
+         * request fails during execution, and the SDK cannot warn earlier — routing is
+         * decided server-side at create-plan time. Short-form compresses honour it
+         * normally. Tracked by zJN6XIi5. Same limit applies to MergeOptions::$targetSize.
+         */
         public readonly string|int|null $targetSize = null,
         public readonly ?int $crf = null,
         public readonly ?VideoPreset $preset = null,
