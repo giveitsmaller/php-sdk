@@ -594,12 +594,20 @@ final class ImageOutputRouteConformanceTest extends TestCase
      * webp + color_profile 'srgb' stays GATED (RecipeOutputTest pins it) and jpeg srgb
      * stays LIVE. If a future change flips either, it is a behaviour change and must be
      * argued, not absorbed.
+     *
+     * The svg assertion is the exception, and it was ARGUED rather than absorbed: it
+     * flipped at the v2.188.0 re-vendor because contracts restored `image_svg` compress
+     * to STABLE upstream. See the inline note.
      */
     public function test_widening_is_additive_historical_verdicts_hold(): void
     {
         self::assertTrue(ImageOutputRoutes::isPlannedValue('webp', 'color_profile', 'srgb'));
         self::assertFalse(ImageOutputRoutes::isPlannedValue('jpeg', 'color_profile', 'srgb'));
-        // …and the marker this ticket exists for is now reachable.
-        self::assertTrue(ImageOutputRoutes::isPlannedValue('svg', 'output_format', 'original'));
+        // SVG output_format=original is NO LONGER planned, and that is the pin doing its
+        // job rather than a regression. `image_svg` compress was restored to STABLE
+        // upstream (contracts G9O6yrQD, vendored here at v2.188.0), so the marker
+        // SB1wmTJz existed to reach no longer exists — the ticket is vendored past, not
+        // fixed. The reachability test above keeps its teeth via its own positive control.
+        self::assertFalse(ImageOutputRoutes::isPlannedValue('svg', 'output_format', 'original'));
     }
 }
