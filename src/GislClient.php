@@ -1705,6 +1705,24 @@ class GislClient
 
                 if ($line[0] === ':') {
                     // Comment / keep-alive. Skip.
+                    //
+                    // ⚠️ LOAD-BEARING FOR THE FRONTEND — see the long note at
+                    // `packages/typescript/src/sse.ts` before changing this.
+                    // In short: an IDLE WATCHDOG at 20s in the FE detects a
+                    // stream that has gone SILENT WHILE THE WORKFLOW IS STILL
+                    // RUNNING and resumes the fallback poll. It only fires
+                    // because heartbeats (~16s) are never yielded and so never
+                    // re-arm it. Surfacing comment frames would re-arm it
+                    // forever and STALL DETECTION WOULD NEVER FIRE — a stuck
+                    // job would sit there with the UI believing it is fine.
+                    //
+                    // PERMANENT. It is NOT retired by the FE's close-on-terminal
+                    // fix: that removes the terminal case, not the stall case.
+                    //
+                    // This branch is kept IDENTICAL to the TS parser on purpose.
+                    // If one language starts surfacing comments and the other
+                    // does not, the two SDKs diverge on a property a consumer
+                    // depends on — and nobody's grep would find it.
                     continue;
                 }
 
