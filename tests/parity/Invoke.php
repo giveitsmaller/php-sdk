@@ -137,6 +137,12 @@ final class Invoke
         $factory = new HttpFactory();
         $config = new GislClientConfig(
             baseUrl: 'https://api.test.example.com',
+            // VUozk5Bc — the SSE stream lives on a second host and is never
+            // derived from baseUrl, so the parity harness must declare one or
+            // every sse-mode fixture fails closed before reaching the parser it
+            // exists to compare. MUST stay byte-identical to the TS harness in
+            // packages/typescript/tests/parity/invoke.ts.
+            streamBaseUrl: 'https://stream.test.example.com',
             apiKey: 'test-api-key',
             // Force deterministic part order for parity. The PHP SDK is
             // sequential in v0.x anyway but the config field is recorded.
@@ -263,6 +269,12 @@ final class Invoke
         $factory = new HttpFactory();
         $config = new GislClientConfig(
             baseUrl: 'https://api.test.example.com',
+            // VUozk5Bc — the SSE stream lives on a second host and is never
+            // derived from baseUrl, so the parity harness must declare one or
+            // every sse-mode fixture fails closed before reaching the parser it
+            // exists to compare. MUST stay byte-identical to the TS harness in
+            // packages/typescript/tests/parity/invoke.ts.
+            streamBaseUrl: 'https://stream.test.example.com',
             apiKey: 'test-api-key',
             multipartConcurrency: 1,
         );
@@ -324,6 +336,12 @@ final class Invoke
         $factory = new HttpFactory();
         $config = new GislClientConfig(
             baseUrl: 'https://api.test.example.com',
+            // VUozk5Bc — the SSE stream lives on a second host and is never
+            // derived from baseUrl, so the parity harness must declare one or
+            // every sse-mode fixture fails closed before reaching the parser it
+            // exists to compare. MUST stay byte-identical to the TS harness in
+            // packages/typescript/tests/parity/invoke.ts.
+            streamBaseUrl: 'https://stream.test.example.com',
             apiKey: 'test-api-key',
             multipartConcurrency: 1,
         );
@@ -437,6 +455,12 @@ final class Invoke
         $factory = new HttpFactory();
         $config = new GislClientConfig(
             baseUrl: 'https://api.test.example.com',
+            // VUozk5Bc — the SSE stream lives on a second host and is never
+            // derived from baseUrl, so the parity harness must declare one or
+            // every sse-mode fixture fails closed before reaching the parser it
+            // exists to compare. MUST stay byte-identical to the TS harness in
+            // packages/typescript/tests/parity/invoke.ts.
+            streamBaseUrl: 'https://stream.test.example.com',
             apiKey: 'test-api-key',
             multipartConcurrency: 1,
         );
@@ -487,6 +511,12 @@ final class Invoke
         $factory = new HttpFactory();
         $config = new GislClientConfig(
             baseUrl: 'https://api.test.example.com',
+            // VUozk5Bc — the SSE stream lives on a second host and is never
+            // derived from baseUrl, so the parity harness must declare one or
+            // every sse-mode fixture fails closed before reaching the parser it
+            // exists to compare. MUST stay byte-identical to the TS harness in
+            // packages/typescript/tests/parity/invoke.ts.
+            streamBaseUrl: 'https://stream.test.example.com',
             apiKey: 'test-api-key',
             multipartConcurrency: 1,
         );

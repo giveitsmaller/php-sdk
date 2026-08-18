@@ -117,7 +117,15 @@ final class GislClientSseTest extends TestCase
     private function makeClient(ClientInterface $http, string $baseUrl = 'https://api.example.com'): GislClient
     {
         return new GislClient(
-            config: new GislClientConfig(baseUrl: $baseUrl, apiKey: 'sk_test'),
+            // VUozk5Bc — the SSE stream lives on a second host and is NEVER
+            // derived from baseUrl. This harness declares one so the cases
+            // below exercise the PARSER rather than the fail-closed guard; the
+            // guard itself is proved in StreamHostTest.
+            config: new GislClientConfig(
+                baseUrl: $baseUrl,
+                apiKey: 'sk_test',
+                streamBaseUrl: 'https://stream.example.com',
+            ),
             httpClient: $http,
             requestFactory: $this->factory,
             streamFactory: $this->factory,

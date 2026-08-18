@@ -85,7 +85,7 @@ final class RecipeRunTest extends TestCase
     private function makeClient(ClientInterface $http): GislClient
     {
         return new GislClient(
-            config: new GislClientConfig(baseUrl: 'https://api.example.com', apiKey: 'sk_test'),
+            config: new GislClientConfig(baseUrl: 'https://api.example.com', streamBaseUrl: 'https://stream.example.com', apiKey: 'sk_test'),
             httpClient: $http,
             requestFactory: $this->factory,
             streamFactory: $this->factory,
@@ -851,6 +851,45 @@ final class RecipeRunTest extends TestCase
         ]);
 
         $client = $this->makeClient($http);
+        $result = $this->recipe($client, FileInput::uploadId('file_existing'))
+            ->compress()
+            ->run(pollIntervalMs: 0);
+
+        self::assertSame('completed', $result->state);
+        self::assertTrue($result->ok);
+        self::assertCount(1, $result->artifacts);
+    }
+
+    #[Test]
+    public function poll_fallback_when_no_stream_host_is_declared(): void
+    {
+        // VUozk5Bc. A client with NO declared stream host (today: any prod
+        // configuration — the contract declares stream `servers` for localhost
+        // and staging only) cannot open the stream, and must not silently reuse
+        // the API host. run() therefore never issues the events request at all
+        // and goes straight to polling: note the queue below has NO SSE entry.
+        //
+        // A run()/wait() caller asked for a RESULT, not for a transport. A
+        // DIRECT streamEvents() caller still gets the hard error — see
+        // StreamHostTest.
+        $http = $this->stubClient([
+            $this->createResponse(),
+            $this->statusResponse('completed'),   // poll fallback → terminal
+            $this->downloadsResponse(),
+        ]);
+
+        $client = new GislClient(
+            config: new GislClientConfig(
+                baseUrl: 'https://api.example.com',
+                apiKey: 'sk_test',
+                // Deliberately absent.
+                streamBaseUrl: null,
+            ),
+            httpClient: $http,
+            requestFactory: $this->factory,
+            streamFactory: $this->factory,
+        );
+
         $result = $this->recipe($client, FileInput::uploadId('file_existing'))
             ->compress()
             ->run(pollIntervalMs: 0);

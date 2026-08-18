@@ -643,7 +643,7 @@ final class WatermarkRecipeTest extends TestCase
     {
         $factory = new HttpFactory();
         return new GislErgonomicClient(
-            config: new GislClientConfig(baseUrl: 'https://api.example.com', apiKey: 'sk_test', multipartConcurrency: 1),
+            config: new GislClientConfig(baseUrl: 'https://api.example.com', streamBaseUrl: 'https://stream.example.com', apiKey: 'sk_test', multipartConcurrency: 1),
             httpClient: $http,
             requestFactory: $factory,
             streamFactory: $factory,

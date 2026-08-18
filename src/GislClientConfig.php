@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Gisl\Sdk;
 
+use Gisl\Sdk\Errors\GislConfigError;
+
 /**
  * Immutable configuration for {@see GislClient}.
  *
@@ -44,6 +46,24 @@ final class GislClientConfig
     public const DEFAULT_MULTIPART_RETRY_BASE_MS = 500;
 
     public readonly string $baseUrl;
+    /**
+     * Host for the **SSE event stream** ({@see GislClient::streamEvents()}), or
+     * `null` when nothing declares one for this configuration.
+     *
+     * The stream is served from a SECOND public entry point, separate from
+     * `$baseUrl`: the API host fronts an integration with no
+     * response-streaming mode. Setting this moves the stream and **nothing
+     * else** — uploads, workflow-create and downloads keep using `$baseUrl`.
+     * That is why it is its own field rather than something expressed by
+     * overriding `$baseUrl`, which moves every call.
+     *
+     * ⚠️ `null` is NOT defaulted to `$baseUrl`. An absent stream host stays
+     * absent so {@see GislClient::streamEvents()} can fail closed and name the
+     * missing declaration; a default here would be the silent derivation the
+     * whole mechanism exists to prevent, hidden one layer deeper than the
+     * resolver. See {@see Credentials::ENVIRONMENT_STREAM_ENDPOINTS}.
+     */
+    public readonly ?string $streamBaseUrl;
     public readonly ?string $apiKey;
     /** @var array<string, string> */
     public readonly array $headers;
@@ -90,10 +110,14 @@ final class GislClientConfig
         ?int $multipartMaxAttempts = null,
         ?int $multipartRetryBaseMs = null,
         ?string $locale = null,
+        ?string $streamBaseUrl = null,
     ) {
         // Strip a trailing slash so the request loop can concatenate
         // /api/... paths without duplicating separators.
         $this->baseUrl = rtrim($baseUrl, '/');
+        // Appended LAST in the signature deliberately: every existing
+        // positional caller keeps working.
+        $this->streamBaseUrl = self::normaliseStreamBaseUrl($streamBaseUrl);
         $this->apiKey = $apiKey;
         $this->headers = $headers;
 
@@ -117,6 +141,69 @@ final class GislClientConfig
         // as falsy and never installs an empty Accept-Language
         // (packages/typescript/src/client.ts:527).
         $this->locale = ($locale === '') ? null : $locale;
+    }
+
+    /**
+     * Normalise a configured stream host to an absolute origin, or `null` when
+     * none was supplied. Trailing slashes are stripped so path concatenation
+     * does not double-separate.
+     *
+     * ⚠️ **A PRESENT-BUT-MALFORMED VALUE THROWS RATHER THAN DEGRADING TO
+     * `null`, and the distinction is deliberate.** Absent means "nobody
+     * declared one" — a legitimate state that `run()` handles by polling. A
+     * caller who passed `'/'` or `'stream.example.com'` did declare one, and
+     * got it wrong. Quietly converting that to "absent" would send
+     * their stream somewhere they did not choose (a bare `'/'` rtrims to `''`,
+     * which concatenates into a RELATIVE url) and hand them a poll they never
+     * asked for — the silent degradation this whole mechanism exists to
+     * refuse, one layer further down.
+     *
+     * An empty OR WHITESPACE-ONLY string is treated as unset — the two are
+     * indistinguishable in intent — matching how `$locale` handles `''` in this
+     * same constructor.
+     *
+     * Kept behaviourally identical to `normaliseStreamBaseUrl` in
+     * `packages/typescript/src/client.ts`.
+     */
+    private static function normaliseStreamBaseUrl(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $scheme = parse_url($trimmed, PHP_URL_SCHEME);
+        $host = parse_url($trimmed, PHP_URL_HOST);
+        if (!is_string($scheme) || !is_string($host) || $host === '') {
+            throw new GislConfigError(
+                "streamBaseUrl must be an absolute http(s) URL "
+                . "(e.g. https://stream.example.com); got '{$value}'.",
+            );
+        }
+        $scheme = strtolower($scheme);
+        if ($scheme !== 'http' && $scheme !== 'https') {
+            throw new GislConfigError(
+                "streamBaseUrl must use http or https; got scheme '{$scheme}' in '{$value}'.",
+            );
+        }
+
+        // A query or fragment cannot survive path concatenation: the events
+        // path is appended as a STRING, so 'https://host?token=x' would
+        // request '/' with the whole events path buried inside the query
+        // value. Rejecting is right rather than stripping — a caller who put
+        // a token there meant it to be sent, and silently dropping it would
+        // fail later and further away. codex 5793a3be0f7b.
+        if (parse_url($trimmed, PHP_URL_QUERY) !== null || parse_url($trimmed, PHP_URL_FRAGMENT) !== null) {
+            throw new GislConfigError(
+                'streamBaseUrl must not carry a query or fragment '
+                . "(the events path is appended to it); got '{$value}'.",
+            );
+        }
+
+        return rtrim($trimmed, '/');
     }
 
     private static function sanitiseThreshold(?int $value): int

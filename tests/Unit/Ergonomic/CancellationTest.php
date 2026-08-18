@@ -463,7 +463,7 @@ final class CancellationTest extends TestCase
         $factory = new HttpFactory();
         return new GislErgonomicClient(
             config: new GislClientConfig(
-                baseUrl: 'https://api.test.example.com',
+                baseUrl: 'https://api.test.example.com', streamBaseUrl: 'https://stream.example.com',
                 apiKey: 'test-api-key',
                 multipartConcurrency: 1,
             ),

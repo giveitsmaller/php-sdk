@@ -377,7 +377,7 @@ final class RunResultTargetSizeTest extends TestCase
         // files() lives on GislErgonomicClient; the single-file Recipe accepts it
         // too (GislErgonomicClient IS-A GislClient).
         return new GislErgonomicClient(
-            config: new GislClientConfig(baseUrl: 'https://api.example.com', apiKey: 'sk_test'),
+            config: new GislClientConfig(baseUrl: 'https://api.example.com', streamBaseUrl: 'https://stream.example.com', apiKey: 'sk_test'),
             httpClient: $http,
             requestFactory: $this->factory,
             streamFactory: $this->factory,

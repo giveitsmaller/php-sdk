@@ -740,7 +740,7 @@ final class BatchRecipeTest extends TestCase
         // batch() lives on GislErgonomicClient (the subclass) — the run tests
         // drive the batch through it, exactly like files() in FilesRecipeTest.
         return new GislErgonomicClient(
-            config: new GislClientConfig(baseUrl: 'https://api.example.com', apiKey: 'sk_test'),
+            config: new GislClientConfig(baseUrl: 'https://api.example.com', streamBaseUrl: 'https://stream.example.com', apiKey: 'sk_test'),
             httpClient: $http,
             requestFactory: $this->factory,
             streamFactory: $this->factory,

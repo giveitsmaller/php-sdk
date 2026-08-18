@@ -250,7 +250,7 @@ final class ArchivedRecipeTest extends TestCase
     {
         $factory = new HttpFactory();
         return new GislErgonomicClient(
-            config: new GislClientConfig(baseUrl: 'https://api.test.example.com', apiKey: 'test-api-key', multipartConcurrency: 1),
+            config: new GislClientConfig(baseUrl: 'https://api.test.example.com', streamBaseUrl: 'https://stream.example.com', apiKey: 'test-api-key', multipartConcurrency: 1),
             httpClient: $http,
             requestFactory: $factory,
             streamFactory: $factory,

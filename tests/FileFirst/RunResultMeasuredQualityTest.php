@@ -228,7 +228,7 @@ final class RunResultMeasuredQualityTest extends TestCase
     private function makeClient(ClientInterface $http): GislErgonomicClient
     {
         return new GislErgonomicClient(
-            config: new GislClientConfig(baseUrl: 'https://api.example.com', apiKey: 'sk_test'),
+            config: new GislClientConfig(baseUrl: 'https://api.example.com', streamBaseUrl: 'https://stream.example.com', apiKey: 'sk_test'),
             httpClient: $http,
             requestFactory: $this->factory,
             streamFactory: $this->factory,

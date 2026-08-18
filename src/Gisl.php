@@ -88,6 +88,14 @@ final class Gisl
      * @param string|null                   $locale         BCP-47 language tag (e.g. `fr-FR`) sent as
      *                                                      `Accept-Language` on every request. See
      *                                                      {@see GislClientConfig::$locale}.
+     * @param string|null                   $streamBaseUrl  Host for the SSE event stream (VUozk5Bc).
+     *                                                      Moves the stream and NOTHING else — uploads,
+     *                                                      workflow-create and downloads keep using
+     *                                                      `$baseUrl`. Omit to resolve it from
+     *                                                      `$environment` against the contract-declared
+     *                                                      stream hosts; it is NEVER derived from
+     *                                                      `$baseUrl`. See
+     *                                                      {@see Credentials::ENVIRONMENT_STREAM_ENDPOINTS}.
      */
     public static function create(
         ?string $apiKey = null,
@@ -107,6 +115,7 @@ final class Gisl
         ?StreamFactoryInterface $streamFactory = null,
         ?PresetDefaults $presetDefaults = null,
         ?string $locale = null,
+        ?string $streamBaseUrl = null,
     ): GislErgonomicClient {
         return self::createInternal(
             apiKey: $apiKey,
@@ -127,6 +136,7 @@ final class Gisl
             allowAnonymous: false,
             presetDefaults: $presetDefaults,
             locale: $locale,
+            streamBaseUrl: $streamBaseUrl,
         );
     }
 
@@ -197,9 +207,18 @@ final class Gisl
         bool $allowAnonymous,
         ?PresetDefaults $presetDefaults = null,
         ?string $locale = null,
+        ?string $streamBaseUrl = null,
     ): GislErgonomicClient {
         $resolvedBaseUrl = Credentials::resolveEndpoint(
             baseUrl: $baseUrl,
+            environment: $environment,
+        );
+        // Resolved SEPARATELY and never from $resolvedBaseUrl. `null` here
+        // means "nothing declares a stream host for this configuration" — a
+        // legitimate state that streamEvents() reports and run() handles by
+        // polling.
+        $resolvedStreamBaseUrl = Credentials::resolveStreamEndpoint(
+            streamBaseUrl: $streamBaseUrl,
             environment: $environment,
         );
 
@@ -218,6 +237,7 @@ final class Gisl
                 multipartMaxAttempts: $multipartMaxAttempts,
                 multipartRetryBaseMs: $multipartRetryBaseMs,
                 locale: $locale,
+                streamBaseUrl: $resolvedStreamBaseUrl,
             );
             return new GislErgonomicClient(
                 $config,
@@ -265,6 +285,7 @@ final class Gisl
             multipartMaxAttempts: $multipartMaxAttempts,
             multipartRetryBaseMs: $multipartRetryBaseMs,
             locale: $locale,
+            streamBaseUrl: $resolvedStreamBaseUrl,
         );
         return new GislErgonomicClient(
             $config,

@@ -9,6 +9,7 @@ use Gisl\Generated\OpenApi\Model\WorkflowStatusResponse;
 use Gisl\Sdk\Cancellation;
 use Gisl\Sdk\Errors\GislAbortError;
 use Gisl\Sdk\Errors\GislNetworkError;
+use Gisl\Sdk\Errors\GislStreamHostNotDeclaredError;
 use Gisl\Sdk\Errors\GislTimeoutError;
 use Gisl\Sdk\GislClient;
 use Gisl\Sdk\GislSseEvent;
@@ -240,6 +241,20 @@ final class BuilderInternals
                 // PSR-18 transport failed mid-SSE — try poll.
             } catch (SseStreamEndedWithoutTerminal $e) {
                 // Clean server close with no terminal frame — try poll.
+            } catch (GislStreamHostNotDeclaredError $e) {
+                // VUozk5Bc: no stream host is DECLARED for this configuration
+                // (today, any production config — the contract declares stream
+                // `servers` for localhost and staging only). That is not a
+                // failure to recover from, it is SSE being unavailable here,
+                // and polling is a working transport. Failing hard instead
+                // would strand every caller on a host nobody has declared yet.
+                // A DIRECT streamEvents() caller still gets the hard error —
+                // they asked for the stream specifically; a run() caller asked
+                // for a result.
+                //
+                // ⚠️ MUST sit BELOW the GislTimeoutError arm and above nothing
+                // that matters: it is a GislConfigError, so it would otherwise
+                // fall through to the propagate-everything-else rule below.
             }
             // Anything else (GislApiError subclasses for 401/402/etc.,
             // caller `onProgress` exceptions, framework errors)

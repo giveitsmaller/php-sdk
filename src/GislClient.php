@@ -61,6 +61,7 @@ use Gisl\Sdk\Errors\GislMultipartSessionAuthRequiredError;
 use Gisl\Sdk\Errors\GislMultipartSessionNotFoundError;
 use Gisl\Sdk\Errors\GislMultipartSessionOwnershipError;
 use Gisl\Sdk\Errors\GislNetworkError;
+use Gisl\Sdk\Errors\GislStreamHostNotDeclaredError;
 use Gisl\Sdk\Errors\GislTierRestrictedError;
 use Gisl\Sdk\Errors\GislTimeoutError;
 use Gisl\Sdk\Errors\GislUploadCapExceededError;
@@ -1607,11 +1608,40 @@ class GislClient
         ?string $capability = null,
         ?callable $onParseError = null,
     ): \Generator {
+        // FAIL CLOSED. The stream lives on a second host and this SDK will not
+        // guess it. Falling back to $this->config->baseUrl here would be the
+        // one line that re-creates, inside a published SDK, the failure this
+        // mechanism exists to prevent: production had no stream host
+        // configured, fell back to the API host by convention, and streamed
+        // into a gateway that cannot stream — invisibly, because a silent
+        // fallback looks exactly like a working one. run() handles this case by
+        // polling; a direct streamEvents() caller asked for the stream
+        // specifically and is told plainly that there isn't one.
+        $streamBaseUrl = $this->config->streamBaseUrl;
+        if ($streamBaseUrl === null) {
+            $declared = Credentials::declaredStreamEnvironments();
+            $declaredNote = $declared === []
+                ? 'No environment currently declares a stream host.'
+                : 'Environments that declare a stream host: ' . implode(', ', $declared) . '.';
+
+            throw new GislStreamHostNotDeclaredError(
+                'No SSE stream host is declared for this configuration, and the SDK does not '
+                . 'derive one from baseUrl. ' . $declaredNote . ' Pass a stream base URL to '
+                . 'Gisl::create() / GislClientConfig, set '
+                . Credentials::GISL_STREAM_BASE_URL_ENV
+                . ', or construct with an Environment that declares one. The production stream '
+                . 'host is not yet declared in the contract (GET /api/workflows/{id}/events '
+                . '`servers`), so a production configuration has none to resolve.',
+            );
+        }
+
         $encoded = \rawurlencode($workflowId);
         $request = $this->buildRequest(
             method: 'GET',
             path: "/api/workflows/{$encoded}/events",
             extraHeaders: $this->workflowCapabilityHeaders($capability),
+            // The one call in the SDK that does NOT go to baseUrl.
+            baseUrlOverride: $streamBaseUrl,
         );
 
         try {
@@ -2699,10 +2729,16 @@ class GislClient
         string $path,
         mixed $body = null,
         array $extraHeaders = [],
+        ?string $baseUrlOverride = null,
     ): RequestInterface {
+        // `$baseUrlOverride` sends this ONE request to a host other than
+        // `$this->config->baseUrl`. The only caller is streamEvents(), which
+        // lives on the separate stream host. Auth headers, locale, cookies and
+        // error dispatch are unchanged — this swaps the origin and nothing
+        // else, so the stream does not fork the shared request spine.
         $request = $this->requestFactory->createRequest(
             $method,
-            $this->config->baseUrl . $path,
+            ($baseUrlOverride ?? $this->config->baseUrl) . $path,
         );
 
         $request = $request

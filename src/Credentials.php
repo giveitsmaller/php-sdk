@@ -25,6 +25,7 @@ final class Credentials
     public const GISL_API_KEY_ENV = 'GISL_API_KEY';
     public const GISL_BASE_URL_ENV = 'GISL_BASE_URL';
     public const GISL_ENVIRONMENT_ENV = 'GISL_ENVIRONMENT';
+    public const GISL_STREAM_BASE_URL_ENV = 'GISL_STREAM_BASE_URL';
 
     /**
      * Named environments → base URLs. Kept colocated with the resolver so
@@ -35,6 +36,54 @@ final class Credentials
     public const ENVIRONMENT_ENDPOINTS = [
         'prod' => 'https://api.giveitsmaller.com',
         'staging' => 'https://api.staging.giveitsmaller.com',
+    ];
+
+    /**
+     * Named environments → **SSE stream host**. A SECOND host, deliberately
+     * separate from {@see self::ENVIRONMENT_ENDPOINTS}: the API host fronts an
+     * integration with no response-streaming mode, so the event stream lives
+     * on its own public entry point.
+     *
+     * ⚠️ **DECLARED, NEVER DERIVED.** This table exists because the
+     * alternative — transforming `api.*` into `stream.*` by string surgery —
+     * is a *convention*, and a convention is exactly what put production on
+     * the gateway path: the frontend's prod build had no stream host set,
+     * silently fell back to the API host, and nobody could see it. A host is a
+     * fact somebody states, not a pattern somebody guesses.
+     *
+     * PINNED to the generated `availability.json`
+     * `endpoints['GET /api/workflows/{id}/events'].servers` by
+     * {@see \Gisl\Sdk\Tests\Unit\StreamHostConformanceTest}, which fails
+     * **closed**: if the contract declares a host this table does not carry
+     * (or vice versa), the build breaks. Hand-maintained rather than read at
+     * runtime, matching the TS side and the existing table+conformance shape
+     * used by the preset planned gate, the watermark gate and the image output
+     * routes.
+     *
+     * ⚠️ **THERE IS NO `prod` ENTRY, AND ITS ABSENCE IS THE CONTRACT'S, NOT AN
+     * OVERSIGHT HERE.** The contract's `servers` block for the stream
+     * operation carries localhost and staging only; contracts deliberately did
+     * not invent a production URL. Until it is declared, a production
+     * configuration has **no stream host** and
+     * {@see self::resolveStreamEndpoint()} returns `null` — see
+     * {@see GislClient::streamEvents()}, which fails closed rather than quietly
+     * reusing the API base URL. Add `prod` here in the same change that vendors
+     * the contract entry, never ahead of it.
+     *
+     * `localhost` is intentionally absent too: the contract declares it as a
+     * development server, but there is no `localhost` case on
+     * {@see Environment} to key it off. Local callers pass an explicit stream
+     * base URL or set `GISL_STREAM_BASE_URL`.
+     *
+     * Kept IDENTICAL to `ENVIRONMENT_STREAM_ENDPOINTS` in
+     * `packages/typescript/src/credentials.ts`. If one language declares a host
+     * the other does not, the two SDKs stream to different places on the same
+     * configuration and nobody's grep would find it.
+     *
+     * @var array<string, string>
+     */
+    public const ENVIRONMENT_STREAM_ENDPOINTS = [
+        'staging' => 'https://stream.staging.giveitsmaller.com',
     ];
 
     public const DEFAULT_ENDPOINT = 'https://api.giveitsmaller.com';
@@ -122,6 +171,76 @@ final class Credentials
         }
 
         return self::DEFAULT_ENDPOINT;
+    }
+
+    /**
+     * Resolve the **SSE stream host**, or `null` when no host is declared for
+     * this configuration. Explicit `$streamBaseUrl` wins; otherwise an explicit
+     * `$environment`; otherwise `GISL_STREAM_BASE_URL`; otherwise the
+     * `GISL_ENVIRONMENT` env var.
+     *
+     * ⚠️ **RETURNS `null` RATHER THAN FALLING BACK TO THE API BASE URL, AND
+     * THAT IS THE WHOLE POINT OF THIS METHOD.** Deriving the stream host from
+     * the API host would reproduce, inside a published SDK, the exact failure
+     * this resolver exists to prevent: prod had no stream host configured, fell
+     * back to the API host by convention, and streamed into a gateway that
+     * cannot stream. A silent fallback is not a lenient control — it is the
+     * absence of one wearing the control's name. Callers decide what `null`
+     * means; see {@see GislClient::streamEvents()}, which fails closed and
+     * names the missing declaration.
+     *
+     * Unlike {@see self::resolveEndpoint()} there is no default: prod has no
+     * declared stream host yet, so a default could only be a guess.
+     *
+     * Mirrors `resolveStreamEndpoint` in
+     * `packages/typescript/src/credentials.ts`.
+     */
+    public static function resolveStreamEndpoint(
+        ?string $streamBaseUrl = null,
+        ?Environment $environment = null,
+    ): ?string {
+        // TRIM BEFORE THE PRESENCE CHECK. A whitespace-only value is unset
+        // (the config normaliser treats it that way too), and if it were
+        // allowed to count as "supplied" here it would SUPPRESS the
+        // environment's declared host and then normalise to nothing —
+        // silently disabling a stream that was perfectly well declared.
+        // codex a7f5ec9f0d32.
+        $explicit = $streamBaseUrl === null ? '' : trim($streamBaseUrl);
+        if ($explicit !== '') {
+            return $explicit;
+        }
+
+        if ($environment !== null) {
+            // A KNOWN environment with no declared stream host resolves to
+            // `null`, not to an error and not to the API base URL. That is
+            // today's `prod`: the config is valid, the declaration is simply
+            // missing upstream.
+            return self::ENVIRONMENT_STREAM_ENDPOINTS[$environment->value] ?? null;
+        }
+
+        $envStreamBaseUrl = self::readEnv(self::GISL_STREAM_BASE_URL_ENV);
+        if ($envStreamBaseUrl !== null) {
+            return $envStreamBaseUrl;
+        }
+
+        $envEnvironment = self::readEnv(self::GISL_ENVIRONMENT_ENV);
+        if ($envEnvironment !== null && isset(self::ENVIRONMENT_STREAM_ENDPOINTS[$envEnvironment])) {
+            return self::ENVIRONMENT_STREAM_ENDPOINTS[$envEnvironment];
+        }
+
+        return null;
+    }
+
+    /**
+     * The environments that currently declare a stream host. Used in the
+     * fail-closed error message so the caller is told what IS available rather
+     * than only what is missing.
+     *
+     * @return list<string>
+     */
+    public static function declaredStreamEnvironments(): array
+    {
+        return array_keys(self::ENVIRONMENT_STREAM_ENDPOINTS);
     }
 
     /**
