@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Gisl\Sdk\FileFirst;
 
-use Gisl\Sdk\Errors\GislNetworkError;
+use Gisl\Sdk\Errors\GislDownloadHttpError;
+use Gisl\Sdk\Errors\GislRequestNotSentError;
 use Gisl\Sdk\Errors\GislSinkError;
+use Gisl\Sdk\Errors\GislTransportError;
 
 /**
  * Streaming {@see Downloader} implementation.
@@ -23,6 +25,16 @@ final class StreamingDownloader implements Downloader
         // cannot read a stale status from an earlier, unrelated request.
         if (\function_exists('http_clear_last_response_headers')) {
             \http_clear_last_response_headers();
+        }
+
+        // codex f46340e1d58a: a malformed URL fails DETERMINISTICALLY, so it
+        // must not land in the always-retryable bucket with DNS and TLS.
+        // @fopen returns the same `false` for both, so the only way to tell
+        // them apart is to check BEFORE the call. `file://` is legitimate here
+        // (the parity fixtures use it) and has no host, so require a SCHEME
+        // rather than a host.
+        if (\parse_url($url, PHP_URL_SCHEME) === null) {
+            throw new GislRequestNotSentError('Download source is not a valid URL: ' . $url);
         }
 
         $in = @fopen($url, 'rb');
@@ -54,15 +66,20 @@ final class StreamingDownloader implements Downloader
                 }
             }
 
-            // A captured status mirrors TS http-downloader.ts:40 (status in the
-            // message only — GislNetworkError has no status field). No status
-            // line (pure DNS/refused connect failure, or a non-HTTP wrapper) →
-            // keep the existing connect-failure message (mirrors TS's branch).
+            // A captured status mirrors TS http-downloader.ts. t2qCrjdr: the
+            // status is now carried as a FIELD as well as in the message, so a
+            // consumer telling a permanent 404 from a transient 503 never has to
+            // parse the string. No status line (pure DNS/refused connect failure,
+            // or a non-HTTP wrapper) → the server was never reached, which is
+            // transport (mirrors TS's branch).
             if ($status !== null) {
-                throw new GislNetworkError("Download failed with status {$status}");
+                throw new GislDownloadHttpError(
+                    "Download failed with status {$status}",
+                    (int) $status,
+                );
             }
 
-            throw new GislNetworkError('Failed to open download source: ' . $url);
+            throw new GislTransportError('Failed to open download source: ' . $url);
         }
 
         $out = @fopen($destPath, 'wb');

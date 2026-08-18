@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Gisl\Sdk\Tests\FileFirst;
 
+use Gisl\Sdk\Errors\GislDownloadHttpError;
 use Gisl\Sdk\Errors\GislNetworkError;
+use Gisl\Sdk\Errors\GislRequestNotSentError;
+use Gisl\Sdk\Errors\GislTransportError;
 use Gisl\Sdk\Errors\GislSinkError;
 use Gisl\Sdk\FileFirst\StreamingDownloader;
 use PHPUnit\Framework\Attributes\Test;
@@ -27,6 +30,12 @@ final class StreamingDownloaderTest extends TestCase
         $path = \parse_url($_SERVER['REQUEST_URI'] ?? '/', \PHP_URL_PATH);
         if ($path === '/redirect') {
             \header('Location: /final', true, 302);
+            exit;
+        }
+        if ($path === '/unavailable') {
+            // t2qCrjdr: a TRANSIENT non-2xx, so the same class reports
+            // retryable=true here and false on /missing.
+            \http_response_code(503);
             exit;
         }
         // `/final` and any other path answer 404 — this is the applicable
@@ -275,5 +284,115 @@ final class StreamingDownloaderTest extends TestCase
         }
 
         self::markTestSkipped('The loopback `php -S` server did not become ready within 2s.');
+    }
+
+    // -------------------------------------------------------------------------
+    // t2qCrjdr — the split. The assertions above still pass BY INHERITANCE,
+    // which is the point: nothing a consumer wrote against GislNetworkError
+    // breaks. These pin the half that is new — which subclass, and what it says
+    // about retrying.
+    // -------------------------------------------------------------------------
+
+    #[Test]
+    public function a_non_2xx_download_raises_GislDownloadHttpError_carrying_the_status(): void
+    {
+        $base = $this->startLoopbackServer();
+
+        $dest = \tempnam(\sys_get_temp_dir(), 'gisl_dl_dst_');
+        self::assertIsString($dest);
+        try {
+            (new StreamingDownloader())->downloadTo("{$base}/missing", $dest);
+            self::fail('expected GislDownloadHttpError');
+        } catch (GislDownloadHttpError $e) {
+            // The status is a FIELD now, so telling a permanent 404 from a
+            // transient 503 no longer means parsing the message.
+            self::assertSame(404, $e->status);
+            // The honest answer, and the one the unsplit class could not give.
+            self::assertFalse($e->retryable());
+            // Still catchable the old way — no consumer breakage.
+            self::assertInstanceOf(GislNetworkError::class, $e);
+        } finally {
+            @\unlink($dest);
+        }
+    }
+
+    #[Test]
+    public function a_503_download_is_retryable_while_a_404_is_not(): void
+    {
+        // Same class, opposite advice — retryability is DERIVED FROM THE STATUS
+        // rather than fixed for the class. A single class-wide `retryable` is
+        // exactly what made this undeclarable in the contracts taxonomy.
+        $base = $this->startLoopbackServer();
+
+        $dest = \tempnam(\sys_get_temp_dir(), 'gisl_dl_dst_');
+        self::assertIsString($dest);
+        try {
+            (new StreamingDownloader())->downloadTo("{$base}/unavailable", $dest);
+            self::fail('expected GislDownloadHttpError');
+        } catch (GislDownloadHttpError $e) {
+            self::assertSame(503, $e->status);
+            self::assertTrue($e->retryable());
+        } finally {
+            @\unlink($dest);
+        }
+    }
+
+    #[Test]
+    public function an_unparseable_url_is_rejected_before_any_io_as_non_retryable(): void
+    {
+        // codex f46340e1d58a: a malformed URL fails DETERMINISTICALLY, so it
+        // must not land in the always-retryable bucket with DNS and TLS.
+        // @fopen returns the same false for both, so the check happens first.
+        $dest = \tempnam(\sys_get_temp_dir(), 'gisl_dl_dst_');
+        self::assertIsString($dest);
+        try {
+            (new StreamingDownloader())->downloadTo('not a url', $dest);
+            self::fail('expected GislRequestNotSentError');
+        } catch (GislRequestNotSentError $e) {
+            self::assertFalse($e->retryable());
+            self::assertInstanceOf(GislNetworkError::class, $e);
+        } finally {
+            @\unlink($dest);
+        }
+    }
+
+    #[Test]
+    public function a_file_url_is_still_accepted(): void
+    {
+        // Negative control for the guard above: `file://` has a scheme and no
+        // host, and the parity fixtures rely on it. A host-based check would
+        // have broken every one of them while this suite stayed green.
+        $source = \tempnam(\sys_get_temp_dir(), 'gisl_dl_src_');
+        self::assertIsString($source);
+        \file_put_contents($source, 'BYTES');
+        $dest = \tempnam(\sys_get_temp_dir(), 'gisl_dl_dst_');
+        self::assertIsString($dest);
+
+        try {
+            (new StreamingDownloader())->downloadTo('file://' . $source, $dest);
+            self::assertSame('BYTES', \file_get_contents($dest));
+        } finally {
+            @\unlink($source);
+            @\unlink($dest);
+        }
+    }
+
+    #[Test]
+    public function an_unreachable_source_raises_GislTransportError(): void
+    {
+        // Port 1 on loopback answers nothing, so there is no HTTP status line
+        // to capture — the server was never reached, which is transport and NOT
+        // the HTTP half.
+        $dest = \tempnam(\sys_get_temp_dir(), 'gisl_dl_dst_');
+        self::assertIsString($dest);
+        try {
+            (new StreamingDownloader())->downloadTo('http://127.0.0.1:1/never-listening', $dest);
+            self::fail('expected GislTransportError');
+        } catch (GislTransportError $e) {
+            self::assertNotInstanceOf(GislDownloadHttpError::class, $e);
+            self::assertInstanceOf(GislNetworkError::class, $e);
+        } finally {
+            @\unlink($dest);
+        }
     }
 }

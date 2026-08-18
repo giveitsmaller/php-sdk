@@ -61,7 +61,9 @@ use Gisl\Sdk\Errors\GislMultipartSessionAuthRequiredError;
 use Gisl\Sdk\Errors\GislMultipartSessionNotFoundError;
 use Gisl\Sdk\Errors\GislMultipartSessionOwnershipError;
 use Gisl\Sdk\Errors\GislNetworkError;
+use Gisl\Sdk\Errors\GislRequestNotSentError;
 use Gisl\Sdk\Errors\GislStreamHostNotDeclaredError;
+use Gisl\Sdk\Errors\GislTransportError;
 use Gisl\Sdk\Errors\GislTierRestrictedError;
 use Gisl\Sdk\Errors\GislTimeoutError;
 use Gisl\Sdk\Errors\GislUploadCapExceededError;
@@ -1647,10 +1649,7 @@ class GislClient
         try {
             $response = $this->httpClient->sendRequest($request);
         } catch (ClientExceptionInterface $e) {
-            throw new GislNetworkError(
-                "HTTP transport failed: {$e->getMessage()}",
-                $e,
-            );
+            throw self::classifyPsr18Failure($e);
         }
 
         $statusCode = $response->getStatusCode();
@@ -1700,7 +1699,7 @@ class GislClient
                 // back on it — it polls ONLY on GislNetworkError /
                 // SseStreamEndedWithoutTerminal, so a raw \RuntimeException here
                 // would bypass the intended genuine-transport-error fallback.
-                throw new GislNetworkError(
+                throw new GislTransportError(
                     "SSE stream read failed mid-stream: {$e->getMessage()}",
                 );
             }
@@ -2323,10 +2322,7 @@ class GislClient
         try {
             $response = $this->httpClient->sendRequest($request);
         } catch (ClientExceptionInterface $e) {
-            throw new GislNetworkError(
-                "HTTP transport failed: {$e->getMessage()}",
-                $e,
-            );
+            throw self::classifyPsr18Failure($e);
         }
 
         $statusCode = $response->getStatusCode();
@@ -2490,9 +2486,21 @@ class GislClient
             } catch (GislFeatureNotAvailableError $e) {
                 // Not landed yet — keep polling.
                 $retryAfterMs = RateLimitHeaders::parseRetryAfterMs($e->responseHeaders['retry-after'] ?? null);
+            } catch (GislRequestNotSentError $e) {
+                // codex 9a189c13784b: this reports retryable() === false, so
+                // retrying it contradicts our own API. The request never left;
+                // re-issuing it identically fails identically, and burning the
+                // probe budget on it delays the create the caller is waiting
+                // for. Give up immediately — still never-bounce, the caller
+                // creates anyway.
+                return new ProbeWaitResult(landed: false, reason: 'prober_error');
             } catch (GislNetworkError $e) {
                 // Transport failure (transient) → retry a couple of times then
                 // give up; the caller creates anyway (never-bounce).
+                //
+                // ⚠️ ORDER IS LOAD-BEARING: GislRequestNotSentError is a
+                // GislNetworkError, so its arm MUST stay above this one or it
+                // is unreachable and the deterministic failure gets retried.
                 ++$transientFailures;
                 if ($transientFailures > $maxProberRetries) {
                     return new ProbeWaitResult(landed: false, reason: 'prober_error');
@@ -2722,6 +2730,48 @@ class GislClient
     }
 
     /**
+     * Classify a PSR-18 failure into the right half of the
+     * {@see GislNetworkError} tree (`t2qCrjdr`, codex 24559e8defc9).
+     *
+     * PSR-18 draws a distinction our old single catch threw away:
+     *
+     *   NetworkExceptionInterface  the request left (or tried to) and the
+     *                              network failed — DNS, TCP, TLS, mid-flight.
+     *                              TRANSIENT, retry is right.
+     *   RequestExceptionInterface  the client REFUSED TO SEND IT — a malformed
+     *                              URI or otherwise unsendable request.
+     *                              DETERMINISTIC; re-issuing the identical
+     *                              request fails identically.
+     *
+     * Calling the second one an always-retryable transport failure is the same
+     * error this ticket exists to remove, one level down: a class-wide
+     * `retryable: true` covering a permanent failure.
+     *
+     * A bare `ClientExceptionInterface` implementing NEITHER marker is
+     * unclassifiable, and the safe default is TRANSPORT: over-reporting
+     * retryable on an unknown failure costs a retry, while under-reporting it
+     * turns a genuine blip into a hard failure. Both SDKs' poll-fallback paths
+     * key on `GislNetworkError`, which is the base of both, so the fallback is
+     * unaffected either way.
+     */
+    private static function classifyPsr18Failure(ClientExceptionInterface $e): GislNetworkError
+    {
+        if ($e instanceof \Psr\Http\Client\RequestExceptionInterface
+            && !$e instanceof \Psr\Http\Client\NetworkExceptionInterface
+        ) {
+            return new GislRequestNotSentError(
+                "HTTP request could not be sent: {$e->getMessage()}",
+                $e,
+            );
+        }
+
+        return new GislTransportError(
+            "HTTP transport failed: {$e->getMessage()}",
+            $e,
+        );
+    }
+
+    /**
      * @param array<string, string> $extraHeaders
      */
     private function buildRequest(
@@ -2819,10 +2869,7 @@ class GislClient
         try {
             return $this->httpClient->sendRequest($request);
         } catch (ClientExceptionInterface $e) {
-            throw new GislNetworkError(
-                "HTTP transport failed: {$e->getMessage()}",
-                $e,
-            );
+            throw self::classifyPsr18Failure($e);
         }
     }
 
