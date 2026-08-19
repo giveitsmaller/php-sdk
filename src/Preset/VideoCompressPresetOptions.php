@@ -35,7 +35,14 @@ final class VideoCompressPresetOptions
          * single-pass-CRF by construction and two-pass target-size is unbuilt. The
          * request fails during execution, and the SDK cannot warn earlier — routing is
          * decided server-side at create-plan time. Short-form compresses honour it
-         * normally. Tracked by zJN6XIi5. Same limit applies to MergeOptions::$targetSize.
+         * normally. Same limit applies to MergeOptions::$targetSize.
+         *
+         * The contract CAN now express this — per_class_availability scopes an
+         * option to a processing class, vendored at v2.195.0 and pinned by
+         * PerClassAvailabilityConformanceTest. That buys an honest 422 from the
+         * API at CREATE rather than a job dying mid-execution; it does NOT become
+         * a client-side gate, because routing is still decided server-side.
+         * Tracked by zJN6XIi5.
          */
         public readonly string|int|null $targetSize = null,
         public readonly ?int $crf = null,
