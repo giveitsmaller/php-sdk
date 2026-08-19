@@ -249,7 +249,12 @@ final class Credentials
         $apiHostWasConfigured = ($baseUrl !== null && trim($baseUrl) !== '')
             || self::readEnv(self::GISL_BASE_URL_ENV) !== null;
         if (!$apiHostWasConfigured) {
-            return self::ENVIRONMENT_STREAM_ENDPOINTS['prod'] ?? null;
+            // Direct lookup, no `?? null`: `prod` is present in the const above
+            // and the conformance suite fails closed if it ever stops matching
+            // the contract. The coalesce was live only while prod was
+            // undeclared — a guard whose own premise the v2.195.0 re-vendor
+            // deleted, caught by PHPStan L8 the same hour it went dead.
+            return self::ENVIRONMENT_STREAM_ENDPOINTS['prod'];
         }
 
         return null;
