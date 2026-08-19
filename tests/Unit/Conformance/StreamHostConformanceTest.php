@@ -137,14 +137,23 @@ final class StreamHostConformanceTest extends TestCase
         // stream host the other does not, the SDKs stream to different places
         // on the same configuration and no per-language test would notice.
         $tsPath = \dirname(__DIR__, 4) . '/typescript/src/credentials.ts';
-        if (!\is_readable($tsPath)) {
-            // The PHP suite can be run against a mount that carries only
-            // packages/php. Skipping is honest; the PHP table is still pinned to
-            // the CONTRACT by every other test in this class, and the TS table is
-            // pinned to the same contract by its own conformance suite — so the
-            // two cannot drift apart unnoticed even when this check cannot run.
-            self::markTestSkipped('packages/typescript is not present in this checkout/mount');
-        }
+
+        // ⚠️ FAILS, DOES NOT SKIP — the method name promises a CROSS-LANGUAGE
+        // check, and that name is what a reader sees in a green list. A skip
+        // here would deliver nothing while still reporting the promise as kept.
+        //
+        // The skip this replaces had NEVER FIRED: every runner that executes
+        // this suite (CI, and `make project/test`) mounts the whole repo, so it
+        // guarded a case that does not occur while blinding the one that would
+        // matter. If packages/typescript is genuinely absent, the environment is
+        // broken and should say so rather than quietly covering less than the
+        // test claims.
+        self::assertFileIsReadable(
+            $tsPath,
+            'packages/typescript is not present — this cross-language check cannot run, and a '
+            . 'test named "the two languages declare the same table" must not report green '
+            . 'without having compared them.',
+        );
         $tsSource = (string) \file_get_contents($tsPath);
 
         foreach (Credentials::ENVIRONMENT_STREAM_ENDPOINTS as $environment => $url) {
