@@ -220,6 +220,10 @@ final class Gisl
         $resolvedStreamBaseUrl = Credentials::resolveStreamEndpoint(
             streamBaseUrl: $streamBaseUrl,
             environment: $environment,
+            // Needed so the stream resolver can tell "unconfigured" (API
+            // defaults to production, so the stream defaults with it) from
+            // "pointed at a host we were told about" (refuse rather than guess).
+            baseUrl: $baseUrl,
         );
 
         if ($allowAnonymous) {

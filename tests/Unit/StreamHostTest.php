@@ -42,6 +42,7 @@ final class StreamHostTest extends TestCase
 {
     private const API_HOST = 'https://api.staging.giveitsmaller.com';
     private const STREAM_HOST = 'https://stream.staging.giveitsmaller.com';
+    private const PROD_STREAM_HOST = 'https://stream.giveitsmaller.com';
     private const WORKFLOW_ID = '01936fb2-0000-7000-8000-0000000000ff';
 
     private HttpFactory $factory;
@@ -420,14 +421,78 @@ final class StreamHostTest extends TestCase
     }
 
     #[Test]
-    public function production_resolves_to_null_rather_than_to_the_api_host(): void
+    public function production_resolves_to_the_declared_production_stream_host(): void
     {
-        // `prod` has no declared stream host: the contract's stream `servers`
-        // block carries localhost + staging only. `null` — never the API host.
-        $resolved = Credentials::resolveStreamEndpoint(environment: Environment::Prod);
+        // Landed with contracts v2.195.0 (#410). Until then this asserted null,
+        // and the conformance tripwire that guarded the gap is deleted rather
+        // than weakened.
+        self::assertSame(
+            self::PROD_STREAM_HOST,
+            Credentials::resolveStreamEndpoint(environment: Environment::Prod),
+        );
+    }
+
+    #[Test]
+    public function an_unconfigured_client_resolves_the_production_stream_host(): void
+    {
+        // codex 480e8b865b90: resolveEndpoint() falls through to the production
+        // API host when nothing is configured, so an unconfigured client
+        // already talks to production. Its stream must default with it, or the
+        // DEFAULT configuration is the one that cannot stream.
+        self::assertSame(self::PROD_STREAM_HOST, Credentials::resolveStreamEndpoint());
+        self::assertSame(Credentials::DEFAULT_ENDPOINT, Credentials::resolveEndpoint());
+    }
+
+    #[Test]
+    public function an_explicit_base_url_does_not_get_productions_stream_host(): void
+    {
+        // The load-bearing half. An explicit base URL names a host we were told
+        // about and cannot reason about, so defaulting its stream to production
+        // would be deriving one host from another.
+        self::assertNull(
+            Credentials::resolveStreamEndpoint(baseUrl: 'https://api.internal.test'),
+        );
+    }
+
+    #[Test]
+    public function a_gisl_base_url_env_does_not_get_productions_stream_host(): void
+    {
+        putenv(Credentials::GISL_BASE_URL_ENV . '=https://api.internal.test');
+
+        self::assertNull(Credentials::resolveStreamEndpoint());
+    }
+
+    #[Test]
+    public function a_configuration_pointed_at_an_unknown_host_still_resolves_to_null(): void
+    {
+        // The fail-closed path, reached the only way it still can: a host we
+        // were told about and cannot reason about. `null` is never the API base
+        // URL — the rule did not soften when prod landed.
+        $resolved = Credentials::resolveStreamEndpoint(baseUrl: 'https://api.internal.test');
 
         self::assertNull($resolved);
-        self::assertNotSame(Credentials::DEFAULT_ENDPOINT, $resolved);
+        self::assertNotSame('https://api.internal.test', $resolved);
+    }
+
+    #[Test]
+    public function stream_events_reaches_the_production_stream_host(): void
+    {
+        // Public entry point, not the resolver: the resolver can be right while
+        // the client still sends the stream to the API host.
+        $captured = [];
+        $client = $this->makeClient(
+            [$this->sseResponse()],
+            self::PROD_STREAM_HOST,
+            $captured,
+            'https://api.giveitsmaller.com',
+        );
+
+        \iterator_to_array($client->streamEvents(self::WORKFLOW_ID));
+
+        self::assertSame(
+            [self::PROD_STREAM_HOST . '/api/workflows/' . self::WORKFLOW_ID . '/events'],
+            $this->requestedUris($captured),
+        );
     }
 
     #[Test]
@@ -472,10 +537,10 @@ final class StreamHostTest extends TestCase
     }
 
     #[Test]
-    public function a_gisl_environment_naming_prod_resolves_to_null(): void
+    public function a_gisl_environment_naming_prod_resolves_the_production_host(): void
     {
         putenv(Credentials::GISL_ENVIRONMENT_ENV . '=prod');
 
-        self::assertNull(Credentials::resolveStreamEndpoint());
+        self::assertSame(self::PROD_STREAM_HOST, Credentials::resolveStreamEndpoint());
     }
 }

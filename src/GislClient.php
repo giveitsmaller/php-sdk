@@ -1631,9 +1631,8 @@ class GislClient
                 . 'derive one from baseUrl. ' . $declaredNote . ' Pass a stream base URL to '
                 . 'Gisl::create() / GislClientConfig, set '
                 . Credentials::GISL_STREAM_BASE_URL_ENV
-                . ', or construct with an Environment that declares one. The production stream '
-                . 'host is not yet declared in the contract (GET /api/workflows/{id}/events '
-                . '`servers`), so a production configuration has none to resolve.',
+                . ', or construct with an Environment that declares one. Hosts are read from the '
+                . 'contract declaration and are never derived from baseUrl.',
             );
         }
 

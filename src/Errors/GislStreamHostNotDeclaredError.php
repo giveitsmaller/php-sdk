@@ -16,10 +16,10 @@ namespace Gisl\Sdk\Errors;
  * invisible until somebody measured it. Raising here is the loud version of
  * that same situation.
  *
- * Today this is reachable in a production configuration because the contract
- * declares stream `servers` for localhost and staging only — contracts
- * deliberately did not invent a prod URL. Once the prod entry lands, a prod
- * client resolves normally and this stops firing for that case.
+ * Both named environments resolve as of contracts `v2.195.0` (#410), which
+ * declared the production stream host. This now fires only for a
+ * configuration nothing declares — e.g. a bare base URL with no
+ * {@see \Gisl\Sdk\Environment} and no explicit stream base URL.
  *
  * Recover by passing an explicit stream base URL to {@see \Gisl\Sdk\Gisl::create()}
  * / {@see \Gisl\Sdk\GislClientConfig}, setting `GISL_STREAM_BASE_URL`, or

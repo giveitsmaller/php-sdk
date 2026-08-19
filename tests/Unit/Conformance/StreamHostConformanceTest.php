@@ -131,24 +131,6 @@ final class StreamHostConformanceTest extends TestCase
     }
 
     #[Test]
-    public function production_has_no_declared_stream_host_yet(): void
-    {
-        // This assertion is written to FAIL when the gap closes, on purpose. It
-        // is the tripwire for the one prerequisite this card cannot close
-        // itself: the contract's stream `servers` block carries localhost +
-        // staging only.
-        //
-        // WHEN THIS GOES RED, that is the good news — the prod entry has landed.
-        // Add `prod` to ENVIRONMENT_STREAM_ENDPOINTS in BOTH languages, and
-        // delete this test. Do NOT relax it to keep the suite green: a client
-        // falling back to the API host in prod is the exact failure VUozk5Bc
-        // exists to prevent, and this is the only thing that will tell anyone
-        // the wait is over.
-        self::assertArrayNotHasKey('prod', Credentials::ENVIRONMENT_STREAM_ENDPOINTS);
-        self::assertNotContains('https://stream.giveitsmaller.com', self::declaredNonLocal());
-    }
-
-    #[Test]
     public function the_two_languages_declare_the_same_table(): void
     {
         // Parity by construction rather than by hope. If one language ships a
