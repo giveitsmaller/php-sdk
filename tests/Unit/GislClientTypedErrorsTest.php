@@ -225,6 +225,48 @@ final class GislClientTypedErrorsTest extends TestCase
         }
     }
 
+    /**
+     * 🔴 `basic` IS THE BASE TIER as of contracts v2.196.0; `free` is DEPRECATED
+     * IN PLACE and occupies the SAME ordinal position — one tier under two
+     * names. The contract requires a tolerance artefact from both SDKs
+     * (`tkRA9Bim`) and warns that code handling `free` and not `basic` "will
+     * silently take a different branch the day the producer switches".
+     *
+     * Every tier fixture in this suite used 'free'. Tolerance here is
+     * automatic, and nothing asserted it — so the day the producer switches, a
+     * typed error could silently degrade and no test would notice. AUTOMATIC
+     * TOLERANCE IS NOT DEMONSTRATED TOLERANCE.
+     */
+    public function testTierRestrictedDispatchAcceptsBasicTier(): void
+    {
+        $captured = [];
+        $http = $this->stubClient([
+            $this->jsonResponse(403, [
+                'success' => false,
+                'error' => 'tier_restriction',
+                'message' => 'Your tier does not permit videos.',
+                'message_key' => 'errors.tier.mime_blocked',
+                'locale' => 'en-GB',
+                'message_params' => ['mime' => 'video/mp4'],
+                'error_type' => 'tier_restriction',
+                'restriction_kind' => 'mime_type',
+                'current_tier' => 'basic',
+                'required_tier' => 'pro',
+            ]),
+        ], $captured);
+
+        $client = $this->makeClient($http);
+
+        try {
+            $client->getWorkflowStatus(self::HARNESS_WORKFLOW_ID);
+            self::fail('Expected GislTierRestrictedError');
+        } catch (GislTierRestrictedError $e) {
+            self::assertInstanceOf(TierRestrictionResponse::class, $e->typedPayload);
+            self::assertSame('basic', $e->typedPayload->getCurrentTier());
+            self::assertSame('pro', $e->typedPayload->getRequiredTier());
+        }
+    }
+
     public function testFeatureTierRestrictedDispatch(): void
     {
         $captured = [];
