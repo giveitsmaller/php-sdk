@@ -11,9 +11,15 @@ namespace Gisl\Sdk;
  * (`GislSseEvent = { event: string; data: unknown }`) — deliberately NO
  * `id` and NO `retry` properties. Codex round 1 on B2.1 was explicit on
  * this: `id:` is ignored (the SDK does not implement Last-Event-ID
- * reconnection) and `retry:` is ignored (the SDK manages its own
- * reconnection cadence). Surfacing those fields would imply behaviour
- * the SDK does not provide.
+ * reconnection) and `retry:` is ignored — **not because something else
+ * honours it, but because THIS SDK NEVER RECONNECTS**, so a
+ * server-suggested interval has no consumer. Surfacing either field
+ * would imply behaviour the SDK does not provide.
+ *
+ * ⚠️ This clause previously read "the SDK manages its own reconnection
+ * cadence", which asserts the opposite of the truth and sat one line
+ * below the correct disclaimer. Corrected 2026-08-29 with the TS
+ * reference, which carried the same false claim.
  *
  * `$event` is the SSE `event:` field value, defaulting to `"message"`
  * per the SSE spec when the server omits it.
