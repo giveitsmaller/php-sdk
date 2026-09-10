@@ -39,7 +39,7 @@ final class WatermarkGate
             'image_bmp' => ['mimes' => ['image/bmp'], 'availability' => 'stable'],
         ],
         self::OP_VIDEO => [
-            'video' => ['mimes' => ['video/mp4', 'video/webm'], 'availability' => 'beta'],
+            'video' => ['mimes' => ['video/mp4', 'video/webm'], 'availability' => 'stable'],
         ],
     ];
 
