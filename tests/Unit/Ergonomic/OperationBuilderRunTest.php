@@ -22,6 +22,42 @@ use Psr\Http\Message\ResponseInterface;
 #[CoversClass(OperationBuilder::class)]
 final class OperationBuilderRunTest extends TestCase
 {
+    /**
+     * 36AZ98FV — `RunOptions::$maxWait` was mandatory on the stated grounds that the
+     * poll path's 600_000 ms default "would otherwise leak silently". The same tree
+     * applied exactly that default at FOURTEEN sites, and PHP had already NAMED the
+     * number in WorkflowConstants and hard-coded the literal beside it seven times.
+     * The prohibition was refuted by the code it protected.
+     */
+    public function test_run_requires_no_options_at_all(): void
+    {
+        $tempPath = self::writeTempFile('payload');
+
+        $captured = [];
+        // ⚠️ FIVE responses, not four. Every other run test here passes
+        // `useSSE: false`; this one passes NO OPTIONS AT ALL, which is the point —
+        // so `useSSE` takes its default of true and the SSE attempt consumes a
+        // queue slot before the poll fallback. A four-response queue exhausts on
+        // the status poll, which is a test-harness artefact and not a defect.
+        $http = self::stubClient([
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            // An empty event-stream: the SSE attempt connects, yields nothing and
+            // ends, so the run falls through to the poll path. A 404 here does NOT
+            // fall back — it raises GislApiError.
+            new Response(200, ['Content-Type' => 'text/event-stream'], ''),
+            self::jsonResponse(200, self::statusCompleted()),
+            self::jsonResponse(200, self::downloadsOk()),
+        ], $captured);
+
+        $client = self::makeClient($http);
+        // No RunOptions — this was a TypeError before 36AZ98FV, while the
+        // file-first spelling of the same task already accepted none.
+        $result = $client->compress($tempPath, ['quality' => 75])->run();
+
+        $this->assertNotSame('', $result->workflowId);
+    }
+
     public function test_run_happy_path_with_poll_fallback(): void
     {
         $tempPath = self::writeTempFile('input bytes');

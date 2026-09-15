@@ -15,6 +15,7 @@ use Gisl\Sdk\Http\UploadSource;
 use Gisl\Sdk\JobDefinitionPayload;
 use Gisl\Sdk\UploadOptions;
 use Gisl\Sdk\WorkflowCreatePayload;
+use Gisl\Sdk\WorkflowConstants;
 
 /**
  * The HETEROGENEOUS batch builder value (FF7). `$client->batch([$a, $b, $c])`
@@ -115,7 +116,7 @@ final class BatchRecipe
         // never leaves earlier entries' inputs uploaded (codex FF7 #4/#5).
         $this->validateAndPreflight();
 
-        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? 600_000);
+        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? WorkflowConstants::DEFAULT_POLL_TIMEOUT_MS);
         $onProgressClosure = BuilderInternals::callableOrNull($onProgress, 'BatchRecipe::run() $onProgress');
 
         // 1+2. Upload EVERY entry's input + create ONE multi-job workflow.

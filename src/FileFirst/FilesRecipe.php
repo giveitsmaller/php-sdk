@@ -20,6 +20,7 @@ use Gisl\Sdk\JobDefinitionPayload;
 use Gisl\Sdk\PresetDefaults;
 use Gisl\Sdk\UploadOptions;
 use Gisl\Sdk\WorkflowCreatePayload;
+use Gisl\Sdk\WorkflowConstants;
 
 /**
  * The homogeneous fan-out builder value (FF3a). `$client->files([$a, $b, $c])`
@@ -264,7 +265,7 @@ final class FilesRecipe
             );
         }
 
-        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? 600_000);
+        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? WorkflowConstants::DEFAULT_POLL_TIMEOUT_MS);
         $onProgressClosure = BuilderInternals::callableOrNull($onProgress, 'FilesRecipe::run() $onProgress');
 
         // 1+2. Upload EVERY input + create ONE multi-job workflow. Shared with

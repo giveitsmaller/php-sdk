@@ -21,6 +21,7 @@ use Gisl\Sdk\PresetDefaults;
 use Gisl\Sdk\Sources;
 use Gisl\Sdk\UploadOptions;
 use Gisl\Sdk\WorkflowCreatePayload;
+use Gisl\Sdk\WorkflowConstants;
 
 /**
  * The single-output recipe you're in AFTER `file($base)->watermark($overlay, …)`
@@ -216,7 +217,7 @@ final class WatermarkedRecipe
         ?bool $useSSE = null,
     ): RunResult {
         $client = $this->requireClient();
-        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? 600_000);
+        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? WorkflowConstants::DEFAULT_POLL_TIMEOUT_MS);
         $onProgressClosure = BuilderInternals::callableOrNull($onProgress, 'WatermarkedRecipe::run() $onProgress');
 
         $created = $this->uploadAllAndCreate(

@@ -102,7 +102,7 @@ final class Handle
         ?Cancellation $cancellation = null,
     ): RunResult {
         $client = $this->requireClient();
-        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? 600_000);
+        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? WorkflowConstants::DEFAULT_POLL_TIMEOUT_MS);
         $onProgressClosure = BuilderInternals::callableOrNull($onProgress, 'Handle::wait() $onProgress');
 
         $finalStatus = BuilderInternals::awaitTerminal(

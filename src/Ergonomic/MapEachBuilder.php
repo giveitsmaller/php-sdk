@@ -6,6 +6,7 @@ namespace Gisl\Sdk\Ergonomic;
 
 use Gisl\Sdk\Errors\GislFanOutTimeoutError;
 use Gisl\Sdk\Errors\GislTimeoutError;
+use Gisl\Sdk\WorkflowConstants;
 
 /**
  * Fan-out chain over a parent builder's artifacts. Pattern-port of the
@@ -51,9 +52,14 @@ final class MapEachBuilder
      * each resulting artifact, sequentially. The deadline covers
      * parent + every child run; each child sees the REMAINING budget.
      */
-    public function run(RunOptions $options): Result
+    public function run(?RunOptions $options = null): Result
     {
-        $totalBudgetMs = MaxWait::parse($options->maxWait);
+        $options ??= new RunOptions();
+        // ⚠️ COALESCE HERE TOO. `maxWait` is nullable since 36AZ98FV, so an options
+        // bag built with no deadline reaches this path as null — and MaxWait::parse
+        // takes int|string. Missing this left the ONLY operation-first builder that
+        // still demanded arguments, which is the exact defect the ticket removes.
+        $totalBudgetMs = MaxWait::parse($options->maxWait ?? WorkflowConstants::DEFAULT_POLL_TIMEOUT_MS);
         $deadlineMs = self::nowMs() + $totalBudgetMs;
 
         // 1. Run the parent against the full deadline. Propagate the

@@ -34,6 +34,51 @@ use Psr\Http\Message\ResponseInterface;
 #[CoversClass(GislPerInputOptionsNotSupportedError::class)]
 final class MergeBuilderTest extends TestCase
 {
+    /**
+     * 36AZ98FV — codex review of PR #394 (e2e07e47fd6b) noted the merge path was
+     * changed independently but covered only on the TypeScript side: every merge
+     * test here supplied `SubmitOptions(webhook: ...)`, so the new defaults and the
+     * handle binding were unprotected in PHP. `webhook` lives on the SHARED
+     * SubmitOptions, so optionalising it for operations optionalised it for merges
+     * too — and merge's handle was unbound as well.
+     */
+    public function test_merge_submit_without_a_webhook_omits_callback_url_and_binds_the_client(): void
+    {
+        $pathA = self::writeTempFile('aaaa');
+        $pathB = self::writeTempFile('bbbb');
+
+        $captured = [];
+        $http = self::stubClient([
+            self::uploadResponse('01936fb1-7bb3-7000-8000-00000000bb01', 'a.mp4', 'video/mp4', 4),
+            self::uploadResponse('01936fb1-7bb3-7000-8000-00000000bb02', 'b.mp4', 'video/mp4', 4),
+            self::workflowCreatedResponse('01936fb2-0000-7000-8000-00000000bb03'),
+            self::jsonResponse(200, [
+                'success' => true,
+                'data' => [
+                    'workflow_id' => '01936fb2-0000-7000-8000-00000000bb03',
+                    'status' => 'completed',
+                    'created_at' => '2026-09-11T11:00:00Z',
+                    'updated_at' => '2026-09-11T11:05:00Z',
+                    'jobs' => [],
+                ],
+            ]),
+        ], $captured);
+
+        $client = self::makeClient($http);
+        // No SubmitOptions at all.
+        $handle = $client
+            ->merge([$pathA, $pathB], new MergeOptions(mediaKind: 'video'))
+            ->submit();
+
+        $body = \json_decode((string) $captured[2]->getBody(), true, flags: JSON_THROW_ON_ERROR);
+        \assert(\is_array($body));
+        $this->assertArrayNotHasKey('callback_url', $body);
+
+        // 🔴 Threw GislConfigError(`no_client`) before the binding — which is why
+        // the webhook could not be made optional on its own.
+        $this->assertSame('completed', $handle->status()->state);
+    }
+
     public function test_submit_uploads_each_unique_asset_once_then_creates_workflow(): void
     {
         $pathA = self::writeTempFile('aaaa');

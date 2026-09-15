@@ -103,6 +103,116 @@ final class OperationBuilderSubmitTest extends TestCase
         $this->assertSame('01936fb1-7bb3-7000-8000-000000000001', $body['jobs'][0]['source']['file_id']);
     }
 
+    /**
+     * 36AZ98FV — `SubmitOptions::$webhook` was mandatory, and the reason was never
+     * written down: the returned Handle carried NO client, so status()/wait()/result()
+     * threw `no_client` and the webhook was the only channel by which this call's
+     * outcome could be learned. Both halves are fixed together — binding without
+     * optionalising would change nothing, and optionalising without binding would
+     * ship a call that succeeds and returns something unusable.
+     */
+    public function test_submit_without_a_webhook_omits_callback_url(): void
+    {
+        $tempPath = self::writeTempFile('payload');
+
+        $captured = [];
+        $http = self::stubClient([
+            self::jsonResponse(200, [
+                'success' => true,
+                'data' => [
+                    'file_id' => '01936fb1-7bb3-7000-8000-00000000ab01',
+                    'original_name' => 'fixture.bin',
+                    'mime_type' => 'application/octet-stream',
+                    'size_bytes' => 7,
+                ],
+            ]),
+            self::jsonResponse(201, [
+                'success' => true,
+                'data' => [
+                    'workflow_id' => '01936fb2-0000-7000-8000-0000000000d1',
+                    'status' => 'pending',
+                    'created_at' => '2026-09-11T11:00:00Z',
+                    'jobs' => [],
+                    'delivery_plan' => [
+                        'mode' => 'individual',
+                        'selection_type' => 'terminal',
+                        'outputs' => [],
+                        'hidden_outputs' => [],
+                    ],
+                    'processing_plan' => ['jobs' => []],
+                    'warnings' => [],
+                ],
+            ]),
+        ], $captured);
+
+        $client = self::makeClient($http);
+        // No SubmitOptions at all — the whole point of the ticket.
+        $handle = $client->compress($tempPath, ['quality' => 75])->submit();
+
+        $this->assertInstanceOf(Handle::class, $handle);
+        $body = \json_decode((string) $captured[1]->getBody(), true, flags: JSON_THROW_ON_ERROR);
+        \assert(\is_array($body));
+        $this->assertArrayNotHasKey(
+            'callback_url',
+            $body,
+            'callback_url is not in WorkflowCreateRequest\'s required set and is typed string|null, '
+            . 'so omitting the webhook must omit the key rather than send an empty one.',
+        );
+    }
+
+    public function test_submit_returns_a_client_bound_handle(): void
+    {
+        $tempPath = self::writeTempFile('payload');
+
+        $captured = [];
+        $http = self::stubClient([
+            self::jsonResponse(200, [
+                'success' => true,
+                'data' => [
+                    'file_id' => '01936fb1-7bb3-7000-8000-00000000ab02',
+                    'original_name' => 'fixture.bin',
+                    'mime_type' => 'application/octet-stream',
+                    'size_bytes' => 7,
+                ],
+            ]),
+            self::jsonResponse(201, [
+                'success' => true,
+                'data' => [
+                    'workflow_id' => '01936fb2-0000-7000-8000-0000000000d2',
+                    'status' => 'pending',
+                    'created_at' => '2026-09-11T11:00:00Z',
+                    'jobs' => [],
+                    'delivery_plan' => [
+                        'mode' => 'individual',
+                        'selection_type' => 'terminal',
+                        'outputs' => [],
+                        'hidden_outputs' => [],
+                    ],
+                    'processing_plan' => ['jobs' => []],
+                    'warnings' => [],
+                ],
+            ]),
+            self::jsonResponse(200, [
+                'success' => true,
+                'data' => [
+                    'workflow_id' => '01936fb2-0000-7000-8000-0000000000d2',
+                    'status' => 'completed',
+                    'created_at' => '2026-09-11T11:00:00Z',
+                    'updated_at' => '2026-09-11T11:05:00Z',
+                    'jobs' => [],
+                ],
+            ]),
+        ], $captured);
+
+        $client = self::makeClient($http);
+        $handle = $client->compress($tempPath, ['quality' => 75])->submit();
+
+        // 🔴 THE REGRESSION GUARD. This threw GislConfigError(`no_client`) before
+        // 36AZ98FV, which is precisely why the webhook could not be optional.
+        $snapshot = $handle->status();
+        $this->assertSame('completed', $snapshot->state);
+    }
+
     public function test_submit_handle_omits_webhook_secret_when_server_does_not_return_one(): void
     {
         $tempPath = self::writeTempFile('payload');

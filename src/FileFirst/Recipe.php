@@ -24,6 +24,7 @@ use Gisl\Sdk\PresetDefaults;
 use Gisl\Sdk\Sources;
 use Gisl\Sdk\UploadOptions;
 use Gisl\Sdk\WorkflowCreatePayload;
+use Gisl\Sdk\WorkflowConstants;
 
 /**
  * The file-first builder value. `$client->file($path)` returns a `Recipe`;
@@ -573,7 +574,7 @@ final class Recipe
             );
         }
 
-        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? 600_000);
+        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? WorkflowConstants::DEFAULT_POLL_TIMEOUT_MS);
         $onProgressClosure = BuilderInternals::callableOrNull($onProgress, 'Recipe::run() $onProgress');
 
         // 1+2. Upload (when required) + create the workflow. Shared with

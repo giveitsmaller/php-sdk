@@ -9,12 +9,18 @@ use Gisl\Sdk\Cancellation;
 /**
  * Call-time options for {@see OperationBuilder::run()}.
  *
- * `maxWait` is MANDATORY (no default). The underlying poll path in
- * {@see \Gisl\Sdk\GislClient::waitForWorkflow()} has a 600_000 ms
- * default that would otherwise leak silently — the ergonomic layer
- * makes the deadline a conscious caller choice. Accepts:
+ * `maxWait` is OPTIONAL, defaulting to
+ * {@see \Gisl\Sdk\WorkflowConstants::DEFAULT_POLL_TIMEOUT_MS}. Accepts:
  *  - `int` (milliseconds)
  *  - `string` with suffix: `'500ms'`, `'120s'`, `'30m'`, `'2h'`
+ *
+ * ⚠️ THIS WAS MANDATORY, on the stated grounds that the poll path's
+ * DEFAULT_POLL_TIMEOUT_MS default "would otherwise leak silently" (36AZ98FV). The same tree applied
+ * exactly that default at FOURTEEN sites across both SDKs — and PHP had already
+ * NAMED the number in `WorkflowConstants` and hard-coded the literal beside it
+ * seven times anyway. The prohibition was refuted by the code it protected, and
+ * the file-first spelling of the same task accepted no arguments at all. One
+ * shared constant is what makes the rule unnecessary rather than what breaks it.
  *
  * Cooperative cancellation: pass a {@see Cancellation} token as
  * `$cancellation` and call `$token->cancel()` from elsewhere (e.g. a
@@ -34,7 +40,7 @@ use Gisl\Sdk\Cancellation;
 final class RunOptions
 {
     /**
-     * @param int|string                                              $maxWait        Mandatory deadline (see class docblock).
+     * @param int|string|null                                         $maxWait        Optional deadline; null uses the shared default (see class docblock).
      * @param (callable(ProgressEvent $event): void)|null             $onProgress     Receives synthesised progress union.
      * @param bool                                                    $useSSE         Default `true`; set false to force poll fallback.
      * @param int|null                                                $pollIntervalMs Override the poll-fallback interval (ms).
@@ -43,7 +49,7 @@ final class RunOptions
      * @param int|null                                                $probeTimeoutMs Overall timeout (ms) for the probe-before-create wait.
      */
     public function __construct(
-        public readonly int|string $maxWait,
+        public readonly int|string|null $maxWait = null,
         public readonly mixed $onProgress = null,
         public readonly bool $useSSE = true,
         public readonly ?int $pollIntervalMs = null,

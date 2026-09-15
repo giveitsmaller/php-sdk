@@ -30,7 +30,7 @@ final class SubmitOptions
      * @param int|null  $probeTimeoutMs    Overall timeout (ms) for the probe-before-create wait.
      */
     public function __construct(
-        public readonly string $webhook,
+        public readonly ?string $webhook = null,
         public readonly ?Cancellation $cancellation = null,
         public readonly ?bool $probeBeforeCreate = null,
         public readonly ?int $probeTimeoutMs = null,

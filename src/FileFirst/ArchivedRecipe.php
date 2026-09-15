@@ -20,6 +20,7 @@ use Gisl\Sdk\OperationDef;
 use Gisl\Sdk\Sources;
 use Gisl\Sdk\UploadOptions;
 use Gisl\Sdk\WorkflowCreatePayload;
+use Gisl\Sdk\WorkflowConstants;
 
 /**
  * The single-output recipe you're in AFTER a fluent `files([...])->archive(...)`
@@ -81,7 +82,7 @@ final class ArchivedRecipe
         ?bool $useSSE = null,
     ): RunResult {
         $client = $this->requireClient();
-        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? 600_000);
+        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? WorkflowConstants::DEFAULT_POLL_TIMEOUT_MS);
         $onProgressClosure = BuilderInternals::callableOrNull($onProgress, 'ArchivedRecipe::run() $onProgress');
 
         $created = $this->uploadAllAndCreate(

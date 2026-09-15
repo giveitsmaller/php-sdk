@@ -17,6 +17,7 @@ use Gisl\Sdk\OperationDef;
 use Gisl\Sdk\Sources;
 use Gisl\Sdk\UploadOptions;
 use Gisl\Sdk\WorkflowCreatePayload;
+use Gisl\Sdk\WorkflowConstants;
 
 /**
  * Merge-compose layer for the SDK ergonomic surface (PHP P3 / dxIeLVbP).
@@ -95,9 +96,10 @@ final class MergeBuilder
         return $this;
     }
 
-    public function run(RunOptions $options): Result
+    public function run(?RunOptions $options = null): Result
     {
-        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($options->maxWait);
+        $options ??= new RunOptions();
+        $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($options->maxWait ?? WorkflowConstants::DEFAULT_POLL_TIMEOUT_MS);
         $onProgress = BuilderInternals::callableOrNull($options->onProgress, 'RunOptions::$onProgress');
 
         // 1. Validate locally BEFORE any upload.
@@ -186,8 +188,9 @@ final class MergeBuilder
         );
     }
 
-    public function submit(SubmitOptions $options): Handle
+    public function submit(?SubmitOptions $options = null): Handle
     {
+        $options ??= new SubmitOptions();
         $plan = $this->planSequence();
         /** @var list<array{fileId: string, isVideo: bool, sizeBytes: int|null}> $probeTargets */
         $probeTargets = [];
@@ -206,9 +209,15 @@ final class MergeBuilder
         $payload = $this->buildPayload($plan, $uploadedByAssetId, callbackUrl: $options->webhook);
         $created = $this->client->createWorkflow($payload);
 
+        // ⚠️ THE CLIENT IS THE POINT (36AZ98FV). Without it the returned Handle's
+        // status()/wait()/result() throw `no_client`, which made `webhook` the only
+        // channel for this call's outcome and is why it used to be mandatory. The
+        // file-first recipes have always passed it; this path did not, which is the
+        // same "demands what file-first does not" defect one layer down.
         return new Handle(
             workflowId: $created->getWorkflowId() ?? '',
             webhookSecret: $created->getWebhookSecret(),
+            client: $this->client,
         );
     }
 
