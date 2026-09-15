@@ -2,6 +2,9 @@
     "name": "giveitsmaller/sdk",
     "description": "PHP SDK for GISL (Give It Smaller) compression service",
     "version": "0.21.0",
+    "extra": {
+        "gisl-contracts-spec": "v2.202.0"
+    },
     "type": "library",
     "license": "Apache-2.0",
   "homepage": "https://docs.giveitsmaller.com",
