@@ -35,6 +35,36 @@ use Gisl\Sdk\GislSseEvent;
 final class BuilderInternals
 {
     /**
+     * Poll-fallback interval bounds, in milliseconds. Deliberate mirror of
+     * MIN_POLL_INTERVAL_MS / DEFAULT_POLL_INTERVAL_MS in
+     * packages/typescript/src/builder.ts — the two languages move together.
+     *
+     * 🔴 THE FLOOR IS SIZED AGAINST A PUBLISHED RATE LIMIT, NOT AGAINST A
+     * BUSY-LOOP. The previous value was 100 and its comment said it guarded
+     * against values "that would hammer getWorkflowStatus" — what you write
+     * when stopping a 0/NaN spin, not when you have asked what the server
+     * allows. Same words, different standard (r7bpd7MY).
+     *
+     * compression_api, read rather than relayed:
+     * Identity/Application/RateLimiting/TieredRateLimiterService.php:37-39
+     * declares `status_poll` — guarding GET /api/workflows/{id}/status and
+     * /downloads — as a SLIDING WINDOW of 60 requests per minute, scaled at
+     * consume time (:177, :188) by UserTier::rateLimitMultiplier()
+     * (Identity/Domain/Enums/UserTier.php:186-194): Free and Basic x1, Pro x5,
+     * Max x15, Enterprise x20.
+     *
+     * => 100 ms is 600 requests/minute: ten times the Free ceiling, twice
+     * Pro's, inside budget only on Max and Enterprise. 1000 ms is the minimum
+     * legal interval on the tightest tier, so it is correct on every tier and
+     * needs no tier knowledge in the SDK.
+     *
+     * ⚠️ The window is SLIDING, so it punishes bursts, not just averages, and
+     * the budget is keyed per user id (per IP when anonymous) — several SDK
+     * instances under one account share one allowance.
+     */
+    public const MIN_POLL_INTERVAL_MS = 1_000;
+    public const DEFAULT_POLL_INTERVAL_MS = 2_000;
+    /**
      * Wall-clock milliseconds since the Unix epoch. PHP's `microtime(true)`
      * returns seconds as float; multiply + cast for ms-int precision.
      */
@@ -324,6 +354,27 @@ final class BuilderInternals
         );
     }
 
+    /**
+     * Clamp rather than reject — a zero/negative value is a caller mistake and
+     * should not crash an otherwise valid run. The FLOOR's provenance is on the
+     * constant: it is a rate limit, not a spin guard.
+     *
+     * ⚠️ Public so a test can pin the VALUE exactly. A request-count test over a
+     * real deadline cannot tell 1000 ms from 750 — the counts collide inside
+     * scheduler jitter (codex d218bd6a0c62) — so the exact test and the
+     * behavioural one do different jobs and neither is redundant.
+     */
+    public static function clampPollIntervalMs(?int $pollIntervalMs): int
+    {
+        if ($pollIntervalMs === null) {
+            return self::DEFAULT_POLL_INTERVAL_MS;
+        }
+
+        return $pollIntervalMs < self::MIN_POLL_INTERVAL_MS
+            ? self::MIN_POLL_INTERVAL_MS
+            : $pollIntervalMs;
+    }
+
     public static function pollToTerminal(
         GislClient $client,
         string $workflowId,
@@ -331,15 +382,7 @@ final class BuilderInternals
         ?int $pollIntervalMs,
         ?Cancellation $cancellation = null,
     ): WorkflowStatusResponse {
-        // Codex TS r1 medium 89130e3ea75d — guard against 0/negative/NaN
-        // pollIntervalMs that would hammer getWorkflowStatus.
-        if ($pollIntervalMs === null) {
-            $intervalMs = 2_000;
-        } elseif ($pollIntervalMs < 100) {
-            $intervalMs = 100;
-        } else {
-            $intervalMs = $pollIntervalMs;
-        }
+        $intervalMs = self::clampPollIntervalMs($pollIntervalMs);
 
         $terminal = \Gisl\Sdk\WorkflowConstants::TERMINAL_STATUSES;
         while (true) {

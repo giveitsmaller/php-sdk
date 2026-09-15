@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Gisl\Sdk\Tests\Unit\Ergonomic;
 
 use Gisl\Sdk\Ergonomic\Artifact;
+use Gisl\Sdk\Ergonomic\BuilderInternals;
 use Gisl\Sdk\Ergonomic\OperationBuilder;
 use Gisl\Sdk\Ergonomic\Result;
 use Gisl\Sdk\Ergonomic\RunOptions;
@@ -100,6 +101,87 @@ final class OperationBuilderRunTest extends TestCase
         $this->assertStringContainsString('/api/workflows', (string) $captured[1]->getUri());
         $this->assertStringContainsString('/status', (string) $captured[2]->getUri());
         $this->assertStringContainsString('/downloads', (string) $captured[3]->getUri());
+    }
+
+    /**
+     * r7bpd7MY — the VALUE, exactly. Companion to the request-count test below;
+     * neither is redundant. A count over a real deadline cannot tell 1000 ms
+     * from 750 (codex d218bd6a0c62); this pins the number, that one proves the
+     * clamp sits on the path `run()` travels.
+     */
+    public function test_poll_interval_clamps_to_exactly_one_second(): void
+    {
+        $this->assertSame(1_000, BuilderInternals::clampPollIntervalMs(1));
+        $this->assertSame(1_000, BuilderInternals::clampPollIntervalMs(999));
+        $this->assertSame(1_000, BuilderInternals::clampPollIntervalMs(0));
+        $this->assertSame(1_000, BuilderInternals::clampPollIntervalMs(-5));
+
+        // At and above the floor, untouched — a clamp that rewrote legal values
+        // would be a different bug.
+        $this->assertSame(1_000, BuilderInternals::clampPollIntervalMs(1_000));
+        $this->assertSame(5_000, BuilderInternals::clampPollIntervalMs(5_000));
+
+        // The default is not the floor and this card does not move it.
+        $this->assertSame(2_000, BuilderInternals::clampPollIntervalMs(null));
+    }
+
+    /**
+     * r7bpd7MY — THE POLL FLOOR IS 1000 ms AND THE NUMBER IS WHAT IS ASSERTED.
+     *
+     * api's `status_poll` family is a SLIDING 60 requests/minute at Free and Basic
+     * (`TieredRateLimiterService.php:37-39`, scaled per tier by
+     * `UserTier::rateLimitMultiplier()`). The previous 100 ms floor is 600/minute —
+     * ten times that ceiling, and twice Pro's.
+     *
+     * Counting outbound requests over a real 2.5 s deadline is the cheapest
+     * observation that can tell 1000 from 100: at the correct floor this makes
+     * about three status calls, at the old floor about twenty-five. The assertion
+     * is a BOUND chosen to sit far below the old behaviour and above scheduler
+     * jitter — an exact count would be a flaky test pretending to be a precise one.
+     *
+     * Deliberate mirror of the TypeScript test of the same name; the two languages
+     * move together on this value.
+     */
+    public function test_poll_floor_is_one_second_measured_by_request_count(): void
+    {
+        $tempPath = self::writeTempFile('input bytes');
+
+        // upload + create, then a long run of NEVER-terminal statuses. Forty is
+        // more than even the OLD floor would consume in 2.5 s, so the test fails
+        // on the ASSERTION rather than on an exhausted queue — a queue that runs
+        // dry would fail for a reason that has nothing to do with the floor.
+        $queue = [
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+        ];
+        for ($i = 0; $i < 40; $i++) {
+            $queue[] = self::jsonResponse(200, self::statusRunning());
+        }
+
+        $captured = [];
+        $http = self::stubClient($queue, $captured);
+        $client = self::makeClient($http);
+
+        $this->expectException(GislTimeoutError::class);
+
+        try {
+            $client
+                ->compress($tempPath, ['quality' => 75])
+                ->run(new RunOptions(maxWait: 2500, useSSE: false, pollIntervalMs: 1));
+        } finally {
+            // upload + create + the status polls.
+            // ⚠️ SIX, NOT EIGHT (codex f127c6af7335): at eight this passed with a
+            // 500 ms floor, so it could not tell a materially unsafe regression
+            // from the correct value. upload + create + ~3 polls = 5 at 1000ms;
+            // 500ms produces 7 and fails.
+            $this->assertLessThanOrEqual(
+                6,
+                \count($captured),
+                'poll floor regressed: ' . \count($captured) . ' requests in 2.5s. '
+                . 'At a 1000ms floor this is ~5; at 500ms ~7; at the old 100ms floor '
+                . '~27, which is 600 req/min against a 60 req/min per-tier limit.',
+            );
+        }
     }
 
     public function test_run_deadline_after_upload_throws_timeout(): void
@@ -340,6 +422,28 @@ final class OperationBuilderRunTest extends TestCase
     /**
      * @return array<string, mixed>
      */
+    /**
+     * A non-terminal status, so the poll loop keeps going until the deadline.
+     *
+     * ⚠️ `in_progress`, NOT `running`. The generated WorkflowStatus enum admits
+     * pending / in_progress / completed / failed / partially_failed /
+     * paused_insufficient_credits / cancelled / expired — a `running` body makes
+     * the deserializer throw InvalidArgumentException, which surfaces as a test
+     * failure that looks nothing like the thing under test. (TypeScript's mock
+     * is untyped and accepts `running` happily; the two languages disagree about
+     * how much a stub is allowed to lie.)
+     */
+    private static function statusRunning(): array
+    {
+        $body = self::statusCompleted();
+        $body['data']['status'] = 'in_progress';
+        $body['data']['jobs'][0]['status'] = 'in_progress';
+        $body['data']['jobs'][0]['operations'][0]['status'] = 'in_progress';
+        $body['data']['jobs'][0]['operations'][0]['progress'] = 0.1;
+
+        return $body;
+    }
+
     private static function statusCompleted(): array
     {
         return [
