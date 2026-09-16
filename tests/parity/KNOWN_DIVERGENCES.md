@@ -15,15 +15,15 @@ array). Keep the two in sync — see "How to remove a skip" below.
 ## Status snapshot (v1 launch gate — P8 `ftI4Myby`)
 
 - **Shared fixtures**: 74
-- **Skipped (PHP)**: 3 (all with rationale + follow-up card)
+- **Skipped (PHP)**: 4 (3 divergences in §1 + 1 withdrawn operation in §2; all with a rationale)
 - **Failing**: 0
 
 The full PHP suite (unit + parity) is green via `make project/sdk/php/check`.
-The three skips below are the only PHP conformance divergences; none is a
+Three of the four skips below are the only PHP conformance divergences; none is a
 functional defect in the hand-written SDK logic, and all are tracked for
 reduction. The launch gate passes with these documented exceptions.
 
-All three fall in one bucket:
+The three in §1 fall in one bucket; §2 is not a divergence at all:
 
 - **Bucket B — shared TS+PHP skip of an out-of-contract fixture**
   (§1 recommendedChunkSize). The TS reference runner skips the same three
@@ -64,6 +64,27 @@ shape is covered elsewhere (PHP unit tests; TS `client.test.ts` /
 **Resolution:** none planned — the fixtures pin an out-of-contract value on
 purpose to keep payloads compact, and both SDKs correctly reject it. A
 conformant server never sends below the 16 MiB floor.
+
+### 2. Withdrawn operation — NOT a divergence (1 fixture)
+
+⚠️ **This section is here because the harness has one skip mechanism and it is
+named for the other reason.** The two SDKs do not disagree about this fixture:
+they **agree to refuse it**.
+
+`contracts v2.203.0` withdrew `video_watermark` from `stable` to
+`availability: planned` on the owner's GO, after three measured staging proofs —
+the worker exists and cannot serve the advertised ceiling. Both SDKs now throw at
+`.watermark()` before any payload exists, so a lowering fixture has nothing to
+compare.
+
+| Fixture | Reason |
+|---|---|
+| `ff_lowering_video_watermark_overlay` | `video_watermark` is `planned`; both SDKs refuse a video base before lowering. The fixture still describes the CORRECT shape for when the op is re-listed. |
+
+🔑 **Restore it by removing the entry from both harnesses** — `ParityTest.php`
+and `parity.test.ts` — when `video_watermark` is shippable again. Until then the
+video lowering shape is uncovered in both languages, which is a real gap and is
+recorded here rather than left to be rediscovered.
 
 ## How to remove a skip
 

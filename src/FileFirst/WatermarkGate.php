@@ -39,7 +39,12 @@ final class WatermarkGate
             'image_bmp' => ['mimes' => ['image/bmp'], 'availability' => 'stable'],
         ],
         self::OP_VIDEO => [
-            'video' => ['mimes' => ['video/mp4', 'video/webm'], 'availability' => 'stable'],
+            // 🔴 WITHDRAWN to `planned` by contracts v2.203.0 (withdrawn
+            // 2026-09-15, tag cut 2026-09-16). It was `stable`: a worker EXISTS and cannot serve the
+            // advertised ceiling — a different kind of `planned` from image_gif,
+            // where nothing is built, with opposite remedies and no contract
+            // field separating them yet (contracts SYQhXb6R).
+            'video' => ['mimes' => ['video/mp4', 'video/webm'], 'availability' => 'planned'],
         ],
     ];
 
@@ -163,8 +168,15 @@ final class WatermarkGate
                             return $wireOp;
                         }
                         throw new GislConfigError(
-                            "watermark for {$mime} bases is not yet available ({$wireOp} is '{$group['availability']}'). "
-                            . 'The contract schema is defined but the server returns feature_not_available until it ships.',
+                            // ⚠️ "not yet" was a promise the contract does not make:
+                            // it is false for a capability that WAS stable and has
+                            // been withdrawn (v2.203.0 did that to video_watermark).
+                            // Mirrors the TypeScript wording; no contract field
+                            // separates the two kinds yet (contracts SYQhXb6R).
+                            "watermark for {$mime} bases is not available ({$wireOp} is "
+                            . "'{$group['availability']}' in the contract this SDK was built against). "
+                            . 'Workflow-create would return feature_not_available, so this is refused '
+                            . 'before any upload. Check getSchema() for the current server answer.',
                             reason: 'feature_not_available',
                         );
                     }

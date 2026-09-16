@@ -72,6 +72,13 @@ final class ParityTest extends TestCase
             'Both SDKs enforce the contract chunk-range floor (16 MiB / 16777216); '
             . 'the fixture pins ~2 MB recommendedChunkSize to keep the payload compact, '
             . 'so both reject it. Deliberate shared divergence, not a generator bug.',
+        // NOT a divergence: both SDKs agree to refuse. Here only because the
+        // harness has no other skip mechanism.
+        'ff_lowering_video_watermark_overlay' =>
+            'NOT A DIVERGENCE — both SDKs refuse identically. video_watermark was WITHDRAWN to '
+            . 'planned by contracts v2.203.0, so the SDK throws at watermark() before any payload '
+            . 'exists. RESTORE THIS FIXTURE when the op is re-listed; the video lowering shape is '
+            . 'uncovered until then.',
         'upload_metadata_hint' =>
             'Same sub-floor recommendedChunkSize as upload_multipart; both SDKs reject the ~2 MB value.',
         'upload_boundary_multipart' =>

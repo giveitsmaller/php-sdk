@@ -107,11 +107,20 @@ final class WatermarkRecipeTest extends TestCase
         self::assertSame('image_watermark', $this->watermarkJob($wire)['operations'][0]['type']);
     }
 
-    public function test_video_base_routes_to_video_watermark(): void
+    /**
+     * 🔴 THIS ASSERTED A SUCCESSFUL ROUTE UNTIL 2026-09-16, and the route was
+     * real: video_watermark was `stable`. Contracts v2.203.0 withdrew it to
+     * `planned` on owner GO, so the SDK now refuses BEFORE any upload rather
+     * than building a workflow the server answers with feature_not_available.
+     *
+     * ⚠️ The refusal is EAGER — it lands on watermark(), not on
+     * toWorkflowPayload(). Mirrors the TypeScript test of the same name.
+     */
+    public function test_video_base_is_refused_because_video_watermark_was_withdrawn(): void
     {
-        $wire = $this->recipe('clip.mp4')->watermark($this->overlay(), ['anchor' => 'top_right'])
-            ->toWorkflowPayload(['base', 'ovl'])->toWire();
-        self::assertSame('video_watermark', $this->watermarkJob($wire)['operations'][0]['type']);
+        $this->expectException(GislConfigError::class);
+        $this->expectExceptionMessageMatches("/video_watermark is 'planned'/");
+        $this->recipe('clip.mp4')->watermark($this->overlay(), ['anchor' => 'top_right']);
     }
 
     public function test_transformed_base_routes_by_output_media_thumbnail_to_image(): void
@@ -121,11 +130,17 @@ final class WatermarkRecipeTest extends TestCase
         self::assertSame('image_watermark', $this->watermarkJob($wire)['operations'][0]['type']);
     }
 
-    public function test_base_converted_to_video_routes_to_video_watermark(): void
+    public function test_base_converted_to_video_is_refused_for_the_same_reason(): void
     {
-        $wire = $this->recipe('photo.jpg')->convert('mp4')->watermark($this->overlay())
-            ->toWorkflowPayload(['base', 'ovl'])->toWire();
-        self::assertSame('video_watermark', $this->watermarkJob($wire)['operations'][0]['type']);
+        // The routing logic is unchanged — an output-media video still SELECTS
+        // video_watermark; it is that op's availability that now stops it.
+        $this->expectException(GislConfigError::class);
+        // ⚠️ PIN THE MESSAGE, not just the class: convert('mp4') on a JPEG can
+        // throw GislConfigError for unrelated reasons, so a class-only assertion
+        // cannot tell the withdrawal refusal from a conversion-validation
+        // regression. The TypeScript twin pins /not available/.
+        $this->expectExceptionMessageMatches('/is not available/');
+        $this->recipe('photo.jpg')->convert('mp4')->watermark($this->overlay());
     }
 
     public function test_named_typeless_resource_base_routes_by_filename(): void
@@ -236,24 +251,20 @@ final class WatermarkRecipeTest extends TestCase
         self::assertArrayNotHasKey('crf', $compress['options'] ?? []);
     }
 
+    /**
+     * SKIPPED, NOT DELETED. This pinned the synthetic post-media resolution for a
+     * VIDEO watermark — none of that logic changed; it cannot run because the
+     * gate refuses before a payload exists.
+     *
+     * 🔑 RE-ENABLE WHEN video_watermark IS RE-LISTED. The image path still covers
+     * the sole_op split; what is uncovered is the VIDEO synthetic media arm.
+     * Mirrors the TypeScript skip.
+     */
     public function test_post_watermark_compress_resolves_against_video_output_media(): void
     {
-        // video base -> video_watermark -> synthetic post media is video (mp4 arm),
-        // so compress(Size) resolves the VIDEO Size cell (carries crf).
-        $wire = $this->recipe('clip.mp4')->watermark($this->overlay())->compress(OptimizeFor::Size)
-            ->toWorkflowPayload(['b', 'o'])->toWire();
-        // watermark job carries ONLY the sole_op watermark op.
-        self::assertSame('video_watermark', $this->watermarkJob($wire)['operations'][0]['type']);
-        // the compress lowers into the downstream `post` job.
-        $ops = $this->postJob($wire)['operations'];
-        $compress = null;
-        foreach ($ops as $op) {
-            if ($op['type'] === 'compress') {
-                $compress = $op;
-            }
-        }
-        self::assertNotNull($compress);
-        self::assertArrayHasKey('crf', $compress['options'] ?? []);
+        $this->markTestSkipped(
+            'video_watermark withdrawn to planned by contracts v2.203.0; re-enable when re-listed.',
+        );
     }
 
     public function test_all_post_watermark_steps_lower_into_the_post_job_in_order(): void

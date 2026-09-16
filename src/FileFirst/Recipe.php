@@ -316,8 +316,12 @@ final class Recipe
      * Composite an image OVERLAY onto this file (a multi-input op). `$overlay` is
      * a secondary file-NODE (a {@see Recipe} — e.g. `$client->file('logo.png')`),
      * itself optionally processed first. Routes by THIS file's effective media:
-     * image base → `image_watermark` (stable), video base → `video_watermark`
-     * (beta). Audio/document/animated-GIF/unsupported-subtype/undetectable bases
+     * image base → `image_watermark` (stable).
+     * A VIDEO base is REFUSED: `video_watermark` was withdrawn to `planned`
+     * by contracts v2.203.0, so this verb throws before any upload rather than
+     * building a workflow the server would reject. The routing is unchanged and
+     * returns when the operation is re-listed.
+     * Audio/document/animated-GIF/unsupported-subtype/undetectable bases
      * throw locally BEFORE any upload (the planned-op gate). `$options` carries
      * the wire watermark options (`anchor`, `opacity`, `margin_x`, `margin_y`,
      * `overlay_width`). `overlays[]` (multi-overlay stack) is a valid contract key
