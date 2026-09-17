@@ -150,10 +150,44 @@ final class Credentials
      * strings and silently falls through to the default on unknown
      * names — matching the TS env-var lenience.
      */
+    /**
+     * A `$baseUrl` that is PRESENT but blank is a configuration ERROR, not an
+     * absent value — and both resolvers must agree, or they disagree about what
+     * "unconfigured" means, which is how the defect was born.
+     *
+     * 🔴 Measured on the published 0.26.0 by compression_e2e: a blank base URL
+     * was read as "configured nothing" and therefore as consent to the
+     * PRODUCTION default, while the caller passes an API key at the same time.
+     * Credentialed traffic to production, through a path with no GISL_* variable
+     * in it — so a consumer's guard around the ambient variables cannot see it.
+     *
+     * ⭐ `null` IS UNCHANGED: that is the case the production fallback exists
+     * for. Card OxqseYwd. Deliberate mirror of assertBaseUrlNotBlank() in
+     * packages/typescript/src/credentials.ts.
+     */
+    private static function assertBaseUrlNotBlank(?string $baseUrl): void
+    {
+        if ($baseUrl !== null && \trim($baseUrl) === '') {
+            throw new GislConfigError(
+                'baseUrl was supplied but is blank. That is a configuration error, not an '
+                . 'absent value: it usually means GISL_BASE_URL (or whatever your wrapper '
+                . 'reads it from) is set to an empty string. Omit it entirely to use the '
+                . 'environment default, or give it a real host.',
+                reason: 'blank_value',
+                conflictingFields: ['baseUrl'],
+                suggestion: "Pass a real host such as 'https://api.staging.giveitsmaller.com', or an "
+                    . "environment ('staging' / 'prod'). ⚠️ Omitting it entirely falls back to "
+                    . 'PRODUCTION when no GISL_* variable is set, which is rarely what an empty '
+                    . 'value was meant to express.',
+            );
+        }
+    }
+
     public static function resolveEndpoint(
         ?string $baseUrl = null,
         ?Environment $environment = null,
     ): string {
+        self::assertBaseUrlNotBlank($baseUrl);
         if ($baseUrl !== null && $baseUrl !== '') {
             return $baseUrl;
         }
@@ -162,7 +196,7 @@ final class Credentials
             return self::ENVIRONMENT_ENDPOINTS[$environment->value];
         }
 
-        $envBaseUrl = self::readEnv(self::GISL_BASE_URL_ENV);
+        $envBaseUrl = self::readUrlEnv(self::GISL_BASE_URL_ENV);
         if ($envBaseUrl !== null) {
             return $envBaseUrl;
         }
@@ -202,6 +236,7 @@ final class Credentials
         ?Environment $environment = null,
         ?string $baseUrl = null,
     ): ?string {
+        self::assertBaseUrlNotBlank($baseUrl);
         // TRIM BEFORE THE PRESENCE CHECK. A whitespace-only value is unset
         // (the config normaliser treats it that way too), and if it were
         // allowed to count as "supplied" here it would SUPPRESS the
@@ -221,7 +256,7 @@ final class Credentials
             return self::ENVIRONMENT_STREAM_ENDPOINTS[$environment->value] ?? null;
         }
 
-        $envStreamBaseUrl = self::readEnv(self::GISL_STREAM_BASE_URL_ENV);
+        $envStreamBaseUrl = self::readUrlEnv(self::GISL_STREAM_BASE_URL_ENV);
         if ($envStreamBaseUrl !== null) {
             return $envStreamBaseUrl;
         }
@@ -247,7 +282,7 @@ final class Credentials
         // deriving one host from another, which is precisely what this
         // mechanism exists to refuse.
         $apiHostWasConfigured = ($baseUrl !== null && trim($baseUrl) !== '')
-            || self::readEnv(self::GISL_BASE_URL_ENV) !== null;
+            || self::readUrlEnv(self::GISL_BASE_URL_ENV) !== null;
         if (!$apiHostWasConfigured) {
             // Direct lookup, no `?? null`: `prod` is present in the const above
             // and the conformance suite fails closed if it ever stops matching
@@ -283,10 +318,44 @@ final class Credentials
     private static function readEnv(string $name): ?string
     {
         $value = getenv($name);
-        if (is_string($value) && $value !== '') {
+        // ⚠️ TRIM BEFORE THE PRESENCE CHECK, matching TypeScript. This checked
+        // `!== ''` only, so a whitespace-only GISL_BASE_URL was returned VERBATIM
+        // as the base URL — a host made of spaces — while TypeScript treated the
+        // same value as unset. The two languages disagreed in the OPPOSITE
+        // direction to the option path (second-identity, PR #404).
+        if (is_string($value) && \trim($value) !== '') {
             return $value;
         }
         return null;
+    }
+
+    /**
+     * A URL environment variable that is SET BUT BLANK is an operator error.
+     *
+     * 🔴 THE HOLE THE OPTION GUARD'S OWN MESSAGE NAMED: it tells operators a
+     * blank baseUrl "usually means GISL_BASE_URL is set to an empty string", and
+     * that path fell through to the PRODUCTION host with credentials attached.
+     *
+     * ⚠️ Supersedes part of #397 for the two URL variables: "blank means unset"
+     * is right for most settings and wrong for a HOST, where `GISL_BASE_URL=` in
+     * a .env file is a mistake somebody should hear about. Mirrors readUrlEnv()
+     * in packages/typescript/src/credentials.ts.
+     */
+    private static function readUrlEnv(string $name): ?string
+    {
+        $raw = getenv($name);
+        if (is_string($raw) && \trim($raw) === '') {
+            throw new GislConfigError(
+                "{$name} is set but blank. That is a configuration error, not an absent "
+                . 'value — a set-but-empty host would otherwise fall through to the '
+                . 'PRODUCTION default while your credentials are attached.',
+                reason: 'blank_value',
+                conflictingFields: [$name],
+                suggestion: "Unset {$name} entirely to use the environment default, or give it a real host.",
+            );
+        }
+
+        return self::readEnv($name);
     }
 
     private static function defaultProfilePath(): ?string

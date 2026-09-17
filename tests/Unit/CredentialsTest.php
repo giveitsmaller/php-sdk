@@ -490,4 +490,54 @@ final class CredentialsTest extends TestCase
         }
         rmdir($dir);
     }
+
+    /**
+     * OxqseYwd — a present-but-blank base URL is a configuration ERROR.
+     *
+     * Deliberate mirror of the TypeScript tests: the two languages, and the two
+     * resolvers within each, must agree about what "unconfigured" means, because
+     * the disagreement is what sent credentialed traffic to production.
+     */
+    public function test_a_blank_base_url_is_rejected_by_both_resolvers(): void
+    {
+        foreach (['', '   ', "\t"] as $blank) {
+            try {
+                Credentials::resolveEndpoint($blank);
+                $this->fail("resolveEndpoint accepted a blank baseUrl: " . \var_export($blank, true));
+            } catch (GislConfigError $error) {
+                $this->assertStringContainsString('GISL_BASE_URL', $error->getMessage());
+            }
+
+            try {
+                Credentials::resolveStreamEndpoint(null, null, $blank);
+                $this->fail("resolveStreamEndpoint accepted a blank baseUrl: " . \var_export($blank, true));
+            } catch (GislConfigError $error) {
+                $this->assertStringContainsString('blank', $error->getMessage());
+            }
+        }
+    }
+
+    public function test_an_absent_base_url_still_falls_through(): void
+    {
+        // The case the production fallback exists for — pinned separately so the
+        // rejection above cannot quietly widen into it.
+        $this->assertSame(
+            Credentials::ENVIRONMENT_ENDPOINTS[Environment::Staging->value],
+            Credentials::resolveEndpoint(null, Environment::Staging),
+        );
+    }
+
+    /**
+     * OxqseYwd round 2 — the env path, mirroring TypeScript.
+     */
+    public function test_a_set_but_blank_url_env_var_is_rejected(): void
+    {
+        \putenv('GISL_BASE_URL=');
+        try {
+            $this->expectException(GislConfigError::class);
+            Credentials::resolveEndpoint();
+        } finally {
+            \putenv('GISL_BASE_URL');
+        }
+    }
 }
