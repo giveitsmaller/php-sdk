@@ -9,6 +9,7 @@ use Gisl\Sdk\Ergonomic\BuilderInternals;
 use Gisl\Sdk\Ergonomic\OperationBuilder;
 use Gisl\Sdk\Ergonomic\Result;
 use Gisl\Sdk\Ergonomic\RunOptions;
+use Gisl\Sdk\Errors\GislApiError;
 use Gisl\Sdk\Errors\GislTimeoutError;
 use Gisl\Sdk\GislClientConfig;
 use Gisl\Sdk\GislErgonomicClient;
@@ -57,6 +58,94 @@ final class OperationBuilderRunTest extends TestCase
         $result = $client->compress($tempPath, ['quality' => 75])->run();
 
         $this->assertNotSame('', $result->workflowId);
+    }
+
+    /**
+     * 3OVNoRxh — A REFUSED SSE CONNECT IS NOT A FAILED RUN.
+     *
+     * The contract declares the `events_stream` 429 retryable, and it clears as
+     * soon as another caller closes a stream. Before this, the refusal
+     * propagated: a `run()` caller got a hard failure for a transport they
+     * never asked about, while polling — a working transport, and what they
+     * actually asked for — sat unused.
+     *
+     * 🔴 THE THING THAT MAKES THIS TEST WORTH MORE THAN ITS TWIN IN TS:
+     * `streamEvents()` is a GENERATOR here, so its body — the HTTP call
+     * included — does not run when it is CALLED. A guard wrapped around the
+     * call site would never fire in production and would still pass a test
+     * whose double throws eagerly. This test drives a real PSR-18 stub through
+     * the real generator, so it fails if the priming `rewind()` is removed.
+     */
+    public function test_a_429_on_the_sse_connect_falls_back_to_polling(): void
+    {
+        $tempPath = self::writeTempFile('input bytes');
+
+        $captured = [];
+        $http = self::stubClient([
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            // The SSE connect is REFUSED. Retryable, so the run polls instead.
+            self::jsonResponse(429, [
+                'success' => false,
+                'error' => 'RATE_LIMITED',
+                'message' => 'Too many concurrent event streams',
+            ]),
+            self::jsonResponse(200, self::statusCompleted()),
+            self::jsonResponse(200, self::downloadsOk()),
+        ], $captured);
+
+        $client = self::makeClient($http);
+        $result = $client
+            ->compress($tempPath, ['quality' => 75])
+            ->run(new RunOptions(maxWait: '30s', pollIntervalMs: 1_000));
+
+        $this->assertSame('completed', $result->status);
+        // The poll actually happened — the refusal did not just get swallowed
+        // into a result built from nothing.
+        $this->assertCount(5, $captured);
+        $this->assertStringContainsString('/events', (string) $captured[2]->getUri());
+        $this->assertStringContainsString('/status', (string) $captured[3]->getUri());
+        $this->assertStringContainsString('/downloads', (string) $captured[4]->getUri());
+    }
+
+    /**
+     * 3OVNoRxh — THE TWIN, AND THE NARROWING IS THE PROPERTY.
+     *
+     * Without this, the suite would pass on a change that polled after ANY API
+     * error on the connect — which would report a successful run on a workflow
+     * the caller has no right to read. A 401 is not retryable and must reach
+     * the caller untouched.
+     */
+    public function test_a_401_on_the_sse_connect_propagates_and_does_not_poll(): void
+    {
+        $tempPath = self::writeTempFile('input bytes');
+
+        $captured = [];
+        $http = self::stubClient([
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            self::jsonResponse(401, [
+                'success' => false,
+                'error' => 'UNAUTHORIZED',
+                'message' => 'Not signed in',
+            ]),
+            // Deliberately queued: if the SDK polls anyway, the run SUCCEEDS
+            // and this test fails loudly instead of erroring on an empty queue.
+            self::jsonResponse(200, self::statusCompleted()),
+            self::jsonResponse(200, self::downloadsOk()),
+        ], $captured);
+
+        $client = self::makeClient($http);
+
+        $this->expectException(GislApiError::class);
+        try {
+            $client
+                ->compress($tempPath, ['quality' => 75])
+                ->run(new RunOptions(maxWait: '30s', pollIntervalMs: 1_000));
+        } finally {
+            // Three requests, not five: upload, create, the refused connect.
+            $this->assertCount(3, $captured);
+        }
     }
 
     public function test_run_happy_path_with_poll_fallback(): void

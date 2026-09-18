@@ -8,6 +8,7 @@ use Gisl\Generated\OpenApi\Model\SseEventType;
 use Gisl\Generated\OpenApi\Model\WorkflowStatusResponse;
 use Gisl\Sdk\Cancellation;
 use Gisl\Sdk\Errors\GislAbortError;
+use Gisl\Sdk\Errors\GislApiError;
 use Gisl\Sdk\Errors\GislNetworkError;
 use Gisl\Sdk\Errors\GislStreamHostNotDeclaredError;
 use Gisl\Sdk\Errors\GislTimeoutError;
@@ -271,6 +272,11 @@ final class BuilderInternals
                 // PSR-18 transport failed mid-SSE — try poll.
             } catch (SseStreamEndedWithoutTerminal $e) {
                 // Clean server close with no terminal frame — try poll.
+            } catch (SseConnectRefused $e) {
+                // 3OVNoRxh: the connect was refused with a retryable status —
+                // SSE is momentarily unavailable, not a failure of the thing
+                // this caller asked for. `$e->refusal` keeps the original
+                // GislApiError if anyone needs it.
             } catch (GislStreamHostNotDeclaredError $e) {
                 // VUozk5Bc: no stream host is DECLARED for this configuration
                 // (a configuration nothing declares; both named environments
@@ -326,7 +332,54 @@ final class BuilderInternals
             SseEventType::WORKFLOW_FAILED,
             SseEventType::WORKFLOW_PARTIALLY_FAILED,
         ];
-        $events = $client->streamEvents($workflowId);
+        // 3OVNoRxh: a REFUSED connect (429 on the `events_stream` bucket, or a
+        // 503) is declared retryable by the contract and clears when another
+        // caller closes a stream. Wrap it so awaitTerminal() can poll instead
+        // of handing a run() caller a hard failure for a transport they never
+        // asked about.
+        //
+        // ⚠️ `retryable()`, NOT a literal 429/503 list — that accessor already
+        // encodes 408/429/5xx PLUS the generated taxonomy's own flag, and a
+        // second copy of the rule here is the one that would go stale.
+        //
+        // 🔴 THE NARROWING IS THE FEATURE. A 401/402/404 is not retryable, so
+        // it still propagates untouched; re-issuing the same doomed request as
+        // a poll would mask the real failure.
+        //
+        // ⚠️ ONLY the connect is wrapped. The `getWorkflowStatus()` call below
+        // can return the same statuses, and sweeping it in would be harmless by
+        // luck rather than by design.
+        // ⚠️ THE CALL ITSELF THROWS, AND THAT IS NOT OBVIOUS FROM THE SIGNATURE.
+        // `streamEvents()` is declared `: \Generator`, which usually means a lazy
+        // body — but it contains NO `yield`. It performs the request eagerly,
+        // dispatches a non-2xx through `unwrapEnvelope()`, and only then RETURNS
+        // the generator from `parseSseStream()`. So the connect, and its
+        // refusal, happen here.
+        //
+        // 🔴 MEASURED, BECAUSE I GOT IT BACKWARDS FIRST. I assumed laziness and
+        // wrapped a priming `$events->rewind()` instead — and the 429 escaped
+        // the catch entirely, because there was nothing left to prime. The
+        // backtrace was no help: it framed the throw at the generator's creation
+        // line either way. `: \Generator` is a RETURN TYPE, not a promise of
+        // deferral; only the presence of `yield` decides that.
+        //
+        // ⚠️ AND THE CALL IS ALONE IN THE TRY ON PURPOSE. Wrapping the `foreach`
+        // below would put the `getWorkflowStatus()` call inside the same try —
+        // and that call can return the very statuses this arm treats as "SSE
+        // unavailable", so a terminal-frame status hiccup would be silently
+        // re-issued as a poll.
+        try {
+            $events = $client->streamEvents($workflowId);
+        } catch (GislApiError $e) {
+            if ($e->retryable()) {
+                throw new SseConnectRefused(
+                    "SSE connect for workflow {$workflowId} was refused with "
+                        . "{$e->statusCode}; falling back to polling.",
+                    $e,
+                );
+            }
+            throw $e;
+        }
         foreach ($events as $event) {
             /** @var GislSseEvent $event */
             if ($onProgress !== null && $event->event === SseEventType::OPERATION_PROGRESS && \is_array($event->data)) {
