@@ -327,6 +327,46 @@ final class BuilderInternals
         // (`workflow_completed` etc.) silently mismatched the wire and
         // run() would never see a terminal SSE frame — fall through to
         // poll on every invocation. Codex r2 high 1a0/3a0 caught this.
+        // 🔴 WHY FIRST-TERMINAL IS CORRECT, AND IT IS NOT OBVIOUS (Fk8FWeyO).
+        // contracts v2.193.0 declares that a second terminal OperationResult
+        // can arrive for the same operation_id and that `completed` SUPERSEDES
+        // `failed`, whichever order they arrive in. Read on its own that makes
+        // stopping at the first terminal event look like a bug — and the
+        // contract says so itself: "a consumer that treats a workflow-level
+        // `failed` as final is CORRECT per this contract and may still be wrong
+        // in fact".
+        //
+        // ⇒ IT IS NOT WRONG IN FACT, AND THE REASON IS AN ORDERING IN api.
+        // MEASURED BY api AT THEIR main, 2026-09-18 (RELAYED — not re-run here):
+        //   · WorkflowStatus::canTransitionTo() returns FALSE for every target
+        //     from Completed/Failed/PartiallyFailed/Cancelled/Expired, so a
+        //     terminal workflow never returns to non-terminal;
+        //   · OperationResultHandler calls $operation->canRetry() and SCHEDULES
+        //     THE RETRY *BEFORE* $job->fail(). On that path a job — and so the
+        //     workflow — reaches `failed` only once retries are EXHAUSTED or the
+        //     failure was non-retryable.
+        // ⇒ On the AUTOMATIC retry path there is no window in which a superseding
+        // operation.completed can land after a workflow-level `failed`. Nothing to
+        // wait for, nothing to poll for, and no latency on a successful run.
+        //
+        // 🔴 THE SCOPE OF THAT CLAIM IS THE AUTOMATIC PATH, AND NOT MORE. api's
+        // measurement said "cannot arise on the AUTOMATIC path"; an earlier draft
+        // of this comment DROPPED THAT QUALIFIER and asserted a universal "no
+        // window", which a reviewer rejected by pointing at
+        // RetryOperationCommandHandler — the MANUAL `POST /retry` route, which the
+        // ordering above does not cover and which has not been measured here.
+        //
+        // ⚠️ WHAT THAT MEANS IN PRACTICE, STATED RATHER THAN GLOSSED: a caller
+        // inside run() is waiting on a workflow nobody has manually retried yet —
+        // a manual retry is something a human or another service does AFTER being
+        // told it failed. So the stop condition is right for run(). It is NOT a
+        // licence to treat "first terminal" as universally final elsewhere.
+        //
+        // ⚠️ THE OTHER BOUNDARY: this rests on api's ordering, not on the contract
+        // — the contract leaves the parent explicitly undecided
+        // (asyncapi/events.yaml, "THE PARENT IS NOT COVERED BY THIS RULE, AND THAT
+        // IS A GAP"). If api ever fails a job BEFORE scheduling its retry, the
+        // window opens on the automatic path too and Fk8FWeyO comes back.
         $terminalEvents = [
             SseEventType::WORKFLOW_COMPLETED,
             SseEventType::WORKFLOW_FAILED,
@@ -437,6 +477,14 @@ final class BuilderInternals
     ): WorkflowStatusResponse {
         $intervalMs = self::clampPollIntervalMs($pollIntervalMs);
 
+        // The POLL path's stop condition. Same question as the SSE one, same
+        // answer — see the long note above the $terminalEvents list
+        // (Fk8FWeyO): a terminal workflow status never returns to non-terminal,
+        // and api schedules an operation's retry BEFORE failing its job, so
+        // `failed` here means retries are exhausted. ⚠️ THIS PATH IS THE EASIER
+        // ONE TO MISS — a poll that observes `failed` and stops has exactly the
+        // defect the card described, and it is correct for the same reason
+        // rather than by luck.
         $terminal = \Gisl\Sdk\WorkflowConstants::TERMINAL_STATUSES;
         while (true) {
             self::throwIfCancelled($cancellation, "poll wait for workflow {$workflowId}");
