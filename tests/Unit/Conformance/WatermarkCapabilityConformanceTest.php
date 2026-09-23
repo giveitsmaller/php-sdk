@@ -42,7 +42,46 @@ final class WatermarkCapabilityConformanceTest extends TestCase
         self::$availability = $ops;
     }
 
-    /** Resolved availability: group-level, else op-level, else the 'stable' default. */
+    /**
+     * The contract's availability ladder, MOST-CAUTIOUS FIRST
+     * (compression_contracts schemas/availability-ladder.yaml, v2.206.0+). Pinned to
+     * that file by scripts/tests/test_availability_ladder_parity.py.
+     */
+    public const AVAILABILITY_LADDER = [
+        'planned',
+        'experimental',
+        'beta',
+        'deprecated',
+        'stable_pending_audit',
+        'stable',
+    ];
+
+    /**
+     * PMvwhNI1: resolve a chain MOST-CAUTIOUSLY - the strictest present link wins,
+     * an absent key is `stable` at that link. It was "group key, else op key"
+     * (precedence), which agreed with the contract on every real cell only by
+     * coincidence. Mirrors mostCautious() in the TS conformance test.
+     */
+    public static function mostCautious(mixed ...$links): string
+    {
+        $strictest = \count(self::AVAILABILITY_LADDER) - 1;
+        foreach ($links as $link) {
+            // Absent (null) is `stable`; any OTHER non-string is malformed and must
+            // not quietly rank as stable (codex dc3adea955fc) - TS throws too.
+            if ($link !== null && !\is_string($link)) {
+                throw new \UnexpectedValueException('non-string availability value: ' . \get_debug_type($link));
+            }
+            $value = $link ?? 'stable';
+            $rank = \array_search($value, self::AVAILABILITY_LADDER, true);
+            if ($rank === false) {
+                throw new \UnexpectedValueException("unknown availability value '{$value}' - not on the contract ladder");
+            }
+            $strictest = \min($strictest, $rank);
+        }
+
+        return self::AVAILABILITY_LADDER[$strictest];
+    }
+
     private function resolvedAvailability(string $op, string $group): string
     {
         /** @var array<string, mixed> $opMeta */
@@ -51,9 +90,25 @@ final class WatermarkCapabilityConformanceTest extends TestCase
         $groups = $opMeta['mime_groups'] ?? [];
         /** @var array<string, mixed> $groupMeta */
         $groupMeta = $groups[$group] ?? [];
-        $avail = $groupMeta['availability'] ?? ($opMeta['availability'] ?? 'stable');
 
-        return \is_string($avail) ? $avail : 'stable';
+        return self::mostCautious($opMeta['availability'] ?? null, $groupMeta['availability'] ?? null);
+    }
+
+    public function test_a_stable_group_under_a_planned_root_resolves_to_planned(): void
+    {
+        self::assertSame('planned', self::mostCautious('planned', 'stable'));
+        self::assertSame('planned', self::mostCautious(null, 'planned'));
+        self::assertSame('experimental', self::mostCautious('beta', 'experimental'));
+        self::assertSame('stable', self::mostCautious(null, null));
+        foreach ([0, [], false] as $malformed) {
+            try {
+                self::mostCautious('stable', $malformed);
+                self::fail('a non-string availability must not rank as stable');
+            } catch (\UnexpectedValueException) {
+            }
+        }
+        $this->expectException(\UnexpectedValueException::class);
+        self::mostCautious('stable', 'gamma');
     }
 
     public function test_capability_table_matches_availability_json(): void
