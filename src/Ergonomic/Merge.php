@@ -45,13 +45,18 @@ final class Merge
     /**
      * Wrap an open, seekable stream resource as a merge asset (the in-memory /
      * Blob analogue, VOxtu0RZ-B4). A non-seekable stream is rejected when the
-     * merge uploads.
+     * merge uploads, unless `$bufferNonSeekable` is true (below).
      *
      * @param resource $resource
+     * @param bool $bufferNonSeekable KS04SnqR: accept a non-seekable stream
+     *        (`php://stdin`, a pipe) by reading it NOW into a seekable php://temp
+     *        copy. Default false: such a stream is rejected when the merge runs.
      */
-    public static function resource(mixed $resource): ResourceAsset
+    public static function resource(mixed $resource, bool $bufferNonSeekable = false): ResourceAsset
     {
-        return new ResourceAsset($resource);
+        return new ResourceAsset($bufferNonSeekable && \is_resource($resource)
+            ? \Gisl\Sdk\Http\UploadSource::bufferNonSeekable($resource)
+            : $resource);
     }
 
     /**

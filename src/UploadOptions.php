@@ -60,6 +60,12 @@ final class UploadOptions
      *   When null the SDK derives it from the source (a path's basename, or
      *   `upload.bin` for a nameless stream). Lets a file-first resource input
      *   carry its name hint through to the upload.
+     * @param bool $bufferNonSeekable
+     *   KS04SnqR: accept a NON-seekable stream (`php://stdin`, a pipe) by first
+     *   copying it into a seekable php://temp buffer, which is closed after the
+     *   upload, success or failure. Default false: a non-seekable stream is
+     *   rejected (`non_seekable_stream`), so a large pipe never spools to disk
+     *   unasked. Opting in costs disk equal to the input.
      */
     public function __construct(
         public mixed $onProgress = null,
@@ -68,6 +74,7 @@ final class UploadOptions
         public mixed $onCheckpoint = null,
         public ?string $contentType = null,
         public ?string $filename = null,
+        public bool $bufferNonSeekable = false,
     ) {
         // Validate the wire-bound hints at construction (fail-fast). The same
         // check is the pre-upload chokepoint for file-first resource inputs

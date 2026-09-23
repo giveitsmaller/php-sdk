@@ -499,6 +499,7 @@ method Gisl\Sdk\UploadOptions::__construct()
 method Gisl\Sdk\WaitOptions::__construct()
 method Gisl\Sdk\WorkflowCreatePayload::__construct()
 method Gisl\Sdk\WorkflowCreatePayload::toWire()
+property Gisl\Sdk\UploadOptions::$bufferNonSeekable : bool
 property Gisl\Sdk\UploadOptions::$contentType : ?string
 property Gisl\Sdk\UploadOptions::$filename : ?string
 property Gisl\Sdk\UploadOptions::$metadataHint : ?Gisl\Generated\OpenApi\Model\MultipartInitiateRequestMetadataHint
@@ -840,6 +841,7 @@ static method Gisl\Sdk\Http\RateLimitHeaders::parseRetryAfterMs()
 static method Gisl\Sdk\Http\RateLimitHeaders::rateLimit()
 static method Gisl\Sdk\Http\RateLimitHeaders::retryAfterSeconds()
 static method Gisl\Sdk\Http\UploadSource::assertUploadableStream()
+static method Gisl\Sdk\Http\UploadSource::bufferNonSeekable()
 static method Gisl\Sdk\Http\UploadSource::fromPath()
 static method Gisl\Sdk\Http\UploadSource::fromStream()
 static method Gisl\Sdk\PresetDefaults::create()

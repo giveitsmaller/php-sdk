@@ -201,15 +201,36 @@ class GislClient
      *                                            analogue, VOxtu0RZ-B4). A
      *                                            non-seekable stream
      *                                            (php://stdin, a pipe) is
-     *                                            rejected with an actionable
-     *                                            error — buffer it to a temp
-     *                                            path or pass a seekable
-     *                                            stream (php://temp).
+     *                                            rejected (`non_seekable_stream`)
+     *                                            unless `$options` sets
+     *                                            `bufferNonSeekable: true`: the
+     *                                            SDK then copies it to a
+     *                                            php://temp buffer it owns and
+     *                                            closes after the upload
+     *                                            (KS04SnqR). The caller's
+     *                                            stream is never closed.
      */
     public function uploadFile(
         mixed $filePathOrResource,
         ?UploadOptions $options = null,
     ): UploadResponse {
+        if (!\is_resource($filePathOrResource) || $options?->bufferNonSeekable !== true) {
+            return $this->uploadFromInput($filePathOrResource, $options);
+        }
+        // KS04SnqR: the buffered copy is OURS, so it is closed on every path;
+        // a seekable caller stream comes back unchanged and stays the caller's.
+        $upload = UploadSource::bufferNonSeekable($filePathOrResource);
+        try {
+            return $this->uploadFromInput($upload, $options);
+        } finally {
+            if ($upload !== $filePathOrResource && \is_resource($upload)) {
+                \fclose($upload);
+            }
+        }
+    }
+
+    private function uploadFromInput(mixed $filePathOrResource, ?UploadOptions $options): UploadResponse
+    {
         if (\is_resource($filePathOrResource)) {
             $source = UploadSource::fromStream($filePathOrResource);
         } elseif (\is_string($filePathOrResource)) {

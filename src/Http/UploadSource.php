@@ -21,9 +21,9 @@ use Gisl\Sdk\Errors\GislError;
  *
  * **Seekable-only.** Non-seekable streams (`php://stdin`, network pipes) are
  * rejected at construction with an actionable error: they have no random
- * access for chunk PUTs and no reliable size. Buffering such a stream to a temp
- * file is an additive follow-up (Option A) — deliberately NOT done here so the
- * SDK never makes a hidden disk copy of potentially-large input.
+ * access for chunk PUTs and no reliable size. Buffering one is OPT-IN only
+ * ({@see bufferNonSeekable()}, KS04SnqR), so the SDK never makes a disk copy of
+ * potentially-large input the caller did not ask for.
  *
  * The caller owns the stream's lifecycle — this class never closes a
  * caller-provided resource.
@@ -86,6 +86,48 @@ final class UploadSource
                 reason: 'non_readable_stream',
             );
         }
+    }
+
+    /** Bytes a buffered copy keeps in memory before php://temp spills to a temp file. */
+    private const BUFFER_MEMORY_BYTES = 2 * 1024 * 1024;
+
+    /**
+     * Opt-in buffering of a NON-seekable stream (`php://stdin`, a pipe) into a
+     * seekable `php://temp` copy (KS04SnqR, "Option A"). A seekable stream is
+     * returned unchanged. The WHOLE input is read now: past 2 MiB PHP spills it
+     * to a temp file, which PHP deletes when the returned handle is closed or
+     * garbage-collected, so no temp file outlives it. Disk use equal to the
+     * input is the cost the caller opts into.
+     *
+     * @param resource $resource An open, readable stream.
+     * @return resource A seekable stream positioned at the start.
+     */
+    public static function bufferNonSeekable(mixed $resource): mixed
+    {
+        if (!\is_resource($resource)) {
+            throw new GislConfigError(
+                'bufferNonSeekable expected an open stream resource; got ' . \get_debug_type($resource) . '.',
+            );
+        }
+        $meta = \stream_get_meta_data($resource);
+        if ($meta['seekable'] === true) {
+            return $resource;
+        }
+        if (\strpbrk($meta['mode'], 'r+') === false) {
+            throw new GislConfigError(
+                "bufferNonSeekable received a non-readable stream (mode '{$meta['mode']}').",
+                reason: 'non_readable_stream',
+            );
+        }
+        $copy = \fopen('php://temp/maxmemory:' . self::BUFFER_MEMORY_BYTES, 'w+b');
+        if ($copy === false) {
+            throw new GislConfigError('Unable to open a php://temp buffer for the non-seekable stream.');
+        }
+        if (\stream_copy_to_stream($resource, $copy) === false || !\rewind($copy)) {
+            \fclose($copy);
+            throw new GislConfigError('Unable to buffer the non-seekable stream (copy to php://temp failed).');
+        }
+        return $copy;
     }
 
     /**
