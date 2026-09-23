@@ -12,6 +12,8 @@ use Gisl\Generated\OpenApi\Model\AuthRejectionEnvelope;
 use Gisl\Generated\OpenApi\Model\BalanceExhaustedResponse;
 use Gisl\Generated\OpenApi\Model\LongFormConcurrencyLimitResponse;
 use Gisl\Generated\OpenApi\Model\AccountLimits;
+use Gisl\Generated\OpenApi\Model\BillingCheckoutRequest;
+use Gisl\Generated\OpenApi\Model\BillingCheckoutSession;
 use Gisl\Generated\OpenApi\Model\ContactRequest;
 use Gisl\Generated\OpenApi\Model\CreditsBalanceResponse;
 use Gisl\Generated\OpenApi\Model\CreditsUsageResponse;
@@ -2247,6 +2249,43 @@ class GislClient
         );
 
         $this->sendAndExpectVoid($request);
+    }
+
+    // ---------------------------------------------------------------------
+    // Billing checkout (2AkFcgxY)
+    // ---------------------------------------------------------------------
+
+    /**
+     * Start a Stripe hosted-Checkout session for a subscription upgrade or a
+     * credit pack. `POST /api/billing/checkout`; redirect the browser to
+     * `getCheckoutUrl()`. Mirrors TS `createCheckoutSession`.
+     *
+     * A credit PACK's grant is ASYNCHRONOUS (packs only - no such ledger row is
+     * contracted for a subscription): correlate by polling getCreditsUsage()
+     * for reference_type `stripe_checkout_session` + reference_id equal to
+     * `getSessionId()`, never by `type` (a pack grant is an `adjustment`). No
+     * timing is contracted; an absent grant is pending, not failed.
+     *
+     * The two deployment failures mean opposite things and stay distinct:
+     * GislFeatureNotAvailableError (422) = checkout flagged OFF; a GislApiError
+     * with statusCode 503 / errorCode SERVICE_UNAVAILABLE = flag ON, Stripe not
+     * configured. A bad or unresolvable type + key pair is a plain 422.
+     */
+    public function createCheckoutSession(BillingCheckoutRequest $payload): BillingCheckoutSession
+    {
+        $jsonBody = $this->jsonEncode(
+            (array) ObjectSerializer::sanitizeForSerialization($payload),
+        );
+        $request = $this->buildRequest(
+            method: 'POST',
+            path: '/api/billing/checkout',
+            body: $this->streamFactory->createStream($jsonBody),
+            extraHeaders: ['Content-Type' => 'application/json'],
+        );
+
+        /** @var array<string, mixed> $data */
+        $data = $this->sendAndUnwrap($request);
+        return $this->hydrate(BillingCheckoutSession::class, $data);
     }
 
     // ---------------------------------------------------------------------
