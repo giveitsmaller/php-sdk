@@ -92,6 +92,34 @@ final class RateLimitHeadersTest extends TestCase
         self::assertLessThanOrEqual(61_000, $ms);
     }
 
+    /**
+     * hnkwDULJ: from ~16 digits `(int) $x * 1000` overflowed to a float and the
+     * `?int` return threw a TypeError out of run(). Absurd deltas are absent.
+     */
+    public function testParseRetryAfterMsAbsurdDeltaIsAbsentNotATypeError(): void
+    {
+        self::assertNull(RateLimitHeaders::parseRetryAfterMs('9300000000000000'));
+        self::assertNull(RateLimitHeaders::parseRetryAfterMs(\str_repeat('9', 400)));
+        // The shared ceiling with TS: Number.MAX_SAFE_INTEGER milliseconds.
+        self::assertNull(RateLimitHeaders::parseRetryAfterMs('9007199254741'));
+        self::assertSame(9_007_199_254_740_000, RateLimitHeaders::parseRetryAfterMs('9007199254740'));
+        // Leading zeros are not magnitude.
+        self::assertSame(5_000, RateLimitHeaders::parseRetryAfterMs('0000000000000000005'));
+    }
+
+    /**
+     * A date one second ahead lands 1..1000ms away and must read as exactly
+     * that, not as whole seconds against time() (0 below a second).
+     */
+    public function testParseRetryAfterMsHttpDateHasMillisecondResolution(): void
+    {
+        $nextSecond = (int) \floor(\microtime(true)) + 1;
+        $ms = RateLimitHeaders::parseRetryAfterMs(\gmdate('D, d M Y H:i:s', $nextSecond) . ' GMT');
+        self::assertNotNull($ms, 'a sub-second window must not vanish');
+        self::assertGreaterThan(0, $ms);
+        self::assertLessThanOrEqual(1_000, $ms);
+    }
+
     public function testParseRetryAfterMsRejectsRelativePhrases(): void
     {
         // The date branch requires a leading letter AND a colon, so a relative

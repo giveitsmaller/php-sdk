@@ -50,6 +50,9 @@ final class RateLimitHeaders
             return null;
         }
         if (\preg_match('/^\d+$/', $trimmed) === 1) {
+            // ⚠️ May be a FLOAT: from ~16 digits `(int) $x * 1000` overflows.
+            // The ceiling below turns that into "absent" (hnkwDULJ); without it
+            // the `?int` return threw a TypeError out of run().
             $ms = ((int) $trimmed) * 1000;
         } elseif (\preg_match('/^[A-Za-z].*:/', $trimmed) === 1) {
             // A Retry-After HTTP-date (all three RFC 9110 forms — IMF-fixdate,
@@ -64,13 +67,38 @@ final class RateLimitHeaders
             if ($whenSec === false) {
                 return null;
             }
-            $ms = ($whenSec - \time()) * 1000;
+            // Against the MILLISECOND clock, truncated as `Date.now()` is.
+            // `time()` is whole seconds, so a sub-second window read as zero
+            // (codex c37f52484178); rounding the difference still zeroed one
+            // under 0.5ms (codex 632b978b38e3). ONE clock snapshot, split into
+            // whole seconds and the ms into the current second, so no epoch-ms
+            // value is ever formed: that is a float on 32-bit PHP and would fail
+            // the is_int check below for every valid date (codex bfa82a00ee0f).
+            // A date is whole seconds, so a future one is always >= 1ms away.
+            $now = \microtime(true);
+            $nowSec = (int) \floor($now);
+            $msIntoSecond = (int) \floor(($now - $nowSec) * 1000);
+            $ms = ($whenSec - $nowSec) * 1000 - $msIntoSecond;
         } else {
+            return null;
+        }
+
+        // One ceiling for both SDKs (TS: `Number.isSafeInteger`), so they agree on
+        // which values are absurd - and it also catches the float overflow above.
+        // A delta that large (~285,000 years) is no instruction anyone can honour.
+        // `!is_int` first: on a 32-bit build a merely large delta (3,000,000 s)
+        // already overflows to a float below the ceiling (codex 7817c4bdc213),
+        // and on 64-bit a 16+ digit one does. Either way it is not an int.
+        // @phpstan-ignore function.alreadyNarrowedType (int arithmetic overflows to float at runtime; PHPStan does not model overflow)
+        if (!\is_int($ms) || $ms > self::MAX_SAFE_MS) {
             return null;
         }
 
         return $ms > 0 ? $ms : null;
     }
+
+    /** JavaScript's Number.MAX_SAFE_INTEGER, the TS parser's ceiling. */
+    private const MAX_SAFE_MS = 9_007_199_254_740_991;
 
     /**
      * Public seconds accessor derived from the ms parser (floor of ms / 1000)
