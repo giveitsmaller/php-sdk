@@ -3,7 +3,7 @@
     "description": "PHP SDK for GISL (Give It Smaller) compression service",
     "version": "0.24.0",
     "extra": {
-        "gisl-contracts-spec": "v2.208.0"
+        "gisl-contracts-spec": "v2.209.0"
     },
     "type": "library",
     "license": "Apache-2.0",
@@ -19,7 +19,7 @@
         "psr/http-factory": "^1.0",
         "psr/http-message": "^1.1 || ^2.0",
         "php-http/discovery": "^1.19",
-        "giveitsmaller/contracts": "^0.73.0"
+        "giveitsmaller/contracts": "^0.74.0"
     },
     "require-dev": {
         "phpunit/phpunit": "^10",

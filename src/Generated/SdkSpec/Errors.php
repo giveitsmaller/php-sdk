@@ -437,7 +437,7 @@ to a single artifact OR use .mapEach() to fan out.
             'httpStatus' => 422,
             'retryable' => false,
             'sdkClass' => 'GislValidationError',
-            'description' => '422 — operation option failed server-side validation (range, depends_on, mutex). Often surfaces preflight rejections (e.g. split.cut_points len exceeds 200-output cap).',
+            'description' => '422 — operation option failed server-side validation (range, depends_on, mutex). ⚠️ The API does NOT send this code on POST /api/workflows today — every create-time option failure arrives as validation_failed (measured on prod 2026-09-23; WorkflowController maps validation_error to VALIDATION_FAILED). Same SDK class, so dispatch is unaffected; do not key UI on this code for create.',
             'metadataSchema' => [
                 'field' => 'string',
                 'reason' => 'string',
