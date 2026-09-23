@@ -170,7 +170,7 @@ class GislClient
         ?StreamFactoryInterface $streamFactory = null,
         ?MultipartPartUploader $partUploader = null,
     ) {
-        $this->httpClient = $httpClient ?? Psr18ClientDiscovery::find();
+        $this->httpClient = $httpClient ?? self::withoutRedirects(Psr18ClientDiscovery::find());
         $this->requestFactory = $requestFactory ?? Psr17FactoryDiscovery::findRequestFactory();
         $this->streamFactory = $streamFactory ?? Psr17FactoryDiscovery::findStreamFactory();
         $this->partUploader = $partUploader;
@@ -3027,6 +3027,30 @@ class GislClient
     }
 
     /**
+     * 385RWTsh: a DISCOVERED client must not follow redirects with the bearer
+     * key. Guzzle's PSR-18 sendRequest() never follows. Symfony's Psr18Client
+     * follows by default and strips credentials on a same-host port change only
+     * from 6.1, so the discovered one is switched to `max_redirects: 0`; the 3xx
+     * then reaches unwrapEnvelope(), which names it. An INJECTED client is the
+     * caller's configuration and is left alone (see docs/php/client.md).
+     *
+     * @internal
+     */
+    public static function withoutRedirects(ClientInterface $client): ClientInterface
+    {
+        if ($client instanceof \Symfony\Component\HttpClient\Psr18Client) {
+            // An older symfony/http-client Psr18Client has no withOptions(); PHPStan
+            // sees only the dev-installed version, so it calls this always-true.
+            return \method_exists($client, 'withOptions')
+                ? $client->withOptions(['max_redirects' => 0])
+                : new \Symfony\Component\HttpClient\Psr18Client(
+                    \Symfony\Component\HttpClient\HttpClient::create(['max_redirects' => 0]),
+                );
+        }
+        return $client;
+    }
+
+    /**
      * Strip the `{ success: bool, data | error, ... }` wire envelope.
      *
      * @return mixed The contents of `data` on success.
@@ -3037,6 +3061,20 @@ class GislClient
     {
         $statusCode = $response->getStatusCode();
         $rawBody = (string) $response->getBody();
+
+        // 385RWTsh: a redirect is never followed with the bearer key attached
+        // (Guzzle's PSR-18 sendRequest() does not follow at all), so it lands
+        // here. Name it, instead of the misleading "empty body" / "non-JSON".
+        // 304 is not a redirect: getSchema() handles it before this point.
+        if ($statusCode >= 300 && $statusCode < 400 && $statusCode !== 304) {
+            $locationHost = \parse_url($response->getHeaderLine('Location'), PHP_URL_HOST);
+            throw new GislError(
+                "The API answered {$statusCode} (a redirect"
+                . (\is_string($locationHost) ? " to host {$locationHost}" : '')
+                . '). The SDK does not follow redirects, so the API key is never sent to a host it'
+                . ' did not choose; point baseUrl at the final origin.',
+            );
+        }
 
         if ($rawBody === '') {
             // 204 No Content responses have no envelope. The SDK methods

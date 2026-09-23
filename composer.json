@@ -27,6 +27,7 @@
         "guzzlehttp/guzzle": "^7.12.1",
         "guzzlehttp/psr7": "^2.12.1",
         "http-interop/http-factory-guzzle": "^1.2",
+        "symfony/http-client": "^6.4.40 || ^7.4.12",
         "symfony/yaml": "^6.4.40 || ^7.4.12"
     },
     "conflict": {
