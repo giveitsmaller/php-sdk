@@ -388,9 +388,11 @@ class GislErgonomicClient extends GislClient
      * with no first-class verb — e.g. `text_watermark`, `split`, or a
      * not-yet-in-contract op. Builds a SINGLE-input, SINGLE-operation job (the
      * generic sibling of {@see compress()}/{@see convert()}/{@see thumbnail()}).
-     * `$options` reach the wire unchanged — there is NO pre-upload validation
-     * (the server validates) and NO preset resolution unless `$opType` is
-     * `compress`.
+     * `$options` reach the wire unchanged, with ONE pre-upload check: a value the
+     * contract marks `planned` in every group that declares the option (e.g.
+     * split `precision: 'exact'`) throws GislConfigError (`feature_not_available`)
+     * before anything uploads. Everything else is validated by the server. NO
+     * preset resolution unless `$opType` is `compress`.
      *
      * Multi-input operations (merge, archive, image/video/audio overlay
      * watermarks) canNOT be expressed here — they need multiple sources and have

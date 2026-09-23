@@ -7,9 +7,11 @@ namespace Gisl\Sdk\Tests\Unit\Ergonomic;
 use Gisl\Sdk\Ergonomic\Artifact;
 use Gisl\Sdk\Ergonomic\BuilderInternals;
 use Gisl\Sdk\Ergonomic\OperationBuilder;
+use Gisl\Sdk\Ergonomic\PlannedValues;
 use Gisl\Sdk\Ergonomic\Result;
 use Gisl\Sdk\Ergonomic\RunOptions;
 use Gisl\Sdk\Errors\GislApiError;
+use Gisl\Sdk\Errors\GislConfigError;
 use Gisl\Sdk\Errors\GislTimeoutError;
 use Gisl\Sdk\GislClientConfig;
 use Gisl\Sdk\GislErgonomicClient;
@@ -821,6 +823,59 @@ final class OperationBuilderRunTest extends TestCase
         $derived->compress($tempPath, ['quality' => 75])->run($options);
 
         $this->assertSame(1, self::eventsRequests($captured), 'a clone must not get a fresh window');
+    }
+
+    // -----------------------------------------------------------------------
+    // 99Da2uyx — a value planned EVERYWHERE it can apply is refused BEFORE the
+    // upload. contracts v2.209.0: split precision 'exact' is planned on audio
+    // and video, the only groups declaring `precision`.
+    // -----------------------------------------------------------------------
+
+    public function test_split_precision_exact_is_refused_before_any_request(): void
+    {
+        $tempPath = self::writeTempFile('audio bytes');
+        $captured = [];
+        $client = self::makeClient(self::stubClient([], $captured));
+
+        try {
+            $client->operation('split', $tempPath, ['precision' => 'exact'])
+                ->run(new RunOptions(maxWait: '30s'));
+            $this->fail('precision:exact must be refused before upload');
+        } catch (GislConfigError $e) {
+            $this->assertSame('feature_not_available', $e->reason);
+            $this->assertSame(['precision'], $e->conflictingFields);
+        }
+        $this->assertSame([], $captured, 'nothing may be sent');
+    }
+
+    public function test_split_precision_exact_is_refused_before_any_request_on_submit(): void
+    {
+        $tempPath = self::writeTempFile('audio bytes');
+        $captured = [];
+        $client = self::makeClient(self::stubClient([], $captured));
+
+        $this->expectException(GislConfigError::class);
+        try {
+            $client->operation('split', $tempPath, ['precision' => 'exact'])->submit();
+        } finally {
+            $this->assertSame([], $captured);
+        }
+    }
+
+    public function test_planned_is_everywhere_not_anywhere(): void
+    {
+        // compress color_profile 'srgb' is planned on the generic image group only.
+        $this->assertFalse(PlannedValues::isPlannedEverywhere('compress', 'color_profile', 'srgb'));
+        $this->assertTrue(PlannedValues::isPlannedEverywhere('split', 'precision', 'exact'));
+        $this->assertFalse(PlannedValues::isPlannedEverywhere('split', 'precision', 'fast'));
+        $this->assertFalse(PlannedValues::isPlannedEverywhere('no_such_op', 'precision', 'exact'));
+        // A backed-enum value is compared by its backing value (codex ecd2cea89752).
+        $this->assertSame(
+            ['key' => 'precision', 'value' => 'exact'],
+            PlannedValues::firstPlannedValue('split', ['precision' => \Gisl\Generated\Operations\SplitAudioPrecision::Exact]),
+        );
+        // A MULTI-WORD op resolves to its metadata class (AudioWatermarkMetadata).
+        $this->assertTrue(PlannedValues::isPlannedEverywhere('audio_watermark', 'method', 'neural'));
     }
 
     public function test_a_refusal_without_retry_after_records_no_window(): void

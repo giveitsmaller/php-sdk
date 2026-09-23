@@ -232,6 +232,7 @@ interface Gisl\Sdk\Ergonomic\Asset
 interface Gisl\Sdk\FileFirst\Downloader
 interface Gisl\Sdk\Http\MultipartPartUploader
 internal Gisl\Sdk\Ergonomic\BuilderInternals
+internal Gisl\Sdk\Ergonomic\PlannedValues
 internal Gisl\Sdk\Ergonomic\PositionEntry
 internal Gisl\Sdk\Ergonomic\PresetResolver
 internal Gisl\Sdk\Ergonomic\SequencePlan

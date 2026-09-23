@@ -321,6 +321,27 @@ final class OperationBuilder
     }
 
     /**
+     * 99Da2uyx: refuse, BEFORE the upload, an option value the contract marks
+     * `planned` everywhere it can apply (see PlannedValues). The API would refuse
+     * it at create with `feature_not_available`, after the bytes had gone up; this
+     * is the same refusal, earlier, with the same reason.
+     *
+     * @param array<string, mixed> $wireOptions
+     */
+    private function refusePlannedValues(array $wireOptions): void
+    {
+        $planned = PlannedValues::firstPlannedValue($this->opType, $wireOptions);
+        if ($planned !== null) {
+            $shown = \is_bool($planned['value']) ? ($planned['value'] ? 'true' : 'false') : (string) $planned['value'];
+            throw new GislConfigError(
+                "{$this->opType}: '{$planned['key']}: {$shown}' is advertised but not available yet (planned).",
+                reason: 'feature_not_available',
+                conflictingFields: [$planned['key']],
+            );
+        }
+    }
+
+    /**
      * Execute the operation end-to-end. Uploads the input, creates the
      * workflow, waits to a terminal status (via SSE with poll fallback),
      * fetches downloads, and projects to a flat {@see Result}. Throws
@@ -337,6 +358,7 @@ final class OperationBuilder
         // before any I/O — the SDK promised fail-early for invalid combos.
         // Mirrors builder.ts:453-455.
         $resolved = $this->resolve();
+        $this->refusePlannedValues($resolved['wireOptions']);
 
         // Honour an already-cancelled token before spending the upload.
         BuilderInternals::throwIfCancelled($options->cancellation, 'upload');
@@ -447,6 +469,7 @@ final class OperationBuilder
         // Resolve presets before any I/O so a GislConfigError fails the
         // call before the upload — same fail-early contract as run().
         $resolved = $this->resolve();
+        $this->refusePlannedValues($resolved['wireOptions']);
         BuilderInternals::throwIfCancelled($options->cancellation, 'upload');
         $uploadResp = $this->client->uploadFile($this->input);
 
