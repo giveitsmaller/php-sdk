@@ -170,7 +170,21 @@ class GislClient
         $this->requestFactory = $requestFactory ?? Psr17FactoryDiscovery::findRequestFactory();
         $this->streamFactory = $streamFactory ?? Psr17FactoryDiscovery::findStreamFactory();
         $this->partUploader = $partUploader;
+        $this->sseCooldownKey = new \stdClass();
     }
+
+    /**
+     * Identity of this CALLER for the SSE cooldown (Vf9R7gcV).
+     *
+     * An object, not `$this`, because `clone` copies it BY REFERENCE: a client
+     * derived with `withPresetDefaults()` is `clone $this`, carries the same
+     * credentials, and so is the same caller to the server. Keying the cooldown
+     * on the client object gave each clone a fresh window and let it reconnect
+     * inside one Retry-After the parent had been told to honour.
+     *
+     * @internal
+     */
+    public readonly object $sseCooldownKey;
 
     /**
      * Upload a file. Routes to single-shot for files at-or-below

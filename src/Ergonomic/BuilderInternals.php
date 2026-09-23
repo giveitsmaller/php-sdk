@@ -14,6 +14,7 @@ use Gisl\Sdk\Errors\GislStreamHostNotDeclaredError;
 use Gisl\Sdk\Errors\GislTimeoutError;
 use Gisl\Sdk\GislClient;
 use Gisl\Sdk\GislSseEvent;
+use Gisl\Sdk\Http\RateLimitHeaders;
 
 /**
  * @internal
@@ -71,8 +72,45 @@ final class BuilderInternals
      */
     public static function nowMs(): int
     {
-        return (int) (\microtime(true) * 1_000);
+        return self::$clockForTesting !== null
+            ? (self::$clockForTesting)()
+            : (int) (\microtime(true) * 1_000);
     }
+
+    /** @var (\Closure(): int)|null */
+    private static ?\Closure $clockForTesting = null;
+
+    /**
+     * Swap the clock `nowMs()` reads (Vf9R7gcV's cooldown tests move time
+     * without sleeping). Pass null to restore wall-clock time.
+     *
+     * @param (\Closure(): int)|null $clock
+     */
+    public static function setClockForTesting(?\Closure $clock): void
+    {
+        self::$clockForTesting = $clock;
+    }
+
+    /**
+     * Per-CLIENT SSE cooldown after a refused connect (Vf9R7gcV).
+     *
+     * contracts v2.208.0 REQUIRES `Retry-After` on the events 429
+     * (`sse_connection_limit_exceeded`, 5 open streams per caller) and 503
+     * (`sse_capacity_exhausted`), and says a client MUST NOT request another
+     * stream before it elapses. Within one run that already held; ACROSS runs
+     * on the same client it did not, so the next run() or Handle wait
+     * reconnected at once.
+     *
+     * Keyed by the client's `sseCooldownKey`, which a `clone` shares, so a
+     * derived client is the same caller as its parent; two independently
+     * constructed clients are two callers. A WeakMap, so a discarded client
+     * takes its entry with it. No `Retry-After` (an API older
+     * than v2.208.0) records NOTHING: there is no window to honour. A DIRECT
+     * `streamEvents()` caller is untouched. Mirrors TS `sseCooldowns`.
+     *
+     * @var \WeakMap<object, array{untilMs: int, refusal: GislApiError}>|null
+     */
+    private static ?\WeakMap $sseCooldowns = null;
 
     /**
      * Best-effort probe-before-create for the multipart-video inputs of a
@@ -408,10 +446,35 @@ final class BuilderInternals
         // and that call can return the very statuses this arm treats as "SSE
         // unavailable", so a terminal-frame status hiccup would be silently
         // re-issued as a poll.
+        self::$sseCooldowns ??= new \WeakMap();
+        $cooldown = self::$sseCooldowns[$client->sseCooldownKey] ?? null;
+        if ($cooldown !== null) {
+            if (self::nowMs() < $cooldown['untilMs']) {
+                throw new SseConnectRefused(
+                    "SSE for workflow {$workflowId} not attempted: a stream on this client was "
+                        . "refused with {$cooldown['refusal']->statusCode} and its Retry-After has "
+                        . 'not elapsed; polling.',
+                    $cooldown['refusal'],
+                );
+            }
+            unset(self::$sseCooldowns[$client->sseCooldownKey]);
+        }
         try {
             $events = $client->streamEvents($workflowId);
         } catch (GislApiError $e) {
             if ($e->retryable()) {
+                // MILLISECONDS, not retryAfterSeconds(): that floors an
+                // HTTP-date, so a window could end up to 999ms early or vanish
+                // under a second. And never SHORTEN an open window - the longest
+                // instruction still binds. Mirrors TS.
+                $retryAfterMs = RateLimitHeaders::parseRetryAfterMs($e->responseHeaders['retry-after'] ?? null);
+                if ($retryAfterMs !== null) {
+                    $untilMs = self::nowMs() + $retryAfterMs;
+                    $open = self::$sseCooldowns[$client->sseCooldownKey] ?? null;
+                    if ($open === null || $untilMs > $open['untilMs']) {
+                        self::$sseCooldowns[$client->sseCooldownKey] = ['untilMs' => $untilMs, 'refusal' => $e];
+                    }
+                }
                 throw new SseConnectRefused(
                     "SSE connect for workflow {$workflowId} was refused with "
                         . "{$e->statusCode}; falling back to polling.",

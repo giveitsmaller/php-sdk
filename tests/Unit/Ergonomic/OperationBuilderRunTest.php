@@ -13,6 +13,7 @@ use Gisl\Sdk\Errors\GislApiError;
 use Gisl\Sdk\Errors\GislTimeoutError;
 use Gisl\Sdk\GislClientConfig;
 use Gisl\Sdk\GislErgonomicClient;
+use Gisl\Sdk\PresetDefaults;
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -659,6 +660,194 @@ final class OperationBuilderRunTest extends TestCase
                 return $next;
             }
         };
+    }
+
+    // -----------------------------------------------------------------------
+    // Vf9R7gcV — contracts v2.208.0: a client MUST NOT request another stream
+    // before the refusal's Retry-After elapses. Within one run that held
+    // already; ACROSS runs on the same client it did not. Time is moved with
+    // BuilderInternals' test clock, never a sleep.
+    // -----------------------------------------------------------------------
+
+    protected function tearDown(): void
+    {
+        BuilderInternals::setClockForTesting(null);
+        parent::tearDown();
+    }
+
+    private static function sseRefused(?string $retryAfter): ResponseInterface
+    {
+        $headers = ['Content-Type' => 'application/json'];
+        if ($retryAfter !== null) {
+            $headers['Retry-After'] = $retryAfter;
+        }
+
+        return new Response(429, $headers, \json_encode([
+            'success' => false,
+            'error' => 'SSE_CONNECTION_LIMIT_EXCEEDED',
+            'message' => 'Too many concurrent event streams',
+        ], JSON_THROW_ON_ERROR));
+    }
+
+    private static function unauthorized(): ResponseInterface
+    {
+        return self::jsonResponse(401, ['success' => false, 'error' => 'UNAUTHORIZED', 'message' => 'no']);
+    }
+
+    /** @param list<RequestInterface> $captured */
+    private static function eventsRequests(array $captured): int
+    {
+        return \count(\array_filter(
+            $captured,
+            static fn (RequestInterface $r): bool => \str_contains((string) $r->getUri(), '/events'),
+        ));
+    }
+
+    public function test_a_second_run_on_the_same_client_inside_retry_after_makes_zero_connect_attempts(): void
+    {
+        $now = 1_000_000;
+        BuilderInternals::setClockForTesting(static function () use (&$now): int {
+            return $now;
+        });
+        $tempPath = self::writeTempFile('input bytes');
+        $captured = [];
+        $http = self::stubClient([
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            self::sseRefused('30'),
+            self::jsonResponse(200, self::statusCompleted()),
+            self::jsonResponse(200, self::downloadsOk()),
+            // Second run: NO events response queued. A connect attempt would
+            // consume the status response below and the run would break.
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            self::jsonResponse(200, self::statusCompleted()),
+            self::jsonResponse(200, self::downloadsOk()),
+        ], $captured);
+        $client = self::makeClient($http);
+        $options = new RunOptions(maxWait: '30s', pollIntervalMs: 1_000);
+
+        $client->compress($tempPath, ['quality' => 75])->run($options);
+        $now += 29_000;
+        $second = $client->compress($tempPath, ['quality' => 75])->run($options);
+
+        $this->assertSame('completed', $second->status);
+        $this->assertSame(1, self::eventsRequests($captured), 'the cooldown must stop the connect itself');
+    }
+
+    public function test_once_retry_after_has_elapsed_the_next_run_attempts_sse_again(): void
+    {
+        $now = 1_000_000;
+        BuilderInternals::setClockForTesting(static function () use (&$now): int {
+            return $now;
+        });
+        $tempPath = self::writeTempFile('input bytes');
+        $captured = [];
+        $http = self::stubClient([
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            self::sseRefused('30'),
+            self::jsonResponse(200, self::statusCompleted()),
+            self::jsonResponse(200, self::downloadsOk()),
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            // The attempted connect gets a 401, which propagates: proof it WAS attempted.
+            self::unauthorized(),
+        ], $captured);
+        $client = self::makeClient($http);
+        $options = new RunOptions(maxWait: '30s', pollIntervalMs: 1_000);
+
+        $client->compress($tempPath, ['quality' => 75])->run($options);
+        $now += 30_000;
+        try {
+            $client->compress($tempPath, ['quality' => 75])->run($options);
+            $this->fail('the second run should have attempted SSE and met the 401');
+        } catch (GislApiError $e) {
+            $this->assertSame(401, $e->statusCode);
+        }
+        $this->assertSame(2, self::eventsRequests($captured));
+    }
+
+    public function test_the_cooldown_is_per_client(): void
+    {
+        BuilderInternals::setClockForTesting(static fn (): int => 1_000_000);
+        $tempPath = self::writeTempFile('input bytes');
+        $first = self::makeClient(self::stubClient([
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            self::sseRefused('30'),
+            self::jsonResponse(200, self::statusCompleted()),
+            self::jsonResponse(200, self::downloadsOk()),
+        ]));
+        $capturedSecond = [];
+        $second = self::makeClient(self::stubClient([
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            self::unauthorized(),
+        ], $capturedSecond));
+        $options = new RunOptions(maxWait: '30s', pollIntervalMs: 1_000);
+
+        $first->compress($tempPath, ['quality' => 75])->run($options);
+        try {
+            $second->compress($tempPath, ['quality' => 75])->run($options);
+            $this->fail('a different client must still attempt SSE');
+        } catch (GislApiError $e) {
+            $this->assertSame(401, $e->statusCode);
+        }
+        $this->assertSame(1, self::eventsRequests($capturedSecond));
+    }
+
+    public function test_a_client_derived_with_preset_defaults_shares_the_parents_window(): void
+    {
+        BuilderInternals::setClockForTesting(static fn (): int => 1_000_000);
+        $tempPath = self::writeTempFile('input bytes');
+        $captured = [];
+        $root = self::makeClient(self::stubClient([
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            self::sseRefused('30'),
+            self::jsonResponse(200, self::statusCompleted()),
+            self::jsonResponse(200, self::downloadsOk()),
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            self::jsonResponse(200, self::statusCompleted()),
+            self::jsonResponse(200, self::downloadsOk()),
+        ], $captured));
+        $options = new RunOptions(maxWait: '30s', pollIntervalMs: 1_000);
+
+        $root->compress($tempPath, ['quality' => 75])->run($options);
+        // `clone $this` under the hood: same credentials, same caller.
+        $derived = $root->withPresetDefaults(PresetDefaults::create());
+        $derived->compress($tempPath, ['quality' => 75])->run($options);
+
+        $this->assertSame(1, self::eventsRequests($captured), 'a clone must not get a fresh window');
+    }
+
+    public function test_a_refusal_without_retry_after_records_no_window(): void
+    {
+        BuilderInternals::setClockForTesting(static fn (): int => 1_000_000);
+        $tempPath = self::writeTempFile('input bytes');
+        $captured = [];
+        $client = self::makeClient(self::stubClient([
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            self::sseRefused(null),
+            self::jsonResponse(200, self::statusCompleted()),
+            self::jsonResponse(200, self::downloadsOk()),
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            self::unauthorized(),
+        ], $captured));
+        $options = new RunOptions(maxWait: '30s', pollIntervalMs: 1_000);
+
+        $client->compress($tempPath, ['quality' => 75])->run($options);
+        try {
+            $client->compress($tempPath, ['quality' => 75])->run($options);
+            $this->fail('no Retry-After, so the second run must attempt SSE');
+        } catch (GislApiError $e) {
+            $this->assertSame(401, $e->statusCode);
+        }
+        $this->assertSame(2, self::eventsRequests($captured));
     }
 
     /**
