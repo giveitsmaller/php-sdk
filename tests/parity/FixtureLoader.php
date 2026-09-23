@@ -376,6 +376,13 @@ final class FixtureLoader
                         "[{$base}] mode=files submit variant requires expected_return (the returned Handle assertion)",
                     );
                 }
+                // cEUWPgKW: fixture.schema.json requires it too - with no canned
+                // create response the submit cannot produce a Handle.
+                if (\count($responses) === 0) {
+                    throw new \RuntimeException(
+                        "[{$base}] mode=files submit variant requires at least one response (the create response the Handle is built from)",
+                    );
+                }
             } else {
                 $hasPayload = \array_key_exists('expected_payload', $raw);
                 $hasRunResult = \array_key_exists('expected_run_result', $raw);
@@ -1043,6 +1050,10 @@ final class FixtureLoader
      */
     private static function validateLoweringOpParams(string $opName, array $op, string $ctx): void
     {
+        // cEUWPgKW: the schema pins this vocabulary on EVERY op object, not just resize/output.
+        if (\array_key_exists('fit', $op) && !\in_array($op['fit'], ['max', 'crop', 'scale'], true)) {
+            throw new \RuntimeException("[{$ctx}] {$opName} 'fit' must be one of max|crop|scale when present");
+        }
         switch ($opName) {
             case 'convert':
                 if (!isset($op['format']) || !\is_string($op['format']) || $op['format'] === '') {
