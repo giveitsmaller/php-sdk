@@ -124,6 +124,35 @@ final class ArchivedRecipeTest extends TestCase
         }
     }
 
+    /**
+     * pE6JVJuc: the planned-everywhere value gate runs in the SHARED multi-input
+     * preflight. archive `folder_structure: 'by_job'` is planned, so nothing may
+     * upload.
+     */
+    public function test_a_planned_folder_structure_is_refused_before_any_upload(): void
+    {
+        $captured = [];
+        $client = $this->makeClient($this->stubClient([], $captured));
+
+        try {
+            // Real files: the file-existence check runs before the preflight.
+            $a = \tempnam(\sys_get_temp_dir(), 'gisl-arch-');
+            $b = \tempnam(\sys_get_temp_dir(), 'gisl-arch-');
+            \file_put_contents($a, 'x');
+            \file_put_contents($b, 'y');
+            $client->files([FileInput::path($a), FileInput::path($b)])
+                ->archive(new ArchiveRecipeOptions(format: ArchiveFormat::Zip, folderStructure: 'by_job'))
+                ->submit();
+            self::fail('by_job must be refused before upload');
+        } catch (GislConfigError $e) {
+            self::assertSame('feature_not_available', $e->reason, $e->getMessage());
+            self::assertSame(['folder_structure'], $e->conflictingFields);
+        }
+        self::assertSame([], $captured, 'no upload may fire');
+        @\unlink($a);
+        @\unlink($b);
+    }
+
     public function test_archive_rejects_more_than_fifty_inputs_before_any_upload(): void
     {
         $captured = [];

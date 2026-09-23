@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Gisl\Sdk\FileFirst;
 
+use Gisl\Sdk\Ergonomic\PlannedValues;
 use Gisl\Generated\OpenApi\Model\WorkflowCreateResponse;
 use Gisl\Sdk\Cancellation;
 use Gisl\Sdk\Ergonomic\BuilderInternals;
@@ -75,7 +76,13 @@ final class MultiInputUpload
         // mirrors TS. The placeholder ids never reach the wire — the payload is
         // discarded (T3ltXsou). toWorkflowPayload is pure, so re-lowering at
         // create is cheap.
-        $toPayload(array_map(static fn (int $i): string => "preflight_{$i}", array_keys($inputs)), null);
+        $preflight = $toPayload(array_map(static fn (int $i): string => "preflight_{$i}", array_keys($inputs)), null);
+        // pE6JVJuc: the planned-everywhere value gate over EVERY lowered operation
+        // of every job - archive folder_structure 'by_job', audio_overlay mode
+        // 'duck', a planned value in any member's chain - before any upload.
+        foreach ($preflight->jobs as $job) {
+            PlannedValues::refuseInOperations($job->operations);
+        }
 
         // Upload EVERY input: verbatim for a pre-uploaded id; a path or a
         // seekable stream resource otherwise, via the byte-counter progress

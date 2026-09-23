@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Gisl\Sdk\FileFirst;
 
+use Gisl\Sdk\Ergonomic\PlannedValues;
 use Gisl\Generated\OpenApi\Model\WorkflowCreateResponse;
 use Gisl\Sdk\Ergonomic\BuilderInternals;
 use Gisl\Sdk\Ergonomic\Handle;
@@ -498,6 +499,8 @@ final class Recipe
             $operations[] = $this->lowerStep($step, $i);
         }
         self::splitSingleInputJobs($operations, 'preflight');
+        // pE6JVJuc: a value planned everywhere it can apply is refused before upload.
+        PlannedValues::refuseInOperations($operations);
     }
 
     /** The result-addressing key passed to `file()`, or null. */

@@ -6,6 +6,8 @@ namespace Gisl\Sdk\Ergonomic;
 
 use Gisl\Generated\Operations\OperationMetadata;
 use Gisl\Generated\Operations\OptionMetadata;
+use Gisl\Sdk\Errors\GislConfigError;
+use Gisl\Sdk\OperationDef;
 
 /**
  * Generic per-VALUE `planned` gate for the operation-first builders (99Da2uyx).
@@ -23,8 +25,9 @@ use Gisl\Generated\Operations\OptionMetadata;
  * that declares the option (plus `direct_options`) marks it planned. A false
  * refusal of a request the server would accept is worse than a late one.
  *
- * ⚠️ SCOPE: wired into OperationBuilder ONLY. The file-first multi-input recipes
- * (merge, files()->archive(), overlays) do not call it yet - carded separately.
+ * SCOPE: OperationBuilder, the file-first single-input Recipe preflight, and the
+ * shared multi-input preflight in MultiInputUpload (merge, files()->archive(),
+ * overlays, fan-out, batch) - every lowered operation of every job (pE6JVJuc).
  *
  * @internal
  */
@@ -82,6 +85,29 @@ final class PlannedValues
         }
 
         return null;
+    }
+
+    /**
+     * Throw the pre-upload refusal for the first planned-everywhere value in any
+     * of `$operations`. Shared by the file-first preflights (pE6JVJuc).
+     *
+     * @param iterable<OperationDef> $operations
+     */
+    public static function refuseInOperations(iterable $operations): void
+    {
+        foreach ($operations as $op) {
+            $planned = self::firstPlannedValue($op->type, $op->options ?? []);
+            if ($planned !== null) {
+                $shown = \is_bool($planned['value'])
+                    ? ($planned['value'] ? 'true' : 'false')
+                    : (\is_scalar($planned['value']) ? (string) $planned['value'] : \get_debug_type($planned['value']));
+                throw new GislConfigError(
+                    "{$op->type}: '{$planned['key']}: {$shown}' is advertised but not available yet (planned).",
+                    reason: 'feature_not_available',
+                    conflictingFields: [$planned['key']],
+                );
+            }
+        }
     }
 
     private static function metadataFor(string $opType): ?OperationMetadata
