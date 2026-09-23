@@ -137,7 +137,7 @@ final class MergeBuilder
 
         // 3. Build + create the merge workflow.
         $payload = $this->buildPayload($plan, $uploadedByAssetId, callbackUrl: null);
-        $created = $this->client->createWorkflow($payload);
+        $created = ProbePendingRecovery::create($this->client, $payload, $options->probeTimeoutMs, $deadlineMs, $options->cancellation, $options->probeBeforeCreate ?? true);
 
         // 4. Wait to terminal status.
         $workflowId = $created->getWorkflowId() ?? '';
@@ -213,7 +213,7 @@ final class MergeBuilder
         BuilderInternals::throwIfCancelled($options->cancellation, 'merge workflow creation');
 
         $payload = $this->buildPayload($plan, $uploadedByAssetId, callbackUrl: $options->webhook);
-        $created = $this->client->createWorkflow($payload);
+        $created = ProbePendingRecovery::create($this->client, $payload, $options->probeTimeoutMs, null, $options->cancellation, $options->probeBeforeCreate ?? true);
 
         // ⚠️ THE CLIENT IS THE POINT (36AZ98FV). Without it the returned Handle's
         // status()/wait()/result() throw `no_client`, which made `webhook` the only

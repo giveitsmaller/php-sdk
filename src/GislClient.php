@@ -73,6 +73,7 @@ use Gisl\Sdk\Errors\GislTimeoutError;
 use Gisl\Sdk\Errors\GislUploadCapExceededError;
 use Gisl\Sdk\Errors\GislValidationError;
 use Gisl\Sdk\Errors\GislProbePendingError;
+use Gisl\Sdk\Ergonomic\ProbePendingRecovery;
 use Gisl\Sdk\Errors\GislWorkflowExpiredError;
 use Http\Discovery\Psr17FactoryDiscovery;
 use Http\Discovery\Psr18ClientDiscovery;
@@ -2631,6 +2632,23 @@ class GislClient
                 return new ProbeWaitResult(landed: false, reason: 'timeout');
             }
         }
+    }
+
+    /**
+     * createWorkflow(), recovering from a `422 probe_pending` (dql51via): waits
+     * for the named job's upload probe, then re-creates the SAME payload. Gives
+     * up by rethrowing the original {@see GislProbePendingError} when the probe
+     * does not land within `$probeTimeoutMs` (default 30 s), lands corrupt or
+     * unsupported_codec, or three creates are refused. A no-op when the server
+     * never refuses. Every ergonomic run()/submit() already uses it. Mirrors TS
+     * `createWorkflowAwaitingProbe`.
+     */
+    public function createWorkflowAwaitingProbe(
+        WorkflowCreatePayload $payload,
+        ?int $probeTimeoutMs = null,
+        ?Cancellation $cancellation = null,
+    ): WorkflowCreateResponse {
+        return ProbePendingRecovery::create($this, $payload, $probeTimeoutMs, null, $cancellation);
     }
 
     /**

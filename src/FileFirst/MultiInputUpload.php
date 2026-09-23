@@ -8,6 +8,7 @@ use Gisl\Sdk\Ergonomic\PlannedValues;
 use Gisl\Generated\OpenApi\Model\WorkflowCreateResponse;
 use Gisl\Sdk\Cancellation;
 use Gisl\Sdk\Ergonomic\BuilderInternals;
+use Gisl\Sdk\Ergonomic\ProbePendingRecovery;
 use Gisl\Sdk\Ergonomic\UploadProgressEvent;
 use Gisl\Sdk\Errors\GislTimeoutError;
 use Gisl\Sdk\GislClient;
@@ -151,6 +152,6 @@ final class MultiInputUpload
             throw new GislTimeoutError("Probe wait completed but maxWait elapsed before {$workflowLabel} could be created.");
         }
 
-        return $client->createWorkflow($toPayload($fileIds, $webhook));
+        return ProbePendingRecovery::create($client, $toPayload($fileIds, $webhook), $probeTimeoutMs, $deadlineMs, $cancellation, $probeBeforeCreate ?? true);
     }
 }

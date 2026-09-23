@@ -7,6 +7,7 @@ namespace Gisl\Sdk\FileFirst;
 use Gisl\Sdk\Ergonomic\PlannedValues;
 use Gisl\Generated\OpenApi\Model\WorkflowCreateResponse;
 use Gisl\Sdk\Ergonomic\BuilderInternals;
+use Gisl\Sdk\Ergonomic\ProbePendingRecovery;
 use Gisl\Sdk\Ergonomic\Handle;
 use Gisl\Sdk\Ergonomic\ImageOutputRoutes;
 use Gisl\Sdk\Ergonomic\MaxWait;
@@ -809,7 +810,7 @@ final class Recipe
         // this private helper is reached.
         \assert($this->client !== null);
 
-        return $this->client->createWorkflow($payload);
+        return ProbePendingRecovery::create($this->client, $payload, $probeTimeoutMs, $deadlineMs, $cancellation, $probeBeforeCreate ?? true);
     }
 
     private function withStep(RecipeStep $step): self

@@ -235,6 +235,7 @@ internal Gisl\Sdk\Ergonomic\BuilderInternals
 internal Gisl\Sdk\Ergonomic\PlannedValues
 internal Gisl\Sdk\Ergonomic\PositionEntry
 internal Gisl\Sdk\Ergonomic\PresetResolver
+internal Gisl\Sdk\Ergonomic\ProbePendingRecovery
 internal Gisl\Sdk\Ergonomic\SequencePlan
 internal Gisl\Sdk\FileFirst\MultiInputUpload
 internal Gisl\Sdk\Http\CurlMultiPartUploader
@@ -418,6 +419,7 @@ method Gisl\Sdk\GislClient::cancelWorkflow()
 method Gisl\Sdk\GislClient::createCheckoutSession()
 method Gisl\Sdk\GislClient::createExternalImport()
 method Gisl\Sdk\GislClient::createWorkflow()
+method Gisl\Sdk\GislClient::createWorkflowAwaitingProbe()
 method Gisl\Sdk\GislClient::decodeAudioWatermark()
 method Gisl\Sdk\GislClient::getAccountLimits()
 method Gisl\Sdk\GislClient::getCreditsBalance()

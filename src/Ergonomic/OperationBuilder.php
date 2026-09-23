@@ -412,7 +412,14 @@ final class OperationBuilder
             id: 'op',
             source: Sources::upload($uploadResp->getFileId() ?? ''),
         );
-        $created = $this->client->createWorkflow(new WorkflowCreatePayload(jobs: [$job]));
+        $created = ProbePendingRecovery::create(
+            $this->client,
+            new WorkflowCreatePayload(jobs: [$job]),
+            $options->probeTimeoutMs,
+            $deadlineMs,
+            $options->cancellation,
+            $options->probeBeforeCreate ?? true,
+        );
 
         // 3. Wait to terminal status.
         $workflowId = $created->getWorkflowId() ?? '';
@@ -507,7 +514,7 @@ final class OperationBuilder
             jobs: [$job],
             callbackUrl: $options->webhook,
         );
-        $created = $this->client->createWorkflow($payload);
+        $created = ProbePendingRecovery::create($this->client, $payload, $options->probeTimeoutMs, null, $options->cancellation, $options->probeBeforeCreate ?? true);
 
         // ⚠️ THE CLIENT IS THE POINT (36AZ98FV). Without it the returned Handle's
         // status()/wait()/result() throw `no_client`, which made `webhook` the only

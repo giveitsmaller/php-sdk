@@ -45,7 +45,7 @@ final class RunOptions
      * @param bool                                                    $useSSE         Default `true`; set false to force poll fallback.
      * @param int|null                                                $pollIntervalMs Override the poll-fallback interval (ms).
      * @param Cancellation|null                                       $cancellation   Cooperative cancellation token (see class docblock).
-     * @param bool|null                                               $probeBeforeCreate Best-effort probe-before-create for a VIDEO upload that went multipart (default true). Pass false to skip the wait.
+     * @param bool|null                                               $probeBeforeCreate Best-effort probe-before-create for a VIDEO upload that went multipart (default true). Pass false to skip the wait - and the probe_pending recovery (dql51via).
      * @param int|null                                                $probeTimeoutMs Overall timeout (ms) for the probe-before-create wait.
      */
     public function __construct(
