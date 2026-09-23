@@ -94,6 +94,16 @@ final class ApiSurfaceSnapshotTest extends TestCase
     {
         self::assertContains('const ' . self::FIXTURE_NS . 'Clean\\Widget::LIMIT = 3', $this->fixtureRows(), 'the VALUE is recorded');
         self::assertContains('final const ' . self::FIXTURE_NS . 'Clean\\Widget::SEALED = "x"', $this->fixtureRows(), 'final blocks subclass overrides');
+        self::assertContains(
+            'const ' . self::FIXTURE_NS . 'Clean\\Widget::TABLE = {"b":{"retryable":true},"a":{"retryable":false}}',
+            $this->fixtureRows(),
+            'behaviour fields are recorded; `description` prose is not',
+        );
+        self::assertContains(
+            'const ' . self::FIXTURE_NS . 'Clean\\Widget::HOSTS = {"prod":"https://p.example"}',
+            $this->fixtureRows(),
+            'a flat scalar map keeps its values: a changed host is API',
+        );
     }
 
     public function testAnEnumCaseIsARow(): void

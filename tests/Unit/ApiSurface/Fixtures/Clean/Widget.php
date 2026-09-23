@@ -10,6 +10,13 @@ class Widget extends BaseWidget implements Describable
 
     public const LIMIT = 3;
 
+    public const TABLE = [
+        'b' => ['description' => 'prose that may change', 'retryable' => true],
+        'a' => ['description' => 'more prose', 'retryable' => false],
+    ];
+
+    public const HOSTS = ['prod' => 'https://p.example'];
+
     final public const SEALED = 'x';
 
     /**

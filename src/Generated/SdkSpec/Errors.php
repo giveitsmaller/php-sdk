@@ -547,7 +547,7 @@ to a single artifact OR use .mapEach() to fan out.
             'httpStatus' => 429,
             'retryable' => true,
             'sdkClass' => 'GislSseConnectionLimitError',
-            'description' => '429 — the CALLER\'s own concurrent event-stream allowance is exhausted. Same semantics as the tier long-form concurrency limit and therefore the same status. NOT for a global-capacity refusal; see sse_capacity_exhausted.',
+            'description' => '429 — the CALLER\'s own concurrent event-stream allowance is exhausted. Same semantics as the tier long-form concurrency limit and therefore the same status. NOT for a global-capacity refusal; see sse_capacity_exhausted. `retryable` means AFTER Retry-After: a client MUST NOT request another stream before it elapses.',
             'metadataSchema' => [
                 'openStreams' => 'integer',
                 'maxStreams' => 'integer',
@@ -561,7 +561,7 @@ to a single artifact OR use .mapEach() to fan out.
             'httpStatus' => 503,
             'retryable' => true,
             'sdkClass' => 'GislSseCapacityError',
-            'description' => '503 — GLOBAL event-stream capacity is exhausted, and it says nothing about this caller. A caller who has opened no streams can receive it. ⚠️ `EventSource` does not expose the HTTP status to page script, so a browser client cannot distinguish this from 500 — the status serves non-browser clients, proxies and observability.',
+            'description' => '503 — GLOBAL event-stream capacity is exhausted, and it says nothing about this caller. A caller who has opened no streams can receive it. ⚠️ A native `EventSource` does not expose the HTTP status to page script, so THAT client kind cannot distinguish this from 500; a `fetch`-based reader (the shipped frontend, the SDKs) can. A client that reads it MUST NOT request another stream before Retry-After elapses.',
             'metadataSchema' => [
                 'links' => 'object',
             ],

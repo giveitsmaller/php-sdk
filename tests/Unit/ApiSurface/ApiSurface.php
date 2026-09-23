@@ -219,9 +219,35 @@ final class ApiSurface
         if ($value instanceof UnitEnum) {
             return $value::class . '::' . $value->name;
         }
+        // PROSE IS NOT API. A `description` string anywhere inside a constant's
+        // value is dropped before rendering: v2.208.0 reworded two error
+        // descriptions and otherwise moved the 5 KB ERROR_CODES row for nothing
+        // a caller can see. Everything else is kept - `retryable`, `httpStatus`,
+        // `sdkClass`, category membership and preset values ARE behaviour, and a
+        // keys-only rendering hid them (codex 455456cf9c42).
+        if (is_array($value)) {
+            $value = self::withoutProse($value);
+        }
         $json = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
 
         return $json === false ? str_replace("\n", ' ', var_export($value, true)) : $json;
+    }
+
+    /**
+     * @param array<mixed> $value
+     * @return array<mixed>
+     */
+    private static function withoutProse(array $value): array
+    {
+        $kept = [];
+        foreach ($value as $key => $item) {
+            if ($key === 'description' && is_string($item)) {
+                continue;
+            }
+            $kept[$key] = is_array($item) ? self::withoutProse($item) : $item;
+        }
+
+        return $kept;
     }
 
     private static function isInternal(string|false $docComment): bool
