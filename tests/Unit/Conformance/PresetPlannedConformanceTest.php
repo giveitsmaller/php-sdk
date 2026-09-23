@@ -35,6 +35,9 @@ final class PresetPlannedConformanceTest extends TestCase
     /** @var array<string, mixed> `operations.compress.mime_groups` of availability.json. */
     private static array $compressGroups = [];
 
+    /** `operations.compress.availability` - the ROOT link of every chain (XsjiXtqZ). */
+    private static ?string $compressRoot = null;
+
     public static function setUpBeforeClass(): void
     {
         // operations/src/CompressMetadata.php -> dirname x3 = generated/php root.
@@ -45,6 +48,63 @@ final class PresetPlannedConformanceTest extends TestCase
         $groups = $avail['operations']['compress']['mime_groups'] ?? null;
         self::assertIsArray($groups, 'availability.json compress mime_groups must be an array');
         self::$compressGroups = $groups;
+        $root = $avail['operations']['compress']['availability'] ?? null;
+        // A malformed root must fail here, not quietly resolve as stable (codex 30e5d7393d8b).
+        self::assertTrue($root === null || \is_string($root), 'compress root availability must be a string or absent');
+        self::$compressRoot = $root;
+    }
+
+    /**
+     * XsjiXtqZ: every scalar wire value whose chain - op root -> mime group ->
+     * option -> value - resolves MOST-CAUTIOUSLY to `planned`. It read only the
+     * value link, so a value under a planned option, group or root was missed.
+     * The ladder and resolver are the watermark suite's (PMvwhNI1), pinned to the
+     * contract's availability-ladder.yaml.
+     *
+     * @param array<string, mixed> $group
+     * @param array<string, mixed> $wireOptions
+     * @return list<string>
+     */
+    public static function plannedOffenders(?string $root, array $group, array $wireOptions): array
+    {
+        /** @var array<string, mixed> $options */
+        $options = \is_array($group['options'] ?? null) ? $group['options'] : [];
+        $offenders = [];
+        foreach ($wireOptions as $key => $value) {
+            if (!\is_scalar($value)) {
+                continue;
+            }
+            /** @var array<string, mixed> $option */
+            $option = \is_array($options[$key] ?? null) ? $options[$key] : [];
+            /** @var array<string, mixed> $perValue */
+            $perValue = \is_array($option['per_value_availability'] ?? null) ? $option['per_value_availability'] : [];
+            $valueEntry = \is_array($perValue[(string) $value] ?? null) ? $perValue[(string) $value] : [];
+            $resolved = WatermarkCapabilityConformanceTest::mostCautious(
+                $root,
+                $group['availability'] ?? null,
+                $option['availability'] ?? null,
+                $valueEntry['availability'] ?? null,
+            );
+            if ($resolved === 'planned') {
+                $offenders[] = $key . '=' . (string) $value;
+            }
+        }
+
+        return $offenders;
+    }
+
+    public function test_the_chain_is_resolved_not_just_the_value_link(): void
+    {
+        $wire = ['metadata' => 'strip'];
+        // Falsifying fixtures: the value link says nothing; a stricter link above it must win.
+        $optionPlanned = ['options' => ['metadata' => ['availability' => 'planned', 'per_value_availability' => []]]];
+        $groupPlanned = ['availability' => 'planned', 'options' => ['metadata' => ['per_value_availability' => []]]];
+        $clean = ['options' => ['metadata' => ['per_value_availability' => []]]];
+
+        self::assertSame(['metadata=strip'], self::plannedOffenders(null, $optionPlanned, $wire));
+        self::assertSame(['metadata=strip'], self::plannedOffenders(null, $groupPlanned, $wire));
+        self::assertSame(['metadata=strip'], self::plannedOffenders('planned', $clean, $wire));
+        self::assertSame([], self::plannedOffenders(null, $clean, $wire), 'positive control: nothing planned, nothing flagged');
     }
 
     /**
@@ -197,16 +257,9 @@ final class PresetPlannedConformanceTest extends TestCase
         $options = self::$compressGroups[$media]['options'] ?? [];
         self::assertIsArray($options);
 
-        $offenders = [];
-        foreach ($resolved['wireOptions'] as $key => $value) {
-            if (!\is_scalar($value)) {
-                continue;
-            }
-            $perValue = $options[$key]['per_value_availability'] ?? [];
-            if (\is_array($perValue) && ($perValue[(string) $value]['availability'] ?? null) === 'planned') {
-                $offenders[] = $key . '=' . (string) $value;
-            }
-        }
+        /** @var array<string, mixed> $group */
+        $group = self::$compressGroups[$media];
+        $offenders = self::plannedOffenders(self::$compressRoot, $group, $resolved['wireOptions']);
 
         self::assertSame([], $offenders, "{$media}/{$level->value} put a planned VALUE on the wire");
     }
