@@ -100,6 +100,62 @@ final class GislClientWorkflowLifecycleTest extends TestCase
     // cancelWorkflow
     // ---------------------------------------------------------------
 
+    // ---------------------------------------------------------------
+    // archiveWorkflow / restoreWorkflow (mWQsiUun)
+    // ---------------------------------------------------------------
+
+    public function testArchiveWorkflowPostsAndHydrates(): void
+    {
+        $captured = [];
+        $client = $this->makeClient($this->stubClient([
+            $this->jsonResponse(200, ['success' => true, 'data' => [
+                'workflow_id' => '01936fb2-0000-7000-8000-000000000001',
+                'status' => 'completed',
+                'archived' => true,
+                'archived_at' => '2026-09-23T20:00:00Z',
+            ]]),
+        ], $captured));
+
+        $response = $client->archiveWorkflow('01936fb2-0000-7000-8000-000000000001');
+
+        self::assertInstanceOf(\Gisl\Generated\OpenApi\Model\WorkflowArchiveResponse::class, $response);
+        self::assertTrue($response->getArchived());
+        self::assertSame('POST', $captured[0]->getMethod());
+        self::assertSame('/api/workflows/01936fb2-0000-7000-8000-000000000001/archive', $captured[0]->getUri()->getPath());
+    }
+
+    public function testRestoreWorkflowPostsAndHydrates(): void
+    {
+        $captured = [];
+        $client = $this->makeClient($this->stubClient([
+            $this->jsonResponse(200, ['success' => true, 'data' => [
+                'workflow_id' => '01936fb2-0000-7000-8000-000000000001',
+                'status' => 'completed',
+                'archived' => false,
+            ]]),
+        ], $captured));
+
+        $response = $client->restoreWorkflow('01936fb2-0000-7000-8000-000000000001');
+
+        self::assertInstanceOf(\Gisl\Generated\OpenApi\Model\WorkflowRestoreResponse::class, $response);
+        self::assertFalse($response->getArchived());
+        self::assertSame('/api/workflows/01936fb2-0000-7000-8000-000000000001/restore', $captured[0]->getUri()->getPath());
+    }
+
+    public function testArchiveWorkflow409SurfacesAsApiError(): void
+    {
+        $client = $this->makeClient($this->stubClient([
+            $this->jsonResponse(409, ['success' => false, 'error' => 'CONFLICT', 'message' => 'not terminal']),
+        ]));
+
+        try {
+            $client->archiveWorkflow('01936fb2-0000-7000-8000-000000000001');
+            self::fail('a non-terminal archive must surface the 409');
+        } catch (\Gisl\Sdk\Errors\GislApiError $e) {
+            self::assertSame(409, $e->statusCode);
+        }
+    }
+
     public function testCancelWorkflowHappyPath(): void
     {
         $captured = [];

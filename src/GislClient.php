@@ -30,7 +30,9 @@ use Gisl\Generated\OpenApi\Model\TierRestrictionResponse;
 use Gisl\Generated\OpenApi\Model\UploadProbeResponse;
 use Gisl\Generated\OpenApi\Model\UploadResponse;
 use Gisl\Generated\OpenApi\Model\ValidationErrorEnvelope;
+use Gisl\Generated\OpenApi\Model\WorkflowArchiveResponse;
 use Gisl\Generated\OpenApi\Model\WorkflowCancelResponse;
+use Gisl\Generated\OpenApi\Model\WorkflowRestoreResponse;
 use Gisl\Generated\OpenApi\Model\WorkflowCreateResponse;
 use Gisl\Generated\OpenApi\Model\WorkflowDownloadResponse;
 use Gisl\Generated\OpenApi\Model\ProbePendingResponse;
@@ -1484,7 +1486,7 @@ class GislClient
      *                            (omit for the first page — treat as opaque).
      * @param int|null    $limit  Rows per page (1-100; server default 20).
      */
-    public function listWorkflows(?string $cursor = null, ?int $limit = null): WorkflowListResponse
+    public function listWorkflows(?string $cursor = null, ?int $limit = null, ?bool $archived = null): WorkflowListResponse
     {
         $params = [];
         if ($cursor !== null && $cursor !== '') {
@@ -1492,6 +1494,11 @@ class GislClient
         }
         if ($limit !== null) {
             $params['limit'] = (string) $limit;
+        }
+        // mWQsiUun: null -> the server default (false: archived rows EXCLUDED);
+        // true -> ONLY archived rows. Mirrors TS ListWorkflowsOptions.archived.
+        if ($archived !== null) {
+            $params['archived'] = $archived ? 'true' : 'false';
         }
         $query = $params === [] ? '' : '?' . \http_build_query($params);
 
@@ -1515,11 +1522,11 @@ class GislClient
      * @param int|null $limit Page-size hint passed to each underlying request.
      * @return \Generator<int, WorkflowSummary>
      */
-    public function workflows(?int $limit = null): \Generator
+    public function workflows(?int $limit = null, ?bool $archived = null): \Generator
     {
         $cursor = null;
         for (;;) {
-            $page = $this->listWorkflows($cursor, $limit);
+            $page = $this->listWorkflows($cursor, $limit, $archived);
             foreach ($page->getWorkflows() ?? [] as $summary) {
                 yield $summary;
             }
@@ -1902,6 +1909,46 @@ class GislClient
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
         return $this->hydrate(WorkflowCancelResponse::class, $data);
+    }
+
+    /**
+     * Archive a TERMINAL workflow (mWQsiUun): a recoverable declutter, not a
+     * delete. It drops out of listWorkflows() by default; every record stays
+     * readable via getWorkflowStatus() and its downloads, and restoreWorkflow()
+     * brings it back. Idempotent. Mirrors TS `archiveWorkflow`.
+     *
+     * A 409 surfaces while the workflow is still pending / in_progress /
+     * paused_insufficient_credits (only terminal workflows are archivable -
+     * cancel first); a 404 when it does not exist or is not the caller's.
+     */
+    public function archiveWorkflow(string $workflowId): WorkflowArchiveResponse
+    {
+        $encoded = \rawurlencode($workflowId);
+        $request = $this->buildRequest(
+            method: 'POST',
+            path: "/api/workflows/{$encoded}/archive",
+        );
+
+        /** @var array<string, mixed> $data */
+        $data = $this->sendAndUnwrap($request);
+        return $this->hydrate(WorkflowArchiveResponse::class, $data);
+    }
+
+    /**
+     * Restore an archived workflow to the default listWorkflows() view
+     * (mWQsiUun). The inverse of archiveWorkflow(); idempotent.
+     */
+    public function restoreWorkflow(string $workflowId): WorkflowRestoreResponse
+    {
+        $encoded = \rawurlencode($workflowId);
+        $request = $this->buildRequest(
+            method: 'POST',
+            path: "/api/workflows/{$encoded}/restore",
+        );
+
+        /** @var array<string, mixed> $data */
+        $data = $this->sendAndUnwrap($request);
+        return $this->hydrate(WorkflowRestoreResponse::class, $data);
     }
 
     /**

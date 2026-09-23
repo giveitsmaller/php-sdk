@@ -839,6 +839,21 @@ final class GislClientTest extends TestCase
         self::assertSame('50', $q['limit']);
     }
 
+    public function testListWorkflowsSendsTheArchivedFilter(): void
+    {
+        foreach ([[true, 'true'], [false, 'false']] as [$archived, $expected]) {
+            $captured = [];
+            $client = $this->makeClient($this->stubClient([
+                $this->jsonResponse(200, $this->workflowListEnvelope([], nextCursor: null, isTruncated: false)),
+            ], $captured));
+
+            $client->listWorkflows(archived: $archived);
+
+            \parse_str($captured[0]->getUri()->getQuery(), $q);
+            self::assertSame($expected, $q['archived'] ?? null, 'mWQsiUun: archived filter on the wire');
+        }
+    }
+
     public function testListWorkflowsOmitsEmptyQueryOnFirstPage(): void
     {
         $captured = [];
