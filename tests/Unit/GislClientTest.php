@@ -800,7 +800,13 @@ final class GislClientTest extends TestCase
         self::assertCount(1, $captured);
         $request = $captured[0];
         self::assertSame('trace-1', $request->getHeaderLine('X-Trace-Id'));
-        self::assertStringStartsWith('giveitsmaller-sdk-php/', $request->getHeaderLine('User-Agent'));
+        // zDwyRcaD: the CURRENT manifest version, read here independently of the
+        // SDK's own reader, so a stale literal (it was 0.1.0) cannot pass.
+        $manifest = \json_decode((string) \file_get_contents(\dirname(__DIR__, 2) . '/composer.json'), true);
+        self::assertIsArray($manifest);
+        self::assertIsString($manifest['version']);
+        self::assertSame('giveitsmaller-sdk-php/' . $manifest['version'], $request->getHeaderLine('User-Agent'));
+        self::assertNotSame('giveitsmaller-sdk-php/0.1.0', $request->getHeaderLine('User-Agent'));
         self::assertSame('application/json', $request->getHeaderLine('Accept'));
     }
 

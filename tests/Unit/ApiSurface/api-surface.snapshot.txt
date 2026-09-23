@@ -238,6 +238,7 @@ internal Gisl\Sdk\Ergonomic\PresetResolver
 internal Gisl\Sdk\Ergonomic\SequencePlan
 internal Gisl\Sdk\FileFirst\MultiInputUpload
 internal Gisl\Sdk\Http\CurlMultiPartUploader
+internal Gisl\Sdk\SdkVersion
 method Gisl\Sdk\Cancellation::cancel()
 method Gisl\Sdk\Cancellation::isCancelled()
 method Gisl\Sdk\CreditsUsageOptions::__construct()

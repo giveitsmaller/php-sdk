@@ -2806,7 +2806,8 @@ class GislClient
 
         $request = $request
             ->withHeader('Accept', 'application/json')
-            ->withHeader('User-Agent', 'giveitsmaller-sdk-php/0.1.0');
+            // Derived from the package manifest (zDwyRcaD); it was the literal 0.1.0.
+            ->withHeader('User-Agent', SdkVersion::userAgent());
 
         if ($this->config->apiKey !== null) {
             $request = $request->withHeader('Authorization', "Bearer {$this->config->apiKey}");
