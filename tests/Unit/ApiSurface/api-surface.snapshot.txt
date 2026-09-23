@@ -1,0 +1,854 @@
+abstract class Gisl\Sdk\Ergonomic\ProgressEvent
+abstract class Gisl\Sdk\GetSchemaResult
+abstract method Gisl\Sdk\Ergonomic\ProgressEvent::toArray()
+case Gisl\Sdk\Environment::Prod = "prod"
+case Gisl\Sdk\Environment::Staging = "staging"
+case Gisl\Sdk\Ergonomic\ArchiveFormat::TarGz = "tar.gz"
+case Gisl\Sdk\Ergonomic\ArchiveFormat::Zip = "zip"
+case Gisl\Sdk\Generated\SdkSpec\Enums\AudioBitrate::_128 = 128
+case Gisl\Sdk\Generated\SdkSpec\Enums\AudioBitrate::_192 = 192
+case Gisl\Sdk\Generated\SdkSpec\Enums\AudioBitrate::_256 = 256
+case Gisl\Sdk\Generated\SdkSpec\Enums\AudioBitrate::_320 = 320
+case Gisl\Sdk\Generated\SdkSpec\Enums\AudioBitrate::_64 = 64
+case Gisl\Sdk\Generated\SdkSpec\Enums\AudioBitrate::_96 = 96
+case Gisl\Sdk\Generated\SdkSpec\Enums\AudioCodec::Aac = "aac"
+case Gisl\Sdk\Generated\SdkSpec\Enums\AudioCodec::Copy = "copy"
+case Gisl\Sdk\Generated\SdkSpec\Enums\AudioCodec::Opus = "opus"
+case Gisl\Sdk\Generated\SdkSpec\Enums\AudioCodec::Vorbis = "vorbis"
+case Gisl\Sdk\Generated\SdkSpec\Enums\AudioSampleRate::_22050 = 22050
+case Gisl\Sdk\Generated\SdkSpec\Enums\AudioSampleRate::_44100 = 44100
+case Gisl\Sdk\Generated\SdkSpec\Enums\AudioSampleRate::_48000 = 48000
+case Gisl\Sdk\Generated\SdkSpec\Enums\ImageFormat::Original = "original"
+case Gisl\Sdk\Generated\SdkSpec\Enums\ImageFormat::Webp = "webp"
+case Gisl\Sdk\Generated\SdkSpec\Enums\ImageMetadataPolicy::All = "all"
+case Gisl\Sdk\Generated\SdkSpec\Enums\ImageMetadataPolicy::Keep = "keep"
+case Gisl\Sdk\Generated\SdkSpec\Enums\ImageMetadataPolicy::Strip = "strip"
+case Gisl\Sdk\Generated\SdkSpec\Enums\OptimizeFor::Balanced = "Balanced"
+case Gisl\Sdk\Generated\SdkSpec\Enums\OptimizeFor::Quality = "Quality"
+case Gisl\Sdk\Generated\SdkSpec\Enums\OptimizeFor::Size = "Size"
+case Gisl\Sdk\Generated\SdkSpec\Enums\VideoCodec::Av1 = "av1"
+case Gisl\Sdk\Generated\SdkSpec\Enums\VideoCodec::H264 = "h264"
+case Gisl\Sdk\Generated\SdkSpec\Enums\VideoCodec::H265 = "h265"
+case Gisl\Sdk\Generated\SdkSpec\Enums\VideoCodec::Vp9 = "vp9"
+case Gisl\Sdk\Generated\SdkSpec\Enums\VideoFit::Crop = "crop"
+case Gisl\Sdk\Generated\SdkSpec\Enums\VideoFit::Max = "max"
+case Gisl\Sdk\Generated\SdkSpec\Enums\VideoFit::Pad = "pad"
+case Gisl\Sdk\Generated\SdkSpec\Enums\VideoFit::Scale = "scale"
+case Gisl\Sdk\Generated\SdkSpec\Enums\VideoPreset::Fast = "fast"
+case Gisl\Sdk\Generated\SdkSpec\Enums\VideoPreset::Faster = "faster"
+case Gisl\Sdk\Generated\SdkSpec\Enums\VideoPreset::Medium = "medium"
+case Gisl\Sdk\Generated\SdkSpec\Enums\VideoPreset::Slow = "slow"
+case Gisl\Sdk\Generated\SdkSpec\Enums\VideoPreset::Slower = "slower"
+case Gisl\Sdk\Generated\SdkSpec\Enums\VideoPreset::Superfast = "superfast"
+case Gisl\Sdk\Generated\SdkSpec\Enums\VideoPreset::Ultrafast = "ultrafast"
+case Gisl\Sdk\Generated\SdkSpec\Enums\VideoPreset::Veryfast = "veryfast"
+case Gisl\Sdk\Generated\SdkSpec\Enums\VideoPreset::Veryslow = "veryslow"
+case Gisl\Sdk\Generated\SdkSpec\ErrorCategory::Api = "api"
+case Gisl\Sdk\Generated\SdkSpec\ErrorCategory::Auth = "auth"
+case Gisl\Sdk\Generated\SdkSpec\ErrorCategory::Chain = "chain"
+case Gisl\Sdk\Generated\SdkSpec\ErrorCategory::Config = "config"
+case Gisl\Sdk\Generated\SdkSpec\ErrorCategory::Network = "network"
+case Gisl\Sdk\Generated\SdkSpec\ErrorCategory::Validation = "validation"
+class Gisl\Sdk\Errors\GislApiError extends Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+class Gisl\Sdk\Errors\GislAuthError extends Gisl\Sdk\Errors\GislApiError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+class Gisl\Sdk\Errors\GislConfigError extends Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+class Gisl\Sdk\Errors\GislError extends RuntimeException < Exception implements Stringable, Throwable
+class Gisl\Sdk\Errors\GislNetworkError extends Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+class Gisl\Sdk\Errors\GislTimeoutError extends Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+class Gisl\Sdk\GislClient
+class Gisl\Sdk\GislErgonomicClient extends Gisl\Sdk\GislClient
+const Gisl\Sdk\Credentials::DEFAULT_ENDPOINT = "https://api.giveitsmaller.com"
+const Gisl\Sdk\Credentials::DEFAULT_PROFILE = "default"
+const Gisl\Sdk\Credentials::ENVIRONMENT_ENDPOINTS = {"prod":"https://api.giveitsmaller.com","staging":"https://api.staging.giveitsmaller.com"}
+const Gisl\Sdk\Credentials::ENVIRONMENT_STREAM_ENDPOINTS = {"prod":"https://stream.giveitsmaller.com","staging":"https://stream.staging.giveitsmaller.com"}
+const Gisl\Sdk\Credentials::GISL_API_KEY_ENV = "GISL_API_KEY"
+const Gisl\Sdk\Credentials::GISL_BASE_URL_ENV = "GISL_BASE_URL"
+const Gisl\Sdk\Credentials::GISL_ENVIRONMENT_ENV = "GISL_ENVIRONMENT"
+const Gisl\Sdk\Credentials::GISL_STREAM_BASE_URL_ENV = "GISL_STREAM_BASE_URL"
+const Gisl\Sdk\Ergonomic\ImageOutputRoutes::COMPRESS_OPTION_VALUES = {"image":{"color_profile":["keep","srgb","strip"],"fit":["max","crop","scale"],"metadata":["strip","keep","all"],"output_format":["original","webp","auto","smallest"]},"image_jpeg":{"chroma_subsampling":["420","422","444"],"color_profile":["keep","srgb","strip"],"encoding_mode":["quality","target_size","auto_quality"],"fit":["max","crop","scale"],"metadata":["strip","keep","all"],"output_format":["original","webp","auto","smallest"],"quality_preset":["best","good","fair","low"]},"image_png":{"color_profile":["keep","srgb","strip"],"fit":["max","crop","scale"],"metadata":["strip","keep","all"],"output_format":["original","webp","auto","smallest"]},"image_avif":{"color_profile":["keep","srgb","strip"],"encoding_mode":["quality","target_size","auto_quality"],"fit":["max","crop","scale"],"metadata":["strip","all"],"output_format":["original","webp","auto","smallest"],"quality_preset":["best","good","fair","low"]},"image_svg":{"metadata":["strip","all"],"output_format":["original","webp","auto","smallest"]},"image_webp":{"color_profile":["keep","srgb","strip"],"encoding_mode":["quality","target_size","auto_quality"],"fit":["max","crop","scale"],"metadata":["strip","keep","all"],"output_format":["original","webp","auto","smallest"],"quality_preset":["best","good","fair","low"]}}
+const Gisl\Sdk\Ergonomic\ImageOutputRoutes::DEPENDS_ON_KEY_DEFAULTS = {"encoding_mode":"quality"}
+const Gisl\Sdk\Ergonomic\ImageOutputRoutes::FACADE_MANAGED_OUTPUTS = ["webp"]
+const Gisl\Sdk\Ergonomic\ImageOutputRoutes::IMAGE_OUTPUT_ROUTES = {"same_format":{"avif":{"honored":["auto_orient","avif_speed","color_profile","encoding_mode","fit","height","metadata","output_format","quality","quality_preset","target_size_bytes","width"],"planned":[]},"gif":{"honored":["auto_orient","color_profile","fit","height","metadata","output_format","quality","width"],"planned":[]},"jpeg":{"honored":["auto_orient","chroma_subsampling","color_profile","encoding_mode","fit","height","lossless","metadata","output_format","progressive","quality","quality_preset","target_size_bytes","width"],"planned":[]},"png":{"honored":["auto_orient","color_profile","fit","height","metadata","optimization_level","output_format","quality","width"],"planned":[]},"svg":{"honored":["metadata","output_format"],"planned":[]},"tiff":{"honored":["auto_orient","color_profile","fit","height","metadata","output_format","quality","width"],"planned":[]},"webp":{"honored":["auto_orient","color_profile","encoding_mode","fit","height","lossless","metadata","output_format","quality","quality_preset","target_size_bytes","width"],"planned":[]}},"format_change":{"avif":{"honored":["auto_orient","color_profile","fit","height","output_format","quality","width"],"planned":["metadata"]},"gif":{"honored":["auto_orient","color_profile","fit","height","output_format","width"],"planned":["metadata"]},"jpeg":{"honored":["auto_orient","background","color_profile","fit","height","output_format","quality","width"],"planned":["metadata"]},"png":{"honored":["auto_orient","color_profile","fit","height","output_format","width"],"planned":["metadata"]},"tiff":{"honored":["auto_orient","color_profile","fit","height","output_format","width"],"planned":["metadata"]},"webp":{"honored":["auto_orient","color_profile","fit","height","output_format","quality","width"],"planned":["metadata"]}}}
+const Gisl\Sdk\Ergonomic\ImageOutputRoutes::INPUT_GATED_KEYS = ["width","height","fit","auto_orient"]
+const Gisl\Sdk\Ergonomic\ImageOutputRoutes::MAX_OUTPUT_PIXELS = 16000000
+const Gisl\Sdk\Ergonomic\ImageOutputRoutes::OUTPUT_OPTION_DEPENDS_ON = {"quality":{"requiresKey":"encoding_mode","requiresValue":"quality"},"lossless":{"requiresKey":"encoding_mode","requiresValue":"quality"},"quality_preset":{"requiresKey":"encoding_mode","requiresValue":"auto_quality"},"target_size_bytes":{"requiresKey":"encoding_mode","requiresValue":"target_size"},"fit":{"requiresAnyOf":["width","height"]}}
+const Gisl\Sdk\Ergonomic\ImageOutputRoutes::RESIZE_KEYS = ["width","height","fit"]
+const Gisl\Sdk\Errors\GislUploadCapExceededError::KIND_ABSOLUTE_413 = "absolute_413"
+const Gisl\Sdk\Errors\GislUploadCapExceededError::KIND_DURATION_TIER = "duration_tier"
+const Gisl\Sdk\Errors\GislUploadCapExceededError::KIND_SIZE_TIER = "size_tier"
+const Gisl\Sdk\Errors\GislUploadCapExceededError::KIND_V2_MULTIPART = "cap_v2_multipart"
+const Gisl\Sdk\Errors\NotYetImplementedDispatch::CATEGORY = "config"
+const Gisl\Sdk\Errors\NotYetImplementedDispatch::CODE = "not_yet_implemented"
+const Gisl\Sdk\FileFirst\FileInput::KIND_PATH = "path"
+const Gisl\Sdk\FileFirst\FileInput::KIND_RESOURCE = "resource"
+const Gisl\Sdk\FileFirst\FileInput::KIND_UPLOAD_ID = "upload_id"
+const Gisl\Sdk\FileFirst\RunResult::POST_STEP_JOB_REF = "post"
+const Gisl\Sdk\FileFirst\RunResult::PRE_STEP_JOB_REF = "pre"
+const Gisl\Sdk\FileFirst\RunResult::SOLE_OP_TYPES = ["archive","audio_overlay","audio_to_video","custom_luma","image_watermark","merge","split","text_watermark","video_text_watermark","video_watermark"]
+const Gisl\Sdk\FileFirst\WatermarkGate::CAPABILITY = {"image_watermark":{"image":{"mimes":["image/jpeg","image/png","image/webp"],"availability":"stable"},"image_gif":{"mimes":["image/gif"],"availability":"planned"},"image_tiff":{"mimes":["image/tiff"],"availability":"stable"},"image_bmp":{"mimes":["image/bmp"],"availability":"stable"}},"video_watermark":{"video":{"mimes":["video/mp4","video/webm"],"availability":"planned"}}}
+const Gisl\Sdk\FileFirst\WatermarkGate::OP_IMAGE = "image_watermark"
+const Gisl\Sdk\FileFirst\WatermarkGate::OP_VIDEO = "video_watermark"
+const Gisl\Sdk\Generated\SdkSpec\Errors::ERROR_CATEGORIES = {"api":["feature_tier_restricted","tier_restriction","multipart_session_not_found","upload_not_found","workflow_expired","balance_exhausted","feature_not_available","upload_size_exceeds_tier","upload_duration_exceeds_tier","probe_pending","requires_reencode","image_dimensions_too_large","workflow_failed","sse_connection_limit_exceeded","sse_capacity_exhausted","long_form_concurrency_limit_exceeded","item_failed"],"config":["missing_credentials","feature_requires_auth","config_error","bundle_already_archived","sink_error"],"network":["timeout","aborted","upload_failed","fan_out_timeout"],"auth":["auth_failed","multipart_session_ownership","multipart_session_auth_required","unprocessable_entity","email_same"],"validation":["multipart_part_invalid","multipart_part_count_exceeded","validation_failed","validation_error","cyclic_workflow_edges","workflow_edge_references_unknown_job","reserved_job_id_pattern","cyclic_job_output_source_graph","invalid_options","invalid_combination","missing_dependency","unsupported_value","type_mismatch","result_not_ready"],"chain":["undeclared_asset","unused_asset","per_input_options_not_supported","chain_cardinality_mismatch","no_such_key"]}
+const Gisl\Sdk\Generated\SdkSpec\Errors::ERROR_CODES = {"missing_credentials":{"code":"missing_credentials","category":"config","source":"SDK_local","status":"wired","httpStatus":null,"retryable":false,"sdkClass":"GislMissingCredentialsError","description":"gisl.create() failed the credential chain (explicit → GISL_API_KEY env → ~/.gisl/credentials profile → fail-early).","metadataSchema":{"sourcesTried":"array"}},"feature_requires_auth":{"code":"feature_requires_auth","category":"config","source":"SDK_local","status":"wired","httpStatus":null,"retryable":false,"sdkClass":"GislFeatureRequiresAuthError","description":"SDK rejected an anonymous-mode call to a feature that requires authentication. Pre-flight gate; never reaches the API.","metadataSchema":{"feature":"string"}},"undeclared_asset":{"code":"undeclared_asset","category":"chain","source":"SDK_local","status":"wired","httpStatus":null,"retryable":false,"sdkClass":"GislUndeclaredAssetError","description":"Merge / archive / mapEach referenced an asset handle that was not declared upstream in the chain.","metadataSchema":{"ref":"string"}},"unused_asset":{"code":"unused_asset","category":"chain","source":"SDK_local","status":"wired","httpStatus":null,"retryable":false,"sdkClass":"GislUnusedAssetError","description":"A declared asset was never referenced in the chain (caller likely forgot to use it; escape via allowUnusedAssets).","metadataSchema":{"ref":"string"}},"per_input_options_not_supported":{"code":"per_input_options_not_supported","category":"chain","source":"SDK_local","status":"wired","httpStatus":null,"retryable":false,"sdkClass":"GislPerInputOptionsNotSupportedError","description":"per_input_options provided on a multi-input op role that doesn't accept it (e.g. role-less branch).","metadataSchema":{"op":"string","role":"string"}},"chain_cardinality_mismatch":{"code":"chain_cardinality_mismatch","category":"chain","source":"SDK_local","status":"wired","httpStatus":null,"retryable":false,"sdkClass":"GislChainCardinalityMismatchError","description":"Chain step expects a single artifact but the upstream step produces N (e.g.\n.compress() chained after convert(pdf, pages: \"1-20\")). Recovery: branch\nto a single artifact OR use .mapEach() to fan out.\n","metadataSchema":{"upstreamArtifactCount":"integer","operation":"string"}},"multipart_part_invalid":{"code":"multipart_part_invalid","category":"validation","source":"SDK_local","status":"wired","httpStatus":null,"retryable":false,"sdkClass":"GislMultipartPartError","description":"SDK rejected a part configuration before upload (e.g. out-of-range part number, duplicate, missing).","metadataSchema":{"partNumber":"integer","reason":"string"}},"multipart_part_count_exceeded":{"code":"multipart_part_count_exceeded","category":"validation","source":"SDK_local","status":"wired","httpStatus":null,"retryable":false,"sdkClass":"GislMultipartPartCountError","description":"Multipart presign batch / total parts exceeds S3 ceilings (10 000 total, 100 per presign request).","metadataSchema":{"partCount":"integer","ceiling":"integer"}},"timeout":{"code":"timeout","category":"network","source":"SDK_local","status":"wired","httpStatus":null,"retryable":true,"sdkClass":"GislTimeoutError","description":"SDK-set deadline exceeded (run({maxWait}), waitForCompletion, multipart attempt timeout).","metadataSchema":{"timeoutMs":"integer","phase":"string"}},"aborted":{"code":"aborted","category":"network","source":"SDK_local","status":"wired","httpStatus":null,"retryable":false,"sdkClass":"GislAbortError","description":"Caller-supplied AbortSignal triggered cancellation.","metadataSchema":{"reason":"string"}},"validation_failed":{"code":"validation_failed","category":"validation","source":"ErrorEnvelope.error","status":"wired","httpStatus":422,"retryable":false,"sdkClass":"GislValidationError","description":"422 — request validation failure; emitted on the wire as `VALIDATION_FAILED` (e.g. invalid limit/offset on GET /api/v2/credits/usage). Carries `details[]`.","metadataSchema":{"details":"array"}},"validation_error":{"code":"validation_error","category":"validation","source":"error_type","status":"wired","httpStatus":422,"retryable":false,"sdkClass":"GislValidationError","description":"422 — `error_type` discriminator on `ValidationErrorEnvelope` (ADR-0018/0019); distinct from `validation_failed` (the `error` code), same `GislValidationError`. Carries `details[]`.","metadataSchema":{"details":"array"}},"cyclic_workflow_edges":{"code":"cyclic_workflow_edges","category":"validation","source":"ErrorEnvelope.error","status":"wired","httpStatus":422,"retryable":false,"sdkClass":"GislValidationError","description":"422 — cycle/self-edge in the explicit `workflow_edges` DAG. Wire `CYCLIC_WORKFLOW_EDGES` (g8PPkbNu); ValidationErrorEnvelope shape, `details[0].field`=`workflow_edges`.","metadataSchema":{"details":"array"}},"workflow_edge_references_unknown_job":{"code":"workflow_edge_references_unknown_job","category":"validation","source":"ErrorEnvelope.error","status":"wired","httpStatus":400,"retryable":false,"sdkClass":"GislValidationError","description":"400 — a `workflow_edges` entry, job-level `source`, or `inputs[].source` references a job not in the request. Wire `WORKFLOW_EDGE_REFERENCES_UNKNOWN_JOB` (g8PPkbNu).","metadataSchema":[]},"reserved_job_id_pattern":{"code":"reserved_job_id_pattern","category":"validation","source":"ErrorEnvelope.error","status":"wired","httpStatus":400,"retryable":false,"sdkClass":"GislValidationError","description":"400 — user job `id` matches the reserved `^job_\\d+$` pattern as the SOLE failure. Wire `RESERVED_JOB_ID_PATTERN` (g8PPkbNu); mixed violations keep generic `BAD_REQUEST`.","metadataSchema":[]},"cyclic_job_output_source_graph":{"code":"cyclic_job_output_source_graph","category":"validation","source":"ErrorEnvelope.error","status":"wired","httpStatus":400,"retryable":false,"sdkClass":"GislValidationError","description":"400 — an implicit cycle in the `job_output` source graph, caught during effective-input-MIME resolution on POST /api/workflows. Wire `CYCLIC_JOB_OUTPUT_SOURCE_GRAPH` (g8PPkbNu).","metadataSchema":[]},"auth_failed":{"code":"auth_failed","category":"auth","source":"ErrorEnvelope.error","status":"wired","httpStatus":401,"retryable":false,"sdkClass":"GislAuthError","description":"401 — invalid / expired / missing API key.","metadataSchema":{"authErrorType":"string"}},"feature_tier_restricted":{"code":"feature_tier_restricted","category":"api","source":"error_type","status":"wired","httpStatus":403,"retryable":false,"sdkClass":"GislFeatureTierRestrictedError","description":"403 — feature requires a higher subscription tier than the caller's.","metadataSchema":{"feature":"string","requiredTier":"string","currentTier":"string"}},"tier_restriction":{"code":"tier_restriction","category":"api","source":"error_type","status":"wired","httpStatus":403,"retryable":false,"sdkClass":"GislTierRestrictedError","description":"403 — general tier restriction (not feature-specific). Wire emits `error_type: \"tier_restriction\"`; the SDK class name keeps the `TierRestricted` adjective form per packages/typescript/src/errors.ts.","metadataSchema":{"requiredTier":"string","currentTier":"string"}},"multipart_session_ownership":{"code":"multipart_session_ownership","category":"auth","source":"ErrorEnvelope.error","status":"wired","httpStatus":403,"retryable":false,"sdkClass":"GislMultipartSessionOwnershipError","description":"403 on multipart resume — session exists but belongs to a different caller.","metadataSchema":{"uploadId":"string"}},"multipart_session_auth_required":{"code":"multipart_session_auth_required","category":"auth","source":"ErrorEnvelope.error","status":"wired","httpStatus":403,"retryable":false,"sdkClass":"GislMultipartSessionAuthRequiredError","description":"403 on multipart resume — session was initiated anonymously; resume requires auth (future-flip per upstream 8LABloaz).","metadataSchema":{"uploadId":"string"}},"multipart_session_not_found":{"code":"multipart_session_not_found","category":"api","source":"ErrorEnvelope.error","status":"wired","httpStatus":404,"retryable":false,"sdkClass":"GislMultipartSessionNotFoundError","description":"404 on multipart resume — upload_id unknown or expired past 48h TTL.","metadataSchema":{"uploadId":"string"}},"upload_not_found":{"code":"upload_not_found","category":"api","source":"ErrorEnvelope.error","status":"wired","httpStatus":404,"retryable":false,"sdkClass":"GislApiError","description":"404 on POST /api/workflows — a referenced upload was not found, OR exists but is owned by a different identity (deliberate BOLA/IDOR existence-mask: reported as not-found, never 403, so the response does not reveal another user's upload exists). message_key upload.not_found. Wire token UPLOAD_NOT_FOUND keyed on the `error` field. Per ADR-0016 amendment.","metadataSchema":[]},"workflow_expired":{"code":"workflow_expired","category":"api","source":"error_type","status":"wired","httpStatus":410,"retryable":false,"sdkClass":"GislWorkflowExpiredError","description":"410 — workflow result TTL expired; outputs no longer downloadable.","metadataSchema":{"workflowId":"string"}},"balance_exhausted":{"code":"balance_exhausted","category":"api","source":"error_type","status":"wired","httpStatus":402,"retryable":false,"sdkClass":"GislBalanceExhaustedError","description":"402 — workflow create rejected because cost estimate exceeds available credits (monthly + purchased + overdraft).","metadataSchema":{"requiredCredits":"integer","availableCredits":"integer","links":"object"}},"feature_not_available":{"code":"feature_not_available","category":"api","source":"error_type","status":"wired","httpStatus":422,"retryable":false,"sdkClass":"GislFeatureNotAvailableError","description":"422 — operation type is planned but not yet implemented server-side (e.g. custom_luma before Lambda support ships).","metadataSchema":{"feature":"string"}},"upload_size_exceeds_tier":{"code":"upload_size_exceeds_tier","category":"api","source":"error_type","status":"wired","httpStatus":422,"retryable":false,"sdkClass":"GislUploadCapExceededError","description":"422 — uploaded file size exceeds the per-tier cap. Wire `error_type: \"upload_size_exceeds_tier\"`. SDK class GislUploadCapExceededError covers this + upload_duration_exceeds_tier (sibling code below).","metadataSchema":{"size":"integer","ceiling":"integer"}},"upload_duration_exceeds_tier":{"code":"upload_duration_exceeds_tier","category":"api","source":"error_type","status":"wired","httpStatus":422,"retryable":false,"sdkClass":"GislUploadCapExceededError","description":"422 — uploaded media duration exceeds the per-tier cap. Wire `error_type: \"upload_duration_exceeds_tier\"`. Shares SDK class GislUploadCapExceededError with upload_size_exceeds_tier; consumers branch on the metadata.","metadataSchema":{"duration":"integer","ceiling":"integer"}},"probe_pending":{"code":"probe_pending","category":"api","source":"error_type","status":"wired","httpStatus":422,"retryable":true,"sdkClass":"GislProbePendingError","description":"422 on workflow create — upload probing not yet complete; retry after the upload finishes probing. Wire `error_type: \"probe_pending\"`.","metadataSchema":{"jobRef":"string"}},"requires_reencode":{"code":"requires_reencode","category":"api","source":"ErrorEnvelope.error","status":"wired","httpStatus":422,"retryable":false,"sdkClass":"GislApiError","description":"422 on merge — inputs are byte-stream-incompatible (different codec / resolution / etc.); merge requires re-encode rather than concat.","metadataSchema":{"reason":"string"}},"invalid_options":{"code":"invalid_options","category":"validation","source":"ErrorEnvelope.error","status":"wired","httpStatus":422,"retryable":false,"sdkClass":"GislValidationError","description":"422 — operation option failed server-side validation (range, depends_on, mutex). Often surfaces preflight rejections (e.g. split.cut_points len exceeds 200-output cap).","metadataSchema":{"field":"string","reason":"string"}},"invalid_combination":{"code":"invalid_combination","category":"validation","source":"SDK_local","status":"wired","httpStatus":null,"retryable":false,"sdkClass":"GislValidationError","description":"Two or more options that are mutually exclusive per contract `depends_on` / mutex were both provided.","metadataSchema":{"fields":"array"}},"missing_dependency":{"code":"missing_dependency","category":"validation","source":"SDK_local","status":"wired","httpStatus":null,"retryable":false,"sdkClass":"GislValidationError","description":"An option was set but its contract `depends_on` predicate was not satisfied (e.g. quality set but mode is not lossy).","metadataSchema":{"field":"string","requires":"array"}},"unsupported_value":{"code":"unsupported_value","category":"validation","source":"SDK_local","status":"wired","httpStatus":null,"retryable":false,"sdkClass":"GislValidationError","description":"A value was outside the allowed enum / range for an option.","metadataSchema":{"field":"string","value":"string","allowed":"array"}},"type_mismatch":{"code":"type_mismatch","category":"validation","source":"SDK_local","status":"wired","httpStatus":null,"retryable":false,"sdkClass":"GislValidationError","description":"A value's type didn't match the schema (e.g. string where integer expected).","metadataSchema":{"field":"string","expected":"string","actual":"string"}},"image_dimensions_too_large":{"code":"image_dimensions_too_large","category":"api","source":"ErrorEnvelope.error","status":"wired","httpStatus":413,"retryable":false,"sdkClass":"GislUploadCapExceededError","description":"413 — POST /api/uploads rejected a decodable raster image whose pixel area (width × height) exceeds the configured ceiling (UPLOAD_MAX_IMAGE_PIXELS, default 16 MP), read from the file header before decode (I0Rqj4jo). Wire `IMAGE_DIMENSIONS_TOO_LARGE`; flat ErrorEnvelope (no details[]). A pixel-dimension member of the upload-cap family — GislUploadCapExceededError, alongside the size/duration caps — matching the SDKs' existing status-based 413 dispatch (NOT GislValidationError, which is the structured-422 class). Retry only after downscaling the input.","metadataSchema":[]},"upload_failed":{"code":"upload_failed","category":"network","source":"SDK_local","status":"wired","httpStatus":null,"retryable":true,"sdkClass":"GislError","description":"Single-shot or multipart upload failed after retry exhaustion. Distinct from auth/balance/cap errors (those are typed above).","metadataSchema":{"reason":"string","attempt":"integer"}},"workflow_failed":{"code":"workflow_failed","category":"api","source":"OperationResponse.error_code","status":"wired","httpStatus":null,"retryable":false,"sdkClass":"GislApiError","description":"Workflow reached terminal failure status. Per-job error codes live on jobErrors[].errorCode.","metadataSchema":{"workflowId":"string","jobErrors":"array"}},"sse_connection_limit_exceeded":{"code":"sse_connection_limit_exceeded","category":"api","source":"ErrorEnvelope.error","status":"planned","httpStatus":429,"retryable":true,"sdkClass":"GislSseConnectionLimitError","description":"429 — the CALLER's own concurrent event-stream allowance is exhausted. Same semantics as the tier long-form concurrency limit and therefore the same status. NOT for a global-capacity refusal; see sse_capacity_exhausted.","metadataSchema":{"openStreams":"integer","maxStreams":"integer"}},"sse_capacity_exhausted":{"code":"sse_capacity_exhausted","category":"api","source":"ErrorEnvelope.error","status":"planned","httpStatus":503,"retryable":true,"sdkClass":"GislSseCapacityError","description":"503 — GLOBAL event-stream capacity is exhausted, and it says nothing about this caller. A caller who has opened no streams can receive it. ⚠️ `EventSource` does not expose the HTTP status to page script, so a browser client cannot distinguish this from 500 — the status serves non-browser clients, proxies and observability.","metadataSchema":{"links":"object"}},"long_form_concurrency_limit_exceeded":{"code":"long_form_concurrency_limit_exceeded","category":"api","source":"ErrorEnvelope.error","status":"wired","httpStatus":429,"retryable":false,"sdkClass":"GislLongFormConcurrencyError","description":"429 — the caller's tier long-form concurrency allowance is exhausted. Wire value is UPPERCASE `LONG_FORM_CONCURRENCY_LIMIT_EXCEEDED` (api.yaml:1995); this file's `code:` follows the taxonomy's lowercase convention. Dispatched on the machine `error` code, NOT on the status: a generic infra rate-limit 429 carries a different/absent code and falls through to base GislApiError where retryAfterSeconds applies. Do not widen this entry to the status.","metadataSchema":{"currentTier":"string","maxDurationSeconds":"number"}},"unprocessable_entity":{"code":"unprocessable_entity","category":"auth","source":"error_type","status":"wired","httpStatus":422,"retryable":false,"sdkClass":"GislAuthRejectionError","description":"422 on an auth-side-effect endpoint (register / verify-email / api-keys) — the request was well-formed but rejected on domain grounds. Dispatched on MEMBERSHIP of AuthRejectionEnvelope.error_type, per ADR-0019.","metadataSchema":{"errorType":"string"}},"email_same":{"code":"email_same","category":"auth","source":"error_type","status":"wired","httpStatus":422,"retryable":false,"sdkClass":"GislAuthRejectionError","description":"422 on profile PATCH — the submitted email matches the current one, so there is nothing to change. Same envelope and sdkClass as unprocessable_entity; separate row because the wire value differs.","metadataSchema":{"errorType":"string"}},"config_error":{"code":"config_error","category":"config","source":"SDK_local","status":"wired","httpStatus":null,"retryable":false,"sdkClass":"GislConfigError","description":"Client-side configuration rejected before any request — thrown directly (preset resolver, output() gates), not only as a base class. `reason` carries the discriminator: `unknown_field` and `type_mismatch` are values of THIS field and deliberately have no rows of their own.","metadataSchema":{"reason":"string","conflictingFields":"array","resolvedSnapshot":"object","suggestion":"string"}},"bundle_already_archived":{"code":"bundle_already_archived","category":"config","source":"SDK_local","status":"planned","httpStatus":null,"retryable":false,"sdkClass":"GislBundleAlreadyArchivedError","description":"PLANNED — not reachable in any shipped build. Raised when a bundle operation targets an already-archived bundle, once `.bundle()` ships. Do not write handler code against this yet.","metadataSchema":[]},"fan_out_timeout":{"code":"fan_out_timeout","category":"network","source":"SDK_local","status":"wired","httpStatus":null,"retryable":true,"sdkClass":"GislFanOutTimeoutError","description":"A fan-out deadline elapsed before all children finished. The three metadata fields are the reason this is declared separately from GislTimeoutError: completedWorkflowIds are the children that DID finish, parentWorkflowId ran to completion before the fan-out began, and the inherited workflowId is the in-flight child — absent on a clean between-children timeout.","metadataSchema":{"completedWorkflowIds":"array","parentWorkflowId":"string","workflowId":"string"}},"no_such_key":{"code":"no_such_key","category":"chain","source":"SDK_local","status":"wired","httpStatus":null,"retryable":false,"sdkClass":"GislNoSuchKeyError","description":"The caller asked for a mapEach result key that does not exist in the output. NOTE the key itself is NOT captured in metadata today — it is interpolated into the message only, so consumers cannot branch on which key was missing.","metadataSchema":[]},"result_not_ready":{"code":"result_not_ready","category":"validation","source":"SDK_local","status":"wired","httpStatus":null,"retryable":true,"sdkClass":"GislResultNotReadyError","description":"The caller read a result before the workflow reached a terminal state. `state` carries the non-terminal status observed.","metadataSchema":{"workflowId":"string","state":"string"}},"sink_error":{"code":"sink_error","category":"config","source":"SDK_local","status":"wired","httpStatus":null,"retryable":false,"sdkClass":"GislSinkError","description":"A caller-supplied output sink could not be used. Branch on `reason` — the values span both caller setup (invalid_directory, duplicate_filename) and runtime write outcomes (write_failed, partial_failure), so the category is a best fit rather than an exact one.","metadataSchema":{"reason":"string"}},"item_failed":{"code":"item_failed","category":"api","source":"SDK_local","status":"wired","httpStatus":null,"retryable":false,"sdkClass":"GislItemFailedError","description":"CARRIED, not thrown — an entry in a per-item failed[] collection describing one item's server-side failure. `errorCode` carries the server's own code where present; prefer branching on that over this entry.","metadataSchema":{"key":"string","state":"string","errorMessage":"string","errorCode":"string"}}}
+const Gisl\Sdk\Generated\SdkSpec\Presets::PRESETS = {"image_compress":{"Size":{"quality":65,"metadata":"Strip","outputFormat":"Original"},"Balanced":{"quality":80,"metadata":"Strip","outputFormat":"Original"},"Quality":{"quality":92,"metadata":"Strip","outputFormat":"Original"}},"audio_compress":{"Size":{"bitrate":"_96","sampleRate":"_44100","normalize":true},"Balanced":{"bitrate":"_192","sampleRate":"_44100","normalize":true},"Quality":{"bitrate":"_320","sampleRate":"_48000","normalize":false}},"video_compress":{"Size":{"crf":30,"preset":"Slow"},"Balanced":{"crf":23,"preset":"Medium"},"Quality":{"crf":18,"preset":"Slow"}},"document_office_compress":{"Size":{"stripMacros":true,"stripHiddenData":true,"stripUnusedFonts":true},"Balanced":{"stripMacros":true,"stripHiddenData":false,"stripUnusedFonts":false},"Quality":{"stripMacros":false,"stripHiddenData":false,"stripUnusedFonts":false}},"document_odf_compress":{"Size":{"stripMetadata":true,"stripUnusedStyles":true},"Balanced":{"stripMetadata":true,"stripUnusedStyles":false},"Quality":{"stripMetadata":false,"stripUnusedStyles":false}},"document_epub_compress":{"Size":{"fontSubsetting":true,"stripUnusedCss":true},"Balanced":{"fontSubsetting":true,"stripUnusedCss":false},"Quality":{"fontSubsetting":false,"stripUnusedCss":false}}}
+const Gisl\Sdk\Generated\SdkSpec\Version::PRESET_CONFIG_HASH = "sha256:354814f7906f85be6a6ca5ede6c0722c83cdc058fd658a9bb2b0996520466c6d"
+const Gisl\Sdk\Generated\SdkSpec\Version::PRESET_VERSION = "1.6"
+const Gisl\Sdk\Generated\SdkSpec\Version::SDK_SPEC_VERSION = "2.3.0"
+const Gisl\Sdk\GislClientConfig::DEFAULT_MULTIPART_CONCURRENCY = 4
+const Gisl\Sdk\GislClientConfig::DEFAULT_MULTIPART_FIRST_CHUNK_SIZE_BYTES = 8388608
+const Gisl\Sdk\GislClientConfig::DEFAULT_MULTIPART_MAX_ATTEMPTS = 3
+const Gisl\Sdk\GislClientConfig::DEFAULT_MULTIPART_RETRY_BASE_MS = 500
+const Gisl\Sdk\GislClientConfig::DEFAULT_MULTIPART_THRESHOLD_BYTES = 10000000
+const Gisl\Sdk\GislClientConfig::DEFAULT_TIMEOUT_MS = 30000
+const Gisl\Sdk\WorkflowConstants::DEFAULT_POLL_INTERVAL_MS = 2000
+const Gisl\Sdk\WorkflowConstants::DEFAULT_POLL_TIMEOUT_MS = 600000
+const Gisl\Sdk\WorkflowConstants::TERMINAL_STATUSES = ["completed","failed","partially_failed","cancelled","expired","paused_insufficient_credits"]
+enum:int Gisl\Sdk\Generated\SdkSpec\Enums\AudioBitrate
+enum:int Gisl\Sdk\Generated\SdkSpec\Enums\AudioSampleRate
+enum:string Gisl\Sdk\Environment
+enum:string Gisl\Sdk\Ergonomic\ArchiveFormat
+enum:string Gisl\Sdk\Generated\SdkSpec\Enums\AudioCodec
+enum:string Gisl\Sdk\Generated\SdkSpec\Enums\ImageFormat
+enum:string Gisl\Sdk\Generated\SdkSpec\Enums\ImageMetadataPolicy
+enum:string Gisl\Sdk\Generated\SdkSpec\Enums\OptimizeFor
+enum:string Gisl\Sdk\Generated\SdkSpec\Enums\VideoCodec
+enum:string Gisl\Sdk\Generated\SdkSpec\Enums\VideoFit
+enum:string Gisl\Sdk\Generated\SdkSpec\Enums\VideoPreset
+enum:string Gisl\Sdk\Generated\SdkSpec\ErrorCategory
+final class Gisl\Sdk\Cancellation
+final class Gisl\Sdk\Credentials
+final class Gisl\Sdk\CreditsUsageOptions
+final class Gisl\Sdk\Ergonomic\ArchiveRecipeOptions
+final class Gisl\Sdk\Ergonomic\Artifact
+final class Gisl\Sdk\Ergonomic\CapabilitiesSnapshot
+final class Gisl\Sdk\Ergonomic\ClipEntry
+final class Gisl\Sdk\Ergonomic\ClipOptions
+final class Gisl\Sdk\Ergonomic\Handle
+final class Gisl\Sdk\Ergonomic\HandleAsset implements Gisl\Sdk\Ergonomic\Asset
+final class Gisl\Sdk\Ergonomic\ImageOutputRoutes
+final class Gisl\Sdk\Ergonomic\JobBreakdown
+final class Gisl\Sdk\Ergonomic\MapEachBuilder
+final class Gisl\Sdk\Ergonomic\MaxWait
+final class Gisl\Sdk\Ergonomic\Merge
+final class Gisl\Sdk\Ergonomic\MergeBuilder
+final class Gisl\Sdk\Ergonomic\MergeOptions
+final class Gisl\Sdk\Ergonomic\OperationBreakdown
+final class Gisl\Sdk\Ergonomic\OperationBuilder
+final class Gisl\Sdk\Ergonomic\OptionValidation
+final class Gisl\Sdk\Ergonomic\PathAsset implements Gisl\Sdk\Ergonomic\Asset
+final class Gisl\Sdk\Ergonomic\ProcessingProgressEvent extends Gisl\Sdk\Ergonomic\ProgressEvent
+final class Gisl\Sdk\Ergonomic\ResolvedOptions
+final class Gisl\Sdk\Ergonomic\ResolvedOptionsSources
+final class Gisl\Sdk\Ergonomic\ResourceAsset implements Gisl\Sdk\Ergonomic\Asset
+final class Gisl\Sdk\Ergonomic\Result
+final class Gisl\Sdk\Ergonomic\RunOptions
+final class Gisl\Sdk\Ergonomic\SseConnectRefused extends RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Ergonomic\SseStreamEndedWithoutTerminal extends RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Ergonomic\StatusSnapshot
+final class Gisl\Sdk\Ergonomic\SubmitOptions
+final class Gisl\Sdk\Ergonomic\UploadProgressEvent extends Gisl\Sdk\Ergonomic\ProgressEvent
+final class Gisl\Sdk\Errors\GislAbortError extends Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislAuthRejectionError extends Gisl\Sdk\Errors\GislApiError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislBalanceExhaustedError extends Gisl\Sdk\Errors\GislApiError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislBundleAlreadyArchivedError extends Gisl\Sdk\Errors\GislConfigError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislChainCardinalityMismatchError extends Gisl\Sdk\Errors\GislConfigError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislDownloadHttpError extends Gisl\Sdk\Errors\GislNetworkError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislFanOutTimeoutError extends Gisl\Sdk\Errors\GislTimeoutError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislFeatureNotAvailableError extends Gisl\Sdk\Errors\GislApiError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislFeatureRequiresAuthError extends Gisl\Sdk\Errors\GislConfigError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislFeatureTierRestrictedError extends Gisl\Sdk\Errors\GislApiError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislItemFailedError extends Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislLongFormConcurrencyError extends Gisl\Sdk\Errors\GislApiError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislMissingCredentialsError extends Gisl\Sdk\Errors\GislConfigError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislMultipartPartCountError extends Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislMultipartPartError extends Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislMultipartSessionAuthRequiredError extends Gisl\Sdk\Errors\GislApiError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislMultipartSessionNotFoundError extends Gisl\Sdk\Errors\GislApiError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislMultipartSessionOwnershipError extends Gisl\Sdk\Errors\GislApiError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislNoSuchKeyError extends Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislPerInputOptionsNotSupportedError extends Gisl\Sdk\Errors\GislConfigError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislProbePendingError extends Gisl\Sdk\Errors\GislApiError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislRequestNotSentError extends Gisl\Sdk\Errors\GislNetworkError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislResultNotReadyError extends Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislSinkError extends Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislStreamHostNotDeclaredError extends Gisl\Sdk\Errors\GislConfigError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislTierRestrictedError extends Gisl\Sdk\Errors\GislApiError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislTransportError extends Gisl\Sdk\Errors\GislNetworkError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislUndeclaredAssetError extends Gisl\Sdk\Errors\GislConfigError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislUnusedAssetError extends Gisl\Sdk\Errors\GislConfigError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislUploadCapExceededError extends Gisl\Sdk\Errors\GislApiError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislValidationError extends Gisl\Sdk\Errors\GislApiError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislWorkflowExpiredError extends Gisl\Sdk\Errors\GislApiError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\NotYetImplementedDispatch extends Gisl\Sdk\Errors\GislConfigError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\FileFirst\ArchivedRecipe
+final class Gisl\Sdk\FileFirst\BatchRecipe
+final class Gisl\Sdk\FileFirst\FileInput
+final class Gisl\Sdk\FileFirst\FilesRecipe
+final class Gisl\Sdk\FileFirst\ItemFailure
+final class Gisl\Sdk\FileFirst\ItemResult
+final class Gisl\Sdk\FileFirst\Manifest
+final class Gisl\Sdk\FileFirst\MergedRecipe
+final class Gisl\Sdk\FileFirst\OutputFile
+final class Gisl\Sdk\FileFirst\Recipe
+final class Gisl\Sdk\FileFirst\RecipeStep
+final class Gisl\Sdk\FileFirst\RunResult
+final class Gisl\Sdk\FileFirst\StreamingDownloader implements Gisl\Sdk\FileFirst\Downloader
+final class Gisl\Sdk\FileFirst\WatermarkGate
+final class Gisl\Sdk\FileFirst\WatermarkedRecipe
+final class Gisl\Sdk\Generated\SdkSpec\Errors
+final class Gisl\Sdk\Generated\SdkSpec\Presets
+final class Gisl\Sdk\Generated\SdkSpec\Version
+final class Gisl\Sdk\GetSchemaHitResult extends Gisl\Sdk\GetSchemaResult
+final class Gisl\Sdk\GetSchemaNotModifiedResult extends Gisl\Sdk\GetSchemaResult
+final class Gisl\Sdk\GetSchemaOptions
+final class Gisl\Sdk\Gisl
+final class Gisl\Sdk\GislClientConfig
+final class Gisl\Sdk\GislSseEvent
+final class Gisl\Sdk\GislSseParseFailure
+final class Gisl\Sdk\Http\RateLimitHeaders
+final class Gisl\Sdk\Http\UploadSource
+final class Gisl\Sdk\JobDefinitionPayload
+final class Gisl\Sdk\MultipartCheckpointState implements JsonSerializable
+final class Gisl\Sdk\OperationDef
+final class Gisl\Sdk\PreflightClipError
+final class Gisl\Sdk\PreflightClipsResult
+final class Gisl\Sdk\PresetDefaults
+final class Gisl\Sdk\Preset\AudioCompressPresetOptions
+final class Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions
+final class Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions
+final class Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions
+final class Gisl\Sdk\Preset\ImageCompressPresetOptions
+final class Gisl\Sdk\Preset\PresetCellTranslator
+final class Gisl\Sdk\Preset\VideoCompressPresetOptions
+final class Gisl\Sdk\ProbeWaitOptions
+final class Gisl\Sdk\ProbeWaitResult
+final class Gisl\Sdk\Sources
+final class Gisl\Sdk\UploadOptions
+final class Gisl\Sdk\WaitOptions
+final class Gisl\Sdk\Webhook
+final class Gisl\Sdk\WorkflowConstants
+final class Gisl\Sdk\WorkflowCreatePayload
+interface Gisl\Sdk\Ergonomic\Asset
+interface Gisl\Sdk\FileFirst\Downloader
+interface Gisl\Sdk\Http\MultipartPartUploader
+internal Gisl\Sdk\Ergonomic\BuilderInternals
+internal Gisl\Sdk\Ergonomic\PositionEntry
+internal Gisl\Sdk\Ergonomic\PresetResolver
+internal Gisl\Sdk\Ergonomic\SequencePlan
+internal Gisl\Sdk\FileFirst\MultiInputUpload
+internal Gisl\Sdk\Http\CurlMultiPartUploader
+method Gisl\Sdk\Cancellation::cancel()
+method Gisl\Sdk\Cancellation::isCancelled()
+method Gisl\Sdk\CreditsUsageOptions::__construct()
+method Gisl\Sdk\Ergonomic\ArchiveRecipeOptions::__construct()
+method Gisl\Sdk\Ergonomic\Artifact::__construct()
+method Gisl\Sdk\Ergonomic\Artifact::toArray()
+method Gisl\Sdk\Ergonomic\CapabilitiesSnapshot::__construct()
+method Gisl\Sdk\Ergonomic\CapabilitiesSnapshot::toArray()
+method Gisl\Sdk\Ergonomic\ClipEntry::__construct()
+method Gisl\Sdk\Ergonomic\ClipOptions::__construct()
+method Gisl\Sdk\Ergonomic\ClipOptions::isEmpty()
+method Gisl\Sdk\Ergonomic\Handle::__construct()
+method Gisl\Sdk\Ergonomic\Handle::result()
+method Gisl\Sdk\Ergonomic\Handle::status()
+method Gisl\Sdk\Ergonomic\Handle::toArray()
+method Gisl\Sdk\Ergonomic\Handle::wait()
+method Gisl\Sdk\Ergonomic\HandleAsset::__construct()
+method Gisl\Sdk\Ergonomic\JobBreakdown::__construct()
+method Gisl\Sdk\Ergonomic\JobBreakdown::toArray()
+method Gisl\Sdk\Ergonomic\MapEachBuilder::__construct()
+method Gisl\Sdk\Ergonomic\MapEachBuilder::run()
+method Gisl\Sdk\Ergonomic\MergeBuilder::__construct()
+method Gisl\Sdk\Ergonomic\MergeBuilder::run()
+method Gisl\Sdk\Ergonomic\MergeBuilder::sequence()
+method Gisl\Sdk\Ergonomic\MergeBuilder::submit()
+method Gisl\Sdk\Ergonomic\MergeOptions::__construct()
+method Gisl\Sdk\Ergonomic\OperationBreakdown::__construct()
+method Gisl\Sdk\Ergonomic\OperationBreakdown::toArray()
+method Gisl\Sdk\Ergonomic\OperationBuilder::__construct()
+method Gisl\Sdk\Ergonomic\OperationBuilder::mapEach()
+method Gisl\Sdk\Ergonomic\OperationBuilder::run()
+method Gisl\Sdk\Ergonomic\OperationBuilder::submit()
+method Gisl\Sdk\Ergonomic\PathAsset::__construct()
+method Gisl\Sdk\Ergonomic\ProcessingProgressEvent::__construct()
+method Gisl\Sdk\Ergonomic\ProcessingProgressEvent::toArray()
+method Gisl\Sdk\Ergonomic\ProgressEvent::__construct()
+method Gisl\Sdk\Ergonomic\ResolvedOptions::__construct()
+method Gisl\Sdk\Ergonomic\ResolvedOptions::toArray()
+method Gisl\Sdk\Ergonomic\ResolvedOptionsSources::__construct()
+method Gisl\Sdk\Ergonomic\ResolvedOptionsSources::toArray()
+method Gisl\Sdk\Ergonomic\ResourceAsset::__construct()
+method Gisl\Sdk\Ergonomic\Result::__construct()
+method Gisl\Sdk\Ergonomic\Result::toArray()
+method Gisl\Sdk\Ergonomic\RunOptions::__construct()
+method Gisl\Sdk\Ergonomic\SseConnectRefused::__construct()
+method Gisl\Sdk\Ergonomic\StatusSnapshot::__construct()
+method Gisl\Sdk\Ergonomic\StatusSnapshot::isTerminal()
+method Gisl\Sdk\Ergonomic\StatusSnapshot::toArray()
+method Gisl\Sdk\Ergonomic\SubmitOptions::__construct()
+method Gisl\Sdk\Ergonomic\UploadProgressEvent::__construct()
+method Gisl\Sdk\Ergonomic\UploadProgressEvent::toArray()
+method Gisl\Sdk\Errors\GislApiError::__construct()
+method Gisl\Sdk\Errors\GislApiError::category()
+method Gisl\Sdk\Errors\GislApiError::rateLimit()
+method Gisl\Sdk\Errors\GislApiError::retryAfterSeconds()
+method Gisl\Sdk\Errors\GislApiError::retryable()
+method Gisl\Sdk\Errors\GislAuthError::__construct()
+method Gisl\Sdk\Errors\GislAuthRejectionError::__construct()
+method Gisl\Sdk\Errors\GislAuthRejectionError::getAuthRejection()
+method Gisl\Sdk\Errors\GislAuthRejectionError::getErrorType()
+method Gisl\Sdk\Errors\GislBalanceExhaustedError::__construct()
+method Gisl\Sdk\Errors\GislBundleAlreadyArchivedError::__construct()
+method Gisl\Sdk\Errors\GislChainCardinalityMismatchError::__construct()
+method Gisl\Sdk\Errors\GislConfigError::__construct()
+method Gisl\Sdk\Errors\GislConfigError::getConflictingFields()
+method Gisl\Sdk\Errors\GislConfigError::getReason()
+method Gisl\Sdk\Errors\GislConfigError::getResolvedSnapshot()
+method Gisl\Sdk\Errors\GislConfigError::getSuggestion()
+method Gisl\Sdk\Errors\GislDownloadHttpError::__construct()
+method Gisl\Sdk\Errors\GislDownloadHttpError::retryable()
+method Gisl\Sdk\Errors\GislFanOutTimeoutError::__construct()
+method Gisl\Sdk\Errors\GislFeatureNotAvailableError::__construct()
+method Gisl\Sdk\Errors\GislFeatureRequiresAuthError::__construct()
+method Gisl\Sdk\Errors\GislFeatureTierRestrictedError::__construct()
+method Gisl\Sdk\Errors\GislItemFailedError::__construct()
+method Gisl\Sdk\Errors\GislLongFormConcurrencyError::__construct()
+method Gisl\Sdk\Errors\GislLongFormConcurrencyError::retryable()
+method Gisl\Sdk\Errors\GislLongFormConcurrencyError::upgradeUrl()
+method Gisl\Sdk\Errors\GislMultipartPartCountError::__construct()
+method Gisl\Sdk\Errors\GislMultipartPartError::__construct()
+method Gisl\Sdk\Errors\GislNetworkError::__construct()
+method Gisl\Sdk\Errors\GislPerInputOptionsNotSupportedError::__construct()
+method Gisl\Sdk\Errors\GislProbePendingError::__construct()
+method Gisl\Sdk\Errors\GislRequestNotSentError::retryable()
+method Gisl\Sdk\Errors\GislResultNotReadyError::__construct()
+method Gisl\Sdk\Errors\GislResultNotReadyError::getState()
+method Gisl\Sdk\Errors\GislResultNotReadyError::getWorkflowId()
+method Gisl\Sdk\Errors\GislSinkError::__construct()
+method Gisl\Sdk\Errors\GislSinkError::getReason()
+method Gisl\Sdk\Errors\GislTierRestrictedError::__construct()
+method Gisl\Sdk\Errors\GislTimeoutError::__construct()
+method Gisl\Sdk\Errors\GislTransportError::retryable()
+method Gisl\Sdk\Errors\GislUndeclaredAssetError::__construct()
+method Gisl\Sdk\Errors\GislUnusedAssetError::__construct()
+method Gisl\Sdk\Errors\GislUploadCapExceededError::__construct()
+method Gisl\Sdk\Errors\GislValidationError::__construct()
+method Gisl\Sdk\Errors\GislWorkflowExpiredError::__construct()
+method Gisl\Sdk\Errors\NotYetImplementedDispatch::__construct()
+method Gisl\Sdk\Errors\NotYetImplementedDispatch::category()
+method Gisl\Sdk\Errors\NotYetImplementedDispatch::code()
+method Gisl\Sdk\FileFirst\ArchivedRecipe::__construct()
+method Gisl\Sdk\FileFirst\ArchivedRecipe::getInputCount()
+method Gisl\Sdk\FileFirst\ArchivedRecipe::run()
+method Gisl\Sdk\FileFirst\ArchivedRecipe::submit()
+method Gisl\Sdk\FileFirst\ArchivedRecipe::toWorkflowPayload()
+method Gisl\Sdk\FileFirst\BatchRecipe::__construct()
+method Gisl\Sdk\FileFirst\BatchRecipe::recipeCount()
+method Gisl\Sdk\FileFirst\BatchRecipe::run()
+method Gisl\Sdk\FileFirst\Downloader::downloadTo()
+method Gisl\Sdk\FileFirst\FileInput::compressAudioLosslessHint()
+method Gisl\Sdk\FileFirst\FileInput::compressMediaHint()
+method Gisl\Sdk\FileFirst\FilesRecipe::__construct()
+method Gisl\Sdk\FileFirst\FilesRecipe::archive()
+method Gisl\Sdk\FileFirst\FilesRecipe::compress()
+method Gisl\Sdk\FileFirst\FilesRecipe::convert()
+method Gisl\Sdk\FileFirst\FilesRecipe::inputCount()
+method Gisl\Sdk\FileFirst\FilesRecipe::merge()
+method Gisl\Sdk\FileFirst\FilesRecipe::run()
+method Gisl\Sdk\FileFirst\FilesRecipe::stepCount()
+method Gisl\Sdk\FileFirst\FilesRecipe::submit()
+method Gisl\Sdk\FileFirst\FilesRecipe::textWatermark()
+method Gisl\Sdk\FileFirst\FilesRecipe::thumbnail()
+method Gisl\Sdk\FileFirst\FilesRecipe::transform()
+method Gisl\Sdk\FileFirst\ItemFailure::__construct()
+method Gisl\Sdk\FileFirst\ItemFailure::toArray()
+method Gisl\Sdk\FileFirst\ItemResult::__construct()
+method Gisl\Sdk\FileFirst\ItemResult::toArray()
+method Gisl\Sdk\FileFirst\Manifest::__construct()
+method Gisl\Sdk\FileFirst\Manifest::toArray()
+method Gisl\Sdk\FileFirst\MergedRecipe::__construct()
+method Gisl\Sdk\FileFirst\MergedRecipe::compress()
+method Gisl\Sdk\FileFirst\MergedRecipe::convert()
+method Gisl\Sdk\FileFirst\MergedRecipe::getInputCount()
+method Gisl\Sdk\FileFirst\MergedRecipe::getStepCount()
+method Gisl\Sdk\FileFirst\MergedRecipe::run()
+method Gisl\Sdk\FileFirst\MergedRecipe::submit()
+method Gisl\Sdk\FileFirst\MergedRecipe::thumbnail()
+method Gisl\Sdk\FileFirst\MergedRecipe::toWorkflowPayload()
+method Gisl\Sdk\FileFirst\MergedRecipe::transform()
+method Gisl\Sdk\FileFirst\OutputFile::__construct()
+method Gisl\Sdk\FileFirst\OutputFile::toArray()
+method Gisl\Sdk\FileFirst\Recipe::__construct()
+method Gisl\Sdk\FileFirst\Recipe::compress()
+method Gisl\Sdk\FileFirst\Recipe::convert()
+method Gisl\Sdk\FileFirst\Recipe::key()
+method Gisl\Sdk\FileFirst\Recipe::output()
+method Gisl\Sdk\FileFirst\Recipe::resize()
+method Gisl\Sdk\FileFirst\Recipe::run()
+method Gisl\Sdk\FileFirst\Recipe::stepCount()
+method Gisl\Sdk\FileFirst\Recipe::submit()
+method Gisl\Sdk\FileFirst\Recipe::textWatermark()
+method Gisl\Sdk\FileFirst\Recipe::thumbnail()
+method Gisl\Sdk\FileFirst\Recipe::transform()
+method Gisl\Sdk\FileFirst\Recipe::watermark()
+method Gisl\Sdk\FileFirst\RecipeStep::__construct()
+method Gisl\Sdk\FileFirst\RunResult::__construct()
+method Gisl\Sdk\FileFirst\RunResult::byKey()
+method Gisl\Sdk\FileFirst\RunResult::downloadTo()
+method Gisl\Sdk\FileFirst\RunResult::toArray()
+method Gisl\Sdk\FileFirst\RunResult::toFile()
+method Gisl\Sdk\FileFirst\StreamingDownloader::downloadTo()
+method Gisl\Sdk\FileFirst\WatermarkedRecipe::__construct()
+method Gisl\Sdk\FileFirst\WatermarkedRecipe::compress()
+method Gisl\Sdk\FileFirst\WatermarkedRecipe::convert()
+method Gisl\Sdk\FileFirst\WatermarkedRecipe::run()
+method Gisl\Sdk\FileFirst\WatermarkedRecipe::stepCount()
+method Gisl\Sdk\FileFirst\WatermarkedRecipe::submit()
+method Gisl\Sdk\FileFirst\WatermarkedRecipe::thumbnail()
+method Gisl\Sdk\FileFirst\WatermarkedRecipe::toWorkflowPayload()
+method Gisl\Sdk\FileFirst\WatermarkedRecipe::transform()
+method Gisl\Sdk\GetSchemaHitResult::__construct()
+method Gisl\Sdk\GetSchemaNotModifiedResult::__construct()
+method Gisl\Sdk\GetSchemaOptions::__construct()
+method Gisl\Sdk\GislClient::__construct()
+method Gisl\Sdk\GislClient::cancelWorkflow()
+method Gisl\Sdk\GislClient::createExternalImport()
+method Gisl\Sdk\GislClient::createWorkflow()
+method Gisl\Sdk\GislClient::decodeAudioWatermark()
+method Gisl\Sdk\GislClient::getAccountLimits()
+method Gisl\Sdk\GislClient::getCreditsBalance()
+method Gisl\Sdk\GislClient::getCreditsUsage()
+method Gisl\Sdk\GislClient::getMetadata()
+method Gisl\Sdk\GislClient::getSchema()
+method Gisl\Sdk\GislClient::getUploadStatus()
+method Gisl\Sdk\GislClient::getWorkflowDownloads()
+method Gisl\Sdk\GislClient::getWorkflowStatus()
+method Gisl\Sdk\GislClient::keepaliveUpload()
+method Gisl\Sdk\GislClient::listWorkflows()
+method Gisl\Sdk\GislClient::login()
+method Gisl\Sdk\GislClient::logout()
+method Gisl\Sdk\GislClient::maybeWaitForVideoProbe()
+method Gisl\Sdk\GislClient::preflightClips()
+method Gisl\Sdk\GislClient::presignParts()
+method Gisl\Sdk\GislClient::probeUpload()
+method Gisl\Sdk\GislClient::resumeWorkflow()
+method Gisl\Sdk\GislClient::retryOperation()
+method Gisl\Sdk\GislClient::streamEvents()
+method Gisl\Sdk\GislClient::submitContact()
+method Gisl\Sdk\GislClient::uploadFile()
+method Gisl\Sdk\GislClient::waitForProbe()
+method Gisl\Sdk\GislClient::waitForWorkflow()
+method Gisl\Sdk\GislClient::workflows()
+method Gisl\Sdk\GislClientConfig::__construct()
+method Gisl\Sdk\GislErgonomicClient::__construct()
+method Gisl\Sdk\GislErgonomicClient::batch()
+method Gisl\Sdk\GislErgonomicClient::capabilities()
+method Gisl\Sdk\GislErgonomicClient::compress()
+method Gisl\Sdk\GislErgonomicClient::convert()
+method Gisl\Sdk\GislErgonomicClient::credits()
+method Gisl\Sdk\GislErgonomicClient::creditsUsage()
+method Gisl\Sdk\GislErgonomicClient::file()
+method Gisl\Sdk\GislErgonomicClient::files()
+method Gisl\Sdk\GislErgonomicClient::limits()
+method Gisl\Sdk\GislErgonomicClient::merge()
+method Gisl\Sdk\GislErgonomicClient::operation()
+method Gisl\Sdk\GislErgonomicClient::thumbnail()
+method Gisl\Sdk\GislErgonomicClient::transform()
+method Gisl\Sdk\GislErgonomicClient::withPresetDefaults()
+method Gisl\Sdk\GislErgonomicClient::workflow()
+method Gisl\Sdk\GislSseEvent::__construct()
+method Gisl\Sdk\GislSseParseFailure::__construct()
+method Gisl\Sdk\Http\MultipartPartUploader::uploadParts()
+method Gisl\Sdk\Http\UploadSource::isConcurrencySafe()
+method Gisl\Sdk\Http\UploadSource::name()
+method Gisl\Sdk\Http\UploadSource::path()
+method Gisl\Sdk\Http\UploadSource::readAll()
+method Gisl\Sdk\Http\UploadSource::readRange()
+method Gisl\Sdk\Http\UploadSource::size()
+method Gisl\Sdk\JobDefinitionPayload::__construct()
+method Gisl\Sdk\JobDefinitionPayload::toWire()
+method Gisl\Sdk\MultipartCheckpointState::__construct()
+method Gisl\Sdk\MultipartCheckpointState::jsonSerialize()
+method Gisl\Sdk\OperationDef::__construct()
+method Gisl\Sdk\OperationDef::toWire()
+method Gisl\Sdk\PreflightClipError::__construct()
+method Gisl\Sdk\PreflightClipsResult::__construct()
+method Gisl\Sdk\PresetDefaults::audioCompress()
+method Gisl\Sdk\PresetDefaults::cellFor()
+method Gisl\Sdk\PresetDefaults::epubCompress()
+method Gisl\Sdk\PresetDefaults::imageCompress()
+method Gisl\Sdk\PresetDefaults::odfCompress()
+method Gisl\Sdk\PresetDefaults::officeCompress()
+method Gisl\Sdk\PresetDefaults::videoCompress()
+method Gisl\Sdk\Preset\AudioCompressPresetOptions::__construct()
+method Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions::__construct()
+method Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions::__construct()
+method Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions::__construct()
+method Gisl\Sdk\Preset\ImageCompressPresetOptions::__construct()
+method Gisl\Sdk\Preset\VideoCompressPresetOptions::__construct()
+method Gisl\Sdk\ProbeWaitOptions::__construct()
+method Gisl\Sdk\ProbeWaitResult::__construct()
+method Gisl\Sdk\UploadOptions::__construct()
+method Gisl\Sdk\WaitOptions::__construct()
+method Gisl\Sdk\WorkflowCreatePayload::__construct()
+method Gisl\Sdk\WorkflowCreatePayload::toWire()
+property Gisl\Sdk\UploadOptions::$contentType : ?string
+property Gisl\Sdk\UploadOptions::$filename : ?string
+property Gisl\Sdk\UploadOptions::$metadataHint : ?Gisl\Generated\OpenApi\Model\MultipartInitiateRequestMetadataHint
+property Gisl\Sdk\UploadOptions::$onCheckpoint : mixed
+property Gisl\Sdk\UploadOptions::$onProgress : mixed
+property Gisl\Sdk\UploadOptions::$resumeUploadId : ?string
+readonly property Gisl\Sdk\CreditsUsageOptions::$limit : ?int
+readonly property Gisl\Sdk\CreditsUsageOptions::$offset : ?int
+readonly property Gisl\Sdk\Environment::$name : string
+readonly property Gisl\Sdk\Environment::$value : string
+readonly property Gisl\Sdk\Ergonomic\ArchiveFormat::$name : string
+readonly property Gisl\Sdk\Ergonomic\ArchiveFormat::$value : string
+readonly property Gisl\Sdk\Ergonomic\ArchiveRecipeOptions::$folderStructure : ?string
+readonly property Gisl\Sdk\Ergonomic\ArchiveRecipeOptions::$format : Gisl\Sdk\Ergonomic\ArchiveFormat|string|null
+readonly property Gisl\Sdk\Ergonomic\Artifact::$filename : string
+readonly property Gisl\Sdk\Ergonomic\Artifact::$jobId : string
+readonly property Gisl\Sdk\Ergonomic\Artifact::$operation : string
+readonly property Gisl\Sdk\Ergonomic\Artifact::$operationId : string
+readonly property Gisl\Sdk\Ergonomic\Artifact::$pageIndex : ?int
+readonly property Gisl\Sdk\Ergonomic\Artifact::$position : ?int
+readonly property Gisl\Sdk\Ergonomic\Artifact::$ref : string
+readonly property Gisl\Sdk\Ergonomic\Artifact::$sizeBytes : int
+readonly property Gisl\Sdk\Ergonomic\Artifact::$url : string
+readonly property Gisl\Sdk\Ergonomic\CapabilitiesSnapshot::$imageEncode : ?Gisl\Generated\OpenApi\Model\ImageEncodeCapabilities
+readonly property Gisl\Sdk\Ergonomic\CapabilitiesSnapshot::$operations : array
+readonly property Gisl\Sdk\Ergonomic\CapabilitiesSnapshot::$outputProperties : array
+readonly property Gisl\Sdk\Ergonomic\ClipEntry::$asset : Gisl\Sdk\Ergonomic\Asset
+readonly property Gisl\Sdk\Ergonomic\ClipEntry::$options : Gisl\Sdk\Ergonomic\ClipOptions
+readonly property Gisl\Sdk\Ergonomic\ClipOptions::$crossfadeDuration : ?float
+readonly property Gisl\Sdk\Ergonomic\ClipOptions::$gapDuration : ?float
+readonly property Gisl\Sdk\Ergonomic\ClipOptions::$transition : ?string
+readonly property Gisl\Sdk\Ergonomic\Handle::$key : ?string
+readonly property Gisl\Sdk\Ergonomic\Handle::$webhookSecret : ?string
+readonly property Gisl\Sdk\Ergonomic\Handle::$workflowId : string
+readonly property Gisl\Sdk\Ergonomic\HandleAsset::$fileId : string
+readonly property Gisl\Sdk\Ergonomic\JobBreakdown::$jobId : string
+readonly property Gisl\Sdk\Ergonomic\JobBreakdown::$operations : array
+readonly property Gisl\Sdk\Ergonomic\JobBreakdown::$ref : string
+readonly property Gisl\Sdk\Ergonomic\JobBreakdown::$status : string
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$allowUnusedAssets : bool
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$codec : ?string
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$crf : ?int
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$crossfadeDuration : ?float
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$delay : ?int
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$durationPerImage : ?float
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$fps : ?float
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$gapDuration : ?float
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$loopCount : ?int
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$mediaKind : ?string
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$normalizeAudio : ?bool
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$output : ?string
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$outputType : ?string
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$preset : ?string
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$reEncodeMode : ?string
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$targetResolution : ?string
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$targetSize : string|int|null
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$transition : ?string
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$transitionDuration : ?float
+readonly property Gisl\Sdk\Ergonomic\MergeOptions::$videoFormat : ?string
+readonly property Gisl\Sdk\Ergonomic\OperationBreakdown::$errorCode : ?string
+readonly property Gisl\Sdk\Ergonomic\OperationBreakdown::$errorMessage : ?string
+readonly property Gisl\Sdk\Ergonomic\OperationBreakdown::$id : string
+readonly property Gisl\Sdk\Ergonomic\OperationBreakdown::$progress : ?float
+readonly property Gisl\Sdk\Ergonomic\OperationBreakdown::$status : string
+readonly property Gisl\Sdk\Ergonomic\OperationBreakdown::$type : string
+readonly property Gisl\Sdk\Ergonomic\PathAsset::$path : string
+readonly property Gisl\Sdk\Ergonomic\ProcessingProgressEvent::$jobRef : string
+readonly property Gisl\Sdk\Ergonomic\ProcessingProgressEvent::$operationId : string
+readonly property Gisl\Sdk\Ergonomic\ProcessingProgressEvent::$phaseInputIndex : ?int
+readonly property Gisl\Sdk\Ergonomic\ProcessingProgressEvent::$phaseTotalInputs : ?int
+readonly property Gisl\Sdk\Ergonomic\ProcessingProgressEvent::$progress : float
+readonly property Gisl\Sdk\Ergonomic\ProcessingProgressEvent::$stage : ?string
+readonly property Gisl\Sdk\Ergonomic\ProcessingProgressEvent::$status : ?string
+readonly property Gisl\Sdk\Ergonomic\ProgressEvent::$phase : string
+readonly property Gisl\Sdk\Ergonomic\ResolvedOptions::$applied : array
+readonly property Gisl\Sdk\Ergonomic\ResolvedOptions::$overrides : array
+readonly property Gisl\Sdk\Ergonomic\ResolvedOptions::$preset : ?string
+readonly property Gisl\Sdk\Ergonomic\ResolvedOptions::$presetConfigHash : ?string
+readonly property Gisl\Sdk\Ergonomic\ResolvedOptions::$presetVersion : string
+readonly property Gisl\Sdk\Ergonomic\ResolvedOptions::$sources : Gisl\Sdk\Ergonomic\ResolvedOptionsSources
+readonly property Gisl\Sdk\Ergonomic\ResolvedOptionsSources::$callPresetOverride : array
+readonly property Gisl\Sdk\Ergonomic\ResolvedOptionsSources::$clientDefault : array
+readonly property Gisl\Sdk\Ergonomic\ResolvedOptionsSources::$explicit : array
+readonly property Gisl\Sdk\Ergonomic\ResolvedOptionsSources::$scopedDefault : array
+readonly property Gisl\Sdk\Ergonomic\ResolvedOptionsSources::$sdkDefault : array
+readonly property Gisl\Sdk\Ergonomic\ResourceAsset::$resource : mixed
+readonly property Gisl\Sdk\Ergonomic\Result::$artifacts : array
+readonly property Gisl\Sdk\Ergonomic\Result::$createdAt : ?string
+readonly property Gisl\Sdk\Ergonomic\Result::$jobs : array
+readonly property Gisl\Sdk\Ergonomic\Result::$resolvedOptions : Gisl\Sdk\Ergonomic\ResolvedOptions
+readonly property Gisl\Sdk\Ergonomic\Result::$status : string
+readonly property Gisl\Sdk\Ergonomic\Result::$updatedAt : ?string
+readonly property Gisl\Sdk\Ergonomic\Result::$url : ?string
+readonly property Gisl\Sdk\Ergonomic\Result::$workflowId : string
+readonly property Gisl\Sdk\Ergonomic\RunOptions::$cancellation : ?Gisl\Sdk\Cancellation
+readonly property Gisl\Sdk\Ergonomic\RunOptions::$maxWait : string|int|null
+readonly property Gisl\Sdk\Ergonomic\RunOptions::$onProgress : mixed
+readonly property Gisl\Sdk\Ergonomic\RunOptions::$pollIntervalMs : ?int
+readonly property Gisl\Sdk\Ergonomic\RunOptions::$probeBeforeCreate : ?bool
+readonly property Gisl\Sdk\Ergonomic\RunOptions::$probeTimeoutMs : ?int
+readonly property Gisl\Sdk\Ergonomic\RunOptions::$useSSE : bool
+readonly property Gisl\Sdk\Ergonomic\SseConnectRefused::$refusal : Gisl\Sdk\Errors\GislApiError
+readonly property Gisl\Sdk\Ergonomic\StatusSnapshot::$state : string
+readonly property Gisl\Sdk\Ergonomic\StatusSnapshot::$workflowId : string
+readonly property Gisl\Sdk\Ergonomic\SubmitOptions::$cancellation : ?Gisl\Sdk\Cancellation
+readonly property Gisl\Sdk\Ergonomic\SubmitOptions::$probeBeforeCreate : ?bool
+readonly property Gisl\Sdk\Ergonomic\SubmitOptions::$probeTimeoutMs : ?int
+readonly property Gisl\Sdk\Ergonomic\SubmitOptions::$webhook : ?string
+readonly property Gisl\Sdk\Ergonomic\UploadProgressEvent::$totalBytes : int
+readonly property Gisl\Sdk\Ergonomic\UploadProgressEvent::$uploadedBytes : int
+readonly property Gisl\Sdk\Errors\GislApiError::$contentLanguage : ?string
+readonly property Gisl\Sdk\Errors\GislApiError::$errorCode : string
+readonly property Gisl\Sdk\Errors\GislApiError::$locale : ?string
+readonly property Gisl\Sdk\Errors\GislApiError::$messageKey : ?string
+readonly property Gisl\Sdk\Errors\GislApiError::$messageParams : ?array
+readonly property Gisl\Sdk\Errors\GislApiError::$payload : array
+readonly property Gisl\Sdk\Errors\GislApiError::$responseHeaders : array
+readonly property Gisl\Sdk\Errors\GislApiError::$statusCode : int
+readonly property Gisl\Sdk\Errors\GislAuthError::$typedPayload : ?Gisl\Generated\OpenApi\Model\AuthErrorResponse
+readonly property Gisl\Sdk\Errors\GislAuthRejectionError::$typedPayload : Gisl\Generated\OpenApi\Model\AuthRejectionEnvelope
+readonly property Gisl\Sdk\Errors\GislBalanceExhaustedError::$typedPayload : Gisl\Generated\OpenApi\Model\BalanceExhaustedResponse
+readonly property Gisl\Sdk\Errors\GislChainCardinalityMismatchError::$attemptedOperation : string
+readonly property Gisl\Sdk\Errors\GislChainCardinalityMismatchError::$previousOperation : string
+readonly property Gisl\Sdk\Errors\GislConfigError::$conflictingFields : ?array
+readonly property Gisl\Sdk\Errors\GislConfigError::$reason : ?string
+readonly property Gisl\Sdk\Errors\GislConfigError::$resolvedSnapshot : ?array
+readonly property Gisl\Sdk\Errors\GislConfigError::$suggestion : ?string
+readonly property Gisl\Sdk\Errors\GislDownloadHttpError::$status : int
+readonly property Gisl\Sdk\Errors\GislFanOutTimeoutError::$completedWorkflowIds : array
+readonly property Gisl\Sdk\Errors\GislFanOutTimeoutError::$parentWorkflowId : ?string
+readonly property Gisl\Sdk\Errors\GislFeatureNotAvailableError::$typedPayload : Gisl\Generated\OpenApi\Model\FeatureNotAvailableResponse
+readonly property Gisl\Sdk\Errors\GislFeatureRequiresAuthError::$operation : string
+readonly property Gisl\Sdk\Errors\GislFeatureTierRestrictedError::$typedPayload : Gisl\Generated\OpenApi\Model\FeatureTierRestrictedResponse
+readonly property Gisl\Sdk\Errors\GislItemFailedError::$errorCode : ?string
+readonly property Gisl\Sdk\Errors\GislItemFailedError::$errorMessage : ?string
+readonly property Gisl\Sdk\Errors\GislItemFailedError::$key : ?string
+readonly property Gisl\Sdk\Errors\GislItemFailedError::$state : string
+readonly property Gisl\Sdk\Errors\GislLongFormConcurrencyError::$typedPayload : Gisl\Generated\OpenApi\Model\LongFormConcurrencyLimitResponse
+readonly property Gisl\Sdk\Errors\GislMultipartPartCountError::$maxParts : int
+readonly property Gisl\Sdk\Errors\GislMultipartPartCountError::$requiredParts : int
+readonly property Gisl\Sdk\Errors\GislMultipartPartError::$partNumber : int
+readonly property Gisl\Sdk\Errors\GislMultipartPartError::$uploadId : string
+readonly property Gisl\Sdk\Errors\GislPerInputOptionsNotSupportedError::$mediaKind : string
+readonly property Gisl\Sdk\Errors\GislProbePendingError::$typedPayload : Gisl\Generated\OpenApi\Model\ProbePendingResponse
+readonly property Gisl\Sdk\Errors\GislResultNotReadyError::$state : string
+readonly property Gisl\Sdk\Errors\GislResultNotReadyError::$workflowId : string
+readonly property Gisl\Sdk\Errors\GislSinkError::$reason : string
+readonly property Gisl\Sdk\Errors\GislTierRestrictedError::$typedPayload : Gisl\Generated\OpenApi\Model\TierRestrictionResponse
+readonly property Gisl\Sdk\Errors\GislTimeoutError::$workflowId : ?string
+readonly property Gisl\Sdk\Errors\GislUndeclaredAssetError::$assetId : string
+readonly property Gisl\Sdk\Errors\GislUndeclaredAssetError::$declaredAssets : array
+readonly property Gisl\Sdk\Errors\GislUnusedAssetError::$unusedAssets : array
+readonly property Gisl\Sdk\Errors\GislUploadCapExceededError::$kind : string
+readonly property Gisl\Sdk\Errors\GislUploadCapExceededError::$typedPayload : Gisl\Generated\OpenApi\Model\UploadSizeExceedsTierResponse|Gisl\Generated\OpenApi\Model\UploadDurationExceedsTierResponse|null
+readonly property Gisl\Sdk\Errors\GislValidationError::$typedPayload : Gisl\Generated\OpenApi\Model\ValidationErrorEnvelope
+readonly property Gisl\Sdk\Errors\GislWorkflowExpiredError::$typedPayload : Gisl\Generated\OpenApi\Model\WorkflowExpiredResponse
+readonly property Gisl\Sdk\Errors\NotYetImplementedDispatch::$hint : ?string
+readonly property Gisl\Sdk\Errors\NotYetImplementedDispatch::$metadata : array
+readonly property Gisl\Sdk\Errors\NotYetImplementedDispatch::$method : string
+readonly property Gisl\Sdk\FileFirst\FileInput::$contentType : ?string
+readonly property Gisl\Sdk\FileFirst\FileInput::$fileId : ?string
+readonly property Gisl\Sdk\FileFirst\FileInput::$filename : ?string
+readonly property Gisl\Sdk\FileFirst\FileInput::$kind : string
+readonly property Gisl\Sdk\FileFirst\FileInput::$path : ?string
+readonly property Gisl\Sdk\FileFirst\FileInput::$resource : mixed
+readonly property Gisl\Sdk\FileFirst\ItemFailure::$error : Gisl\Sdk\Errors\GislItemFailedError
+readonly property Gisl\Sdk\FileFirst\ItemFailure::$key : ?string
+readonly property Gisl\Sdk\FileFirst\ItemResult::$key : ?string
+readonly property Gisl\Sdk\FileFirst\ItemResult::$outputs : array
+readonly property Gisl\Sdk\FileFirst\Manifest::$paths : array
+readonly property Gisl\Sdk\FileFirst\OutputFile::$chosenQuality : ?int
+readonly property Gisl\Sdk\FileFirst\OutputFile::$filename : string
+readonly property Gisl\Sdk\FileFirst\OutputFile::$measuredQuality : ?float
+readonly property Gisl\Sdk\FileFirst\OutputFile::$operation : string
+readonly property Gisl\Sdk\FileFirst\OutputFile::$qualityMetric : ?string
+readonly property Gisl\Sdk\FileFirst\OutputFile::$sizeBytes : int
+readonly property Gisl\Sdk\FileFirst\OutputFile::$targetSizeMet : ?bool
+readonly property Gisl\Sdk\FileFirst\OutputFile::$url : string
+readonly property Gisl\Sdk\FileFirst\RecipeStep::$opType : string
+readonly property Gisl\Sdk\FileFirst\RecipeStep::$options : array
+readonly property Gisl\Sdk\FileFirst\RunResult::$artifacts : array
+readonly property Gisl\Sdk\FileFirst\RunResult::$failed : array
+readonly property Gisl\Sdk\FileFirst\RunResult::$ok : bool
+readonly property Gisl\Sdk\FileFirst\RunResult::$state : string
+readonly property Gisl\Sdk\FileFirst\RunResult::$succeeded : array
+readonly property Gisl\Sdk\FileFirst\RunResult::$targetSizeMissed : ?bool
+readonly property Gisl\Sdk\FileFirst\RunResult::$url : ?string
+readonly property Gisl\Sdk\FileFirst\RunResult::$workflowId : string
+readonly property Gisl\Sdk\Generated\SdkSpec\Enums\AudioBitrate::$name : string
+readonly property Gisl\Sdk\Generated\SdkSpec\Enums\AudioBitrate::$value : int
+readonly property Gisl\Sdk\Generated\SdkSpec\Enums\AudioCodec::$name : string
+readonly property Gisl\Sdk\Generated\SdkSpec\Enums\AudioCodec::$value : string
+readonly property Gisl\Sdk\Generated\SdkSpec\Enums\AudioSampleRate::$name : string
+readonly property Gisl\Sdk\Generated\SdkSpec\Enums\AudioSampleRate::$value : int
+readonly property Gisl\Sdk\Generated\SdkSpec\Enums\ImageFormat::$name : string
+readonly property Gisl\Sdk\Generated\SdkSpec\Enums\ImageFormat::$value : string
+readonly property Gisl\Sdk\Generated\SdkSpec\Enums\ImageMetadataPolicy::$name : string
+readonly property Gisl\Sdk\Generated\SdkSpec\Enums\ImageMetadataPolicy::$value : string
+readonly property Gisl\Sdk\Generated\SdkSpec\Enums\OptimizeFor::$name : string
+readonly property Gisl\Sdk\Generated\SdkSpec\Enums\OptimizeFor::$value : string
+readonly property Gisl\Sdk\Generated\SdkSpec\Enums\VideoCodec::$name : string
+readonly property Gisl\Sdk\Generated\SdkSpec\Enums\VideoCodec::$value : string
+readonly property Gisl\Sdk\Generated\SdkSpec\Enums\VideoFit::$name : string
+readonly property Gisl\Sdk\Generated\SdkSpec\Enums\VideoFit::$value : string
+readonly property Gisl\Sdk\Generated\SdkSpec\Enums\VideoPreset::$name : string
+readonly property Gisl\Sdk\Generated\SdkSpec\Enums\VideoPreset::$value : string
+readonly property Gisl\Sdk\Generated\SdkSpec\ErrorCategory::$name : string
+readonly property Gisl\Sdk\Generated\SdkSpec\ErrorCategory::$value : string
+readonly property Gisl\Sdk\GetSchemaHitResult::$etag : ?string
+readonly property Gisl\Sdk\GetSchemaHitResult::$lastModified : ?string
+readonly property Gisl\Sdk\GetSchemaHitResult::$schema : Gisl\Generated\OpenApi\Model\OperationsSchemaResponse
+readonly property Gisl\Sdk\GetSchemaNotModifiedResult::$etag : ?string
+readonly property Gisl\Sdk\GetSchemaNotModifiedResult::$lastModified : ?string
+readonly property Gisl\Sdk\GetSchemaOptions::$ifModifiedSince : ?string
+readonly property Gisl\Sdk\GetSchemaOptions::$ifNoneMatch : ?string
+readonly property Gisl\Sdk\GetSchemaOptions::$mimeType : ?string
+readonly property Gisl\Sdk\GetSchemaOptions::$operation : ?string
+readonly property Gisl\Sdk\GislClient::$config : Gisl\Sdk\GislClientConfig
+readonly property Gisl\Sdk\GislClientConfig::$apiKey : ?string
+readonly property Gisl\Sdk\GislClientConfig::$baseUrl : string
+readonly property Gisl\Sdk\GislClientConfig::$headers : array
+readonly property Gisl\Sdk\GislClientConfig::$locale : ?string
+readonly property Gisl\Sdk\GislClientConfig::$multipartConcurrency : int
+readonly property Gisl\Sdk\GislClientConfig::$multipartMaxAttempts : int
+readonly property Gisl\Sdk\GislClientConfig::$multipartRetryBaseMs : int
+readonly property Gisl\Sdk\GislClientConfig::$multipartThresholdBytes : int
+readonly property Gisl\Sdk\GislClientConfig::$streamBaseUrl : ?string
+readonly property Gisl\Sdk\GislClientConfig::$timeoutMs : int
+readonly property Gisl\Sdk\GislClientConfig::$useSessionCookie : bool
+readonly property Gisl\Sdk\GislSseEvent::$data : mixed
+readonly property Gisl\Sdk\GislSseEvent::$event : string
+readonly property Gisl\Sdk\GislSseParseFailure::$error : string
+readonly property Gisl\Sdk\GislSseParseFailure::$event : string
+readonly property Gisl\Sdk\GislSseParseFailure::$raw : string
+readonly property Gisl\Sdk\JobDefinitionPayload::$deliver : ?bool
+readonly property Gisl\Sdk\JobDefinitionPayload::$id : ?string
+readonly property Gisl\Sdk\JobDefinitionPayload::$inputs : ?array
+readonly property Gisl\Sdk\JobDefinitionPayload::$operations : array
+readonly property Gisl\Sdk\JobDefinitionPayload::$source : ?array
+readonly property Gisl\Sdk\MultipartCheckpointState::$manifestExpiresAt : string
+readonly property Gisl\Sdk\MultipartCheckpointState::$totalParts : int
+readonly property Gisl\Sdk\MultipartCheckpointState::$uploadId : string
+readonly property Gisl\Sdk\MultipartCheckpointState::$uploadedPartNumbers : array
+readonly property Gisl\Sdk\OperationDef::$options : ?array
+readonly property Gisl\Sdk\OperationDef::$type : string
+readonly property Gisl\Sdk\PreflightClipError::$error : Throwable
+readonly property Gisl\Sdk\PreflightClipError::$fileId : string
+readonly property Gisl\Sdk\PreflightClipsResult::$errors : array
+readonly property Gisl\Sdk\PreflightClipsResult::$ok : array
+readonly property Gisl\Sdk\PreflightClipsResult::$rejected : array
+readonly property Gisl\Sdk\Preset\AudioCompressPresetOptions::$bitrate : ?Gisl\Sdk\Generated\SdkSpec\Enums\AudioBitrate
+readonly property Gisl\Sdk\Preset\AudioCompressPresetOptions::$channels : ?int
+readonly property Gisl\Sdk\Preset\AudioCompressPresetOptions::$normalize : ?bool
+readonly property Gisl\Sdk\Preset\AudioCompressPresetOptions::$sampleRate : ?Gisl\Sdk\Generated\SdkSpec\Enums\AudioSampleRate
+readonly property Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions::$fontSubsetting : ?bool
+readonly property Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions::$stripUnusedCss : ?bool
+readonly property Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions::$stripMetadata : ?bool
+readonly property Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions::$stripUnusedStyles : ?bool
+readonly property Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions::$stripHiddenData : ?bool
+readonly property Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions::$stripMacros : ?bool
+readonly property Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions::$stripUnusedFonts : ?bool
+readonly property Gisl\Sdk\Preset\ImageCompressPresetOptions::$metadata : ?Gisl\Sdk\Generated\SdkSpec\Enums\ImageMetadataPolicy
+readonly property Gisl\Sdk\Preset\ImageCompressPresetOptions::$outputFormat : ?Gisl\Sdk\Generated\SdkSpec\Enums\ImageFormat
+readonly property Gisl\Sdk\Preset\ImageCompressPresetOptions::$quality : ?int
+readonly property Gisl\Sdk\Preset\VideoCompressPresetOptions::$audioBitrate : ?Gisl\Sdk\Generated\SdkSpec\Enums\AudioBitrate
+readonly property Gisl\Sdk\Preset\VideoCompressPresetOptions::$audioCodec : ?Gisl\Sdk\Generated\SdkSpec\Enums\AudioCodec
+readonly property Gisl\Sdk\Preset\VideoCompressPresetOptions::$codec : ?Gisl\Sdk\Generated\SdkSpec\Enums\VideoCodec
+readonly property Gisl\Sdk\Preset\VideoCompressPresetOptions::$crf : ?int
+readonly property Gisl\Sdk\Preset\VideoCompressPresetOptions::$faststart : ?bool
+readonly property Gisl\Sdk\Preset\VideoCompressPresetOptions::$fit : ?Gisl\Sdk\Generated\SdkSpec\Enums\VideoFit
+readonly property Gisl\Sdk\Preset\VideoCompressPresetOptions::$fps : ?int
+readonly property Gisl\Sdk\Preset\VideoCompressPresetOptions::$height : ?int
+readonly property Gisl\Sdk\Preset\VideoCompressPresetOptions::$preset : ?Gisl\Sdk\Generated\SdkSpec\Enums\VideoPreset
+readonly property Gisl\Sdk\Preset\VideoCompressPresetOptions::$targetSize : string|int|null
+readonly property Gisl\Sdk\Preset\VideoCompressPresetOptions::$width : ?int
+readonly property Gisl\Sdk\ProbeWaitOptions::$cancellation : ?Gisl\Sdk\Cancellation
+readonly property Gisl\Sdk\ProbeWaitOptions::$onPoll : mixed
+readonly property Gisl\Sdk\ProbeWaitOptions::$timeoutMs : ?int
+readonly property Gisl\Sdk\ProbeWaitResult::$landed : bool
+readonly property Gisl\Sdk\ProbeWaitResult::$probe : ?Gisl\Generated\OpenApi\Model\UploadProbeResponse
+readonly property Gisl\Sdk\ProbeWaitResult::$reason : ?string
+readonly property Gisl\Sdk\WaitOptions::$capability : ?string
+readonly property Gisl\Sdk\WaitOptions::$intervalMs : ?int
+readonly property Gisl\Sdk\WaitOptions::$onPoll : mixed
+readonly property Gisl\Sdk\WaitOptions::$timeoutMs : ?int
+readonly property Gisl\Sdk\WorkflowCreatePayload::$callbackEvents : ?array
+readonly property Gisl\Sdk\WorkflowCreatePayload::$callbackUrl : ?string
+readonly property Gisl\Sdk\WorkflowCreatePayload::$delivery : ?array
+readonly property Gisl\Sdk\WorkflowCreatePayload::$exportPayload : ?array
+readonly property Gisl\Sdk\WorkflowCreatePayload::$jobs : array
+readonly property Gisl\Sdk\WorkflowCreatePayload::$notify : ?array
+readonly property Gisl\Sdk\WorkflowCreatePayload::$processing : ?array
+readonly property Gisl\Sdk\WorkflowCreatePayload::$workflowEdges : ?array
+static method Gisl\Sdk\Credentials::declaredStreamEnvironments()
+static method Gisl\Sdk\Credentials::resolveApiKey()
+static method Gisl\Sdk\Credentials::resolveEndpoint()
+static method Gisl\Sdk\Credentials::resolveStreamEndpoint()
+static method Gisl\Sdk\Ergonomic\ImageOutputRoutes::compressGroupForToken()
+static method Gisl\Sdk\Ergonomic\ImageOutputRoutes::compressGroupsForToken()
+static method Gisl\Sdk\Ergonomic\ImageOutputRoutes::dependsOnViolation()
+static method Gisl\Sdk\Ergonomic\ImageOutputRoutes::enumGroupForToken()
+static method Gisl\Sdk\Ergonomic\ImageOutputRoutes::isPlannedValue()
+static method Gisl\Sdk\Ergonomic\ImageOutputRoutes::isUnknownEnumValue()
+static method Gisl\Sdk\Ergonomic\ImageOutputRoutes::knownImageTokens()
+static method Gisl\Sdk\Ergonomic\ImageOutputRoutes::resolveOutputRoute()
+static method Gisl\Sdk\Ergonomic\ImageOutputRoutes::stringifyForMessage()
+static method Gisl\Sdk\Ergonomic\ImageOutputRoutes::tokenForMime()
+static method Gisl\Sdk\Ergonomic\ImageOutputRoutes::tokenForPath()
+static method Gisl\Sdk\Ergonomic\MaxWait::parse()
+static method Gisl\Sdk\Ergonomic\Merge::asset()
+static method Gisl\Sdk\Ergonomic\Merge::clip()
+static method Gisl\Sdk\Ergonomic\Merge::handle()
+static method Gisl\Sdk\Ergonomic\Merge::resource()
+static method Gisl\Sdk\Ergonomic\OperationBuilder::normalisePresetOverrides()
+static method Gisl\Sdk\Ergonomic\OptionValidation::allowedKeysFor()
+static method Gisl\Sdk\Ergonomic\OptionValidation::assertThumbnailDimensions()
+static method Gisl\Sdk\Ergonomic\OptionValidation::operationOptionKeys()
+static method Gisl\Sdk\Ergonomic\OptionValidation::validateSingleOpConvertOptions()
+static method Gisl\Sdk\Ergonomic\OptionValidation::validateVerbOptions()
+static method Gisl\Sdk\Ergonomic\ResolvedOptionsSources::empty()
+static method Gisl\Sdk\FileFirst\FileInput::path()
+static method Gisl\Sdk\FileFirst\FileInput::resource()
+static method Gisl\Sdk\FileFirst\FileInput::uploadId()
+static method Gisl\Sdk\FileFirst\Recipe::nestedSingleJob()
+static method Gisl\Sdk\FileFirst\RunResult::isArchiveStatus()
+static method Gisl\Sdk\FileFirst\RunResult::isFanoutStatus()
+static method Gisl\Sdk\FileFirst\RunResult::isMergeStatus()
+static method Gisl\Sdk\FileFirst\RunResult::isSoleOpChainStatus()
+static method Gisl\Sdk\FileFirst\RunResult::isWatermarkStatus()
+static method Gisl\Sdk\FileFirst\RunResult::soleOpChainDeliverableRef()
+static method Gisl\Sdk\FileFirst\WatermarkGate::effectiveBase()
+static method Gisl\Sdk\FileFirst\WatermarkGate::lowerWatermarkOp()
+static method Gisl\Sdk\FileFirst\WatermarkGate::resolveWireOp()
+static method Gisl\Sdk\FileFirst\WatermarkGate::validateOverlay()
+static method Gisl\Sdk\Generated\SdkSpec\Presets::shippedDefaultsFor()
+static method Gisl\Sdk\Gisl::create()
+static method Gisl\Sdk\Http\RateLimitHeaders::isApiRetryableStatus()
+static method Gisl\Sdk\Http\RateLimitHeaders::parseRetryAfterMs()
+static method Gisl\Sdk\Http\RateLimitHeaders::rateLimit()
+static method Gisl\Sdk\Http\RateLimitHeaders::retryAfterSeconds()
+static method Gisl\Sdk\Http\UploadSource::assertUploadableStream()
+static method Gisl\Sdk\Http\UploadSource::fromPath()
+static method Gisl\Sdk\Http\UploadSource::fromStream()
+static method Gisl\Sdk\PresetDefaults::create()
+static method Gisl\Sdk\PresetDefaults::merge()
+static method Gisl\Sdk\Preset\AudioCompressPresetOptions::shippedDefaultsFor()
+static method Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions::shippedDefaultsFor()
+static method Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions::shippedDefaultsFor()
+static method Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions::shippedDefaultsFor()
+static method Gisl\Sdk\Preset\ImageCompressPresetOptions::shippedDefaultsFor()
+static method Gisl\Sdk\Preset\PresetCellTranslator::bool()
+static method Gisl\Sdk\Preset\PresetCellTranslator::caseByName()
+static method Gisl\Sdk\Preset\PresetCellTranslator::enum()
+static method Gisl\Sdk\Preset\PresetCellTranslator::int()
+static method Gisl\Sdk\Preset\VideoCompressPresetOptions::shippedDefaultsFor()
+static method Gisl\Sdk\Sources::connection()
+static method Gisl\Sdk\Sources::externalImport()
+static method Gisl\Sdk\Sources::jobOutput()
+static method Gisl\Sdk\Sources::upload()
+static method Gisl\Sdk\Webhook::verify()
