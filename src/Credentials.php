@@ -167,7 +167,7 @@ final class Credentials
      */
     private static function assertBaseUrlNotBlank(?string $baseUrl): void
     {
-        if ($baseUrl !== null && \trim($baseUrl) === '') {
+        if ($baseUrl !== null && self::isBlank($baseUrl)) {
             throw new GislConfigError(
                 'baseUrl was supplied but is blank. That is a configuration error, not an '
                 . 'absent value: it usually means GISL_BASE_URL (or whatever your wrapper '
@@ -243,10 +243,15 @@ final class Credentials
         // environment's declared host and then normalise to nothing —
         // silently disabling a stream that was perfectly well declared.
         // codex a7f5ec9f0d32.
-        $explicit = $streamBaseUrl === null ? '' : trim($streamBaseUrl);
+        $explicit = $streamBaseUrl === null || self::isBlank($streamBaseUrl) ? '' : trim($streamBaseUrl);
         if ($explicit !== '') {
             return $explicit;
         }
+        // vzVIw4ZZ: a PRESENT-but-blank option is remembered. It must not
+        // suppress a host something else declares (the trim above keeps that
+        // working), but if NOTHING else declares one it is a configuration error
+        // - not consent to the production default, which it silently became.
+        $streamOptionWasBlank = $streamBaseUrl !== null;
 
         if ($environment !== null) {
             // A KNOWN environment with no declared stream host resolves to
@@ -281,8 +286,19 @@ final class Credentials
         // rather than assume production's stream host. Assuming there would be
         // deriving one host from another, which is precisely what this
         // mechanism exists to refuse.
-        $apiHostWasConfigured = ($baseUrl !== null && trim($baseUrl) !== '')
+        $apiHostWasConfigured = ($baseUrl !== null && !self::isBlank($baseUrl))
             || self::readUrlEnv(self::GISL_BASE_URL_ENV) !== null;
+        if ($streamOptionWasBlank) {
+            throw new GislConfigError(
+                'streamBaseUrl was supplied but is blank, and nothing else declares a stream '
+                . 'host. That is a configuration error, not an absent value: it would otherwise '
+                . 'have resolved to the PRODUCTION stream host.',
+                reason: 'blank_value',
+                conflictingFields: ['streamBaseUrl'],
+                suggestion: "Pass a real host such as 'https://stream.staging.giveitsmaller.com', or an "
+                    . "environment ('staging' / 'prod'), or omit streamBaseUrl entirely.",
+            );
+        }
         if (!$apiHostWasConfigured) {
             // Direct lookup, no `?? null`: `prod` is present in the const above
             // and the conformance suite fails closed if it ever stops matching
@@ -323,7 +339,7 @@ final class Credentials
         // as the base URL — a host made of spaces — while TypeScript treated the
         // same value as unset. The two languages disagreed in the OPPOSITE
         // direction to the option path (second-identity, PR #404).
-        if (is_string($value) && \trim($value) !== '') {
+        if (is_string($value) && !self::isBlank($value)) {
             return $value;
         }
         return null;
@@ -341,10 +357,22 @@ final class Credentials
      * a .env file is a mistake somebody should hear about. Mirrors readUrlEnv()
      * in packages/typescript/src/credentials.ts.
      */
+    /**
+     * Blank the way JavaScript's `String.prototype.trim()` sees it (codex
+     * 448553c3ac21): PHP's trim() strips ASCII whitespace only, so a value of
+     * just a non-breaking space was "set" here and "blank" in TypeScript - the
+     * two SDKs disagreeing about which host a config means. Unicode separators
+     * (\p{Z}), ASCII/Unicode whitespace (\s under /u) and the BOM all count.
+     */
+    private static function isBlank(string $value): bool
+    {
+        return \preg_match('/^[\s\p{Z}\x{FEFF}]*$/u', $value) === 1;
+    }
+
     private static function readUrlEnv(string $name): ?string
     {
         $raw = getenv($name);
-        if (is_string($raw) && \trim($raw) === '') {
+        if (is_string($raw) && self::isBlank($raw)) {
             throw new GislConfigError(
                 "{$name} is set but blank. That is a configuration error, not an absent "
                 . 'value — a set-but-empty host would otherwise fall through to the '

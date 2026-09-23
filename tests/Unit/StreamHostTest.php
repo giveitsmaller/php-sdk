@@ -543,4 +543,46 @@ final class StreamHostTest extends TestCase
 
         self::assertSame(self::PROD_STREAM_HOST, Credentials::resolveStreamEndpoint());
     }
+
+    // vzVIw4ZZ — a PRESENT-but-blank streamBaseUrl option: never suppresses a
+    // declared host, and THROWS instead of defaulting to production when
+    // nothing declares one. Mirrors credentials.test.ts.
+
+    #[Test]
+    public function a_blank_stream_base_url_with_nothing_else_declared_throws(): void
+    {
+        // "\u{00A0}" (NBSP) and "\u{3000}" (ideographic space): blank in TS's
+        // trim(), and now in PHP too (codex 448553c3ac21).
+        foreach (['', '   ', "\u{00A0}", "\u{3000}\u{00A0}"] as $blank) {
+            try {
+                Credentials::resolveStreamEndpoint(streamBaseUrl: $blank);
+                self::fail('blank streamBaseUrl must not resolve to the production stream host');
+            } catch (GislConfigError $e) {
+                self::assertSame('blank_value', $e->reason);
+                self::assertSame(['streamBaseUrl'], $e->conflictingFields);
+            }
+        }
+        $this->expectException(GislConfigError::class);
+        Credentials::resolveStreamEndpoint(streamBaseUrl: '', baseUrl: 'https://api.self-hosted.example');
+    }
+
+    #[Test]
+    public function a_blank_stream_base_url_does_not_suppress_a_declared_host(): void
+    {
+        self::assertSame(
+            Credentials::resolveStreamEndpoint(environment: Environment::Staging),
+            Credentials::resolveStreamEndpoint(streamBaseUrl: '', environment: Environment::Staging),
+        );
+        putenv(Credentials::GISL_STREAM_BASE_URL_ENV . '=https://stream.self-hosted.example');
+        self::assertSame('https://stream.self-hosted.example', Credentials::resolveStreamEndpoint(streamBaseUrl: ''));
+    }
+
+    #[Test]
+    public function the_unconfigured_case_is_unchanged(): void
+    {
+        self::assertSame(
+            Credentials::resolveStreamEndpoint(environment: Environment::Prod),
+            Credentials::resolveStreamEndpoint(),
+        );
+    }
 }
