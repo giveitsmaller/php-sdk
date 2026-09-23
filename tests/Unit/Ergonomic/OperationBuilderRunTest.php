@@ -878,6 +878,166 @@ final class OperationBuilderRunTest extends TestCase
         $this->assertTrue(PlannedValues::isPlannedEverywhere('audio_watermark', 'method', 'neural'));
     }
 
+    // -----------------------------------------------------------------------
+    // bTNCSX1x — a 429 from the status_poll bucket inside a wait is honoured.
+    // -----------------------------------------------------------------------
+
+    private static function rateLimited(?string $retryAfter): ResponseInterface
+    {
+        $headers = ['Content-Type' => 'application/json'];
+        if ($retryAfter !== null) {
+            $headers['Retry-After'] = $retryAfter;
+        }
+
+        return new Response(429, $headers, \json_encode(['success' => false, 'error' => 'RATE_LIMITED', 'message' => 'slow down'], JSON_THROW_ON_ERROR));
+    }
+
+    public function test_a_429_on_a_status_poll_waits_retry_after_then_completes(): void
+    {
+        $tempPath = self::writeTempFile('input bytes');
+        $captured = [];
+        $client = self::makeClient(self::stubClient([
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            self::rateLimited('2'),
+            self::jsonResponse(200, self::statusCompleted()),
+            self::jsonResponse(200, self::downloadsOk()),
+        ], $captured));
+        $started = \microtime(true);
+
+        $result = $client->compress($tempPath, ['quality' => 75])
+            ->run(new RunOptions(maxWait: '30s', useSSE: false, pollIntervalMs: 1_000));
+
+        $this->assertSame('completed', $result->status);
+        $this->assertCount(5, $captured, 'exactly one retry of the status poll');
+        // >= 1.95 s: above the largest no-header fallback (1.25 s), so only an
+        // honoured Retry-After passes.
+        $this->assertGreaterThanOrEqual(1.95, \microtime(true) - $started, 'the Retry-After wait happened');
+    }
+
+    public function test_a_429_on_the_terminal_downloads_fetch_is_retried(): void
+    {
+        $tempPath = self::writeTempFile('input bytes');
+        $captured = [];
+        $client = self::makeClient(self::stubClient([
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            self::jsonResponse(200, self::statusCompleted()),
+            self::rateLimited('1'),
+            self::jsonResponse(200, self::downloadsOk()),
+        ], $captured));
+
+        $result = $client->compress($tempPath, ['quality' => 75])
+            ->run(new RunOptions(maxWait: '30s', useSSE: false, pollIntervalMs: 1_000));
+
+        $this->assertSame('completed', $result->status);
+        $this->assertCount(5, $captured);
+    }
+
+    public function test_a_retry_after_past_the_deadline_throws_timeout_at_once(): void
+    {
+        $tempPath = self::writeTempFile('input bytes');
+        $client = self::makeClient(self::stubClient([
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            self::rateLimited('3600'),
+        ]));
+        $started = \microtime(true);
+
+        try {
+            $client->compress($tempPath, ['quality' => 75])
+                ->run(new RunOptions(maxWait: '30s', useSSE: false, pollIntervalMs: 1_000));
+            $this->fail('must time out');
+        } catch (GislTimeoutError) {
+            $this->assertLessThan(5.0, \microtime(true) - $started, 'no sleep through the budget');
+        }
+    }
+
+    // Per ENTRY POINT (second-identity review of #432): removing the wrapper
+    // from any one of these call sites must turn a test red.
+
+    public function test_sse_path_a_429_on_the_status_fetch_after_the_terminal_frame_is_retried(): void
+    {
+        $tempPath = self::writeTempFile('input bytes');
+        $captured = [];
+        $client = self::makeClient(self::stubClient([
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            new Response(200, ['Content-Type' => 'text/event-stream'], "event: workflow.completed\ndata: {}\n\n"),
+            self::rateLimited('1'),
+            self::jsonResponse(200, self::statusCompleted()),
+            self::jsonResponse(200, self::downloadsOk()),
+        ], $captured));
+
+        $result = $client->compress($tempPath, ['quality' => 75])->run(new RunOptions(maxWait: '30s'));
+
+        $this->assertSame('completed', $result->status);
+        $this->assertCount(6, $captured);
+    }
+
+    public function test_handle_wait_retries_a_429_on_its_downloads_fetch(): void
+    {
+        $tempPath = self::writeTempFile('input bytes');
+        $captured = [];
+        $client = self::makeClient(self::stubClient([
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            new Response(200, ['Content-Type' => 'text/event-stream'], ''),
+            self::jsonResponse(200, self::statusCompleted()),
+            self::rateLimited('1'),
+            self::jsonResponse(200, self::downloadsOk()),
+        ], $captured));
+
+        $client->compress($tempPath, ['quality' => 75])->submit()->wait('30s');
+
+        $this->assertCount(6, $captured);
+    }
+
+    public function test_the_downloads_fetch_is_patient_success_on_the_sixth_attempt(): void
+    {
+        $tempPath = self::writeTempFile('input bytes');
+        $captured = [];
+        $queue = [
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            self::jsonResponse(200, self::statusCompleted()),
+        ];
+        for ($i = 0; $i < 5; $i++) {
+            $queue[] = self::rateLimited(null);
+        }
+        $queue[] = self::jsonResponse(200, self::downloadsOk());
+        $client = self::makeClient(self::stubClient($queue, $captured));
+
+        $result = $client->compress($tempPath, ['quality' => 75])
+            ->run(new RunOptions(maxWait: '120s', useSSE: false, pollIntervalMs: 1_000));
+
+        $this->assertSame('completed', $result->status);
+        $this->assertCount(9, $captured, 'five 429s then success: beyond a status budget of 4');
+    }
+
+    public function test_a_permanent_429_exhausts_the_budget_then_propagates(): void
+    {
+        foreach ([[false, 5], [true, 9]] as [$patient, $expectedCalls]) {
+            $calls = 0;
+            try {
+                BuilderInternals::retryOn429(
+                    static function () use (&$calls): never {
+                        $calls++;
+                        throw new GislApiError('slow down', 429, 'RATE_LIMITED');
+                    },
+                    BuilderInternals::nowMs() + 60_000,
+                    'wf_x',
+                    patient: $patient,
+                    backoffBaseMs: 1,
+                );
+                $this->fail('must propagate');
+            } catch (GislApiError $e) {
+                $this->assertSame(429, $e->statusCode);
+            }
+            $this->assertSame($expectedCalls, $calls);
+        }
+    }
+
     public function test_a_refusal_without_retry_after_records_no_window(): void
     {
         BuilderInternals::setClockForTesting(static fn (): int => 1_000_000);

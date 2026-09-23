@@ -81,6 +81,62 @@ final class BuilderInternals
     private static ?\Closure $clockForTesting = null;
 
     /**
+     * bTNCSX1x — honour a 429 from the status_poll bucket (status + downloads)
+     * inside a WAIT path instead of letting it kill the run. Mirrors TS
+     * `_retryOn429`: wait Retry-After (or a jittered backoff when absent),
+     * bounded by the run's deadline (a wait ending past it throws
+     * GislTimeoutError at once) AND an attempt budget (then the last 429
+     * propagates). `patient` doubles the budget for the TERMINAL downloads
+     * fetch - the work is done and paid for. The bucket is keyed per USER, so
+     * a client-side limiter could only guard against itself; this reacts to
+     * the server's answer instead. Only 429; the stream has its own budget.
+     *
+     * @template T
+     * @param \Closure(): T $call
+     * @return T
+     */
+    public static function retryOn429(
+        \Closure $call,
+        int $deadlineMs,
+        string $workflowId,
+        bool $patient = false,
+        ?Cancellation $cancellation = null,
+        int $backoffBaseMs = 1_000,
+    ): mixed {
+        $maxRetries = $patient ? 8 : 4;
+        for ($attempt = 0; ; $attempt++) {
+            try {
+                return $call();
+            } catch (GislApiError $e) {
+                if ($e->statusCode !== 429 || $attempt >= $maxRetries) {
+                    throw $e;
+                }
+                $waitMs = RateLimitHeaders::parseRetryAfterMs($e->responseHeaders['retry-after'] ?? null)
+                    ?? \min(10_000, \random_int(0, \max(0, $backoffBaseMs * (2 ** $attempt))) + \min(250, $backoffBaseMs));
+                if (self::nowMs() + $waitMs >= $deadlineMs) {
+                    throw new GislTimeoutError(
+                        "Workflow {$workflowId}: rate limited (429) and the server's wait of {$waitMs} ms ends past maxWait.",
+                        $workflowId,
+                    );
+                }
+                // Sleep in slices of <= 1 s and check the cancellation between
+                // them AND after the last one (second-identity + codex
+                // e6f93a2dfaac): a single usleep of a long Retry-After ignored a
+                // cancel for its whole length, and the retried call then
+                // returned a result the caller had already cancelled.
+                $remainingMs = $waitMs;
+                while ($remainingMs > 0) {
+                    self::throwIfCancelled($cancellation, "rate-limit wait for workflow {$workflowId}");
+                    $sliceMs = \min(1_000, $remainingMs);
+                    \usleep($sliceMs * 1_000);
+                    $remainingMs -= $sliceMs;
+                }
+                self::throwIfCancelled($cancellation, "rate-limit wait for workflow {$workflowId}");
+            }
+        }
+    }
+
+    /**
      * Swap the clock `nowMs()` reads (Vf9R7gcV's cooldown tests move time
      * without sleeping). Pass null to restore wall-clock time.
      *
@@ -489,7 +545,12 @@ final class BuilderInternals
                 $onProgress(self::projectProcessingProgress($event->data));
             }
             if (\in_array($event->event, $terminalEvents, true)) {
-                return $client->getWorkflowStatus($workflowId);
+                return self::retryOn429(
+                    static fn () => $client->getWorkflowStatus($workflowId),
+                    $deadlineMs,
+                    $workflowId,
+                    cancellation: $cancellation,
+                );
             }
             self::throwIfCancelled($cancellation, "SSE wait for workflow {$workflowId}");
             if (self::nowMs() >= $deadlineMs) {
@@ -557,7 +618,12 @@ final class BuilderInternals
                     $workflowId,
                 );
             }
-            $status = $client->getWorkflowStatus($workflowId);
+            $status = self::retryOn429(
+                static fn () => $client->getWorkflowStatus($workflowId),
+                $deadlineMs,
+                $workflowId,
+                cancellation: $cancellation,
+            );
             $statusStr = self::coerceString($status->getStatus());
             if (\in_array($statusStr, $terminal, true)) {
                 return $status;

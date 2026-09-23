@@ -177,6 +177,27 @@ final class ArchivedRecipeTest extends TestCase
     // count-guard submits). Mirrors the TS file-first-archive.test.ts.
     // -----------------------------------------------------------------
 
+    /** bTNCSX1x: a file-first recipe's terminal downloads fetch retries a 429. */
+    public function test_run_retries_a_429_on_the_downloads_fetch(): void
+    {
+        $captured = [];
+        $http = $this->stubClient([
+            $this->createResponse(),
+            $this->sseResponse("event: workflow.completed\ndata: {\"status\":\"completed\"}\n\n"),
+            $this->statusResponse('completed'),
+            new \GuzzleHttp\Psr7\Response(429, ['Content-Type' => 'application/json', 'Retry-After' => '1'], '{"success":false,"error":"RATE_LIMITED","message":"slow"}'),
+            $this->archiveDownloadsResponse(),
+        ], $captured);
+
+        $result = $this->makeClient($http)
+            ->files([FileInput::uploadId('id0'), FileInput::uploadId('id1')])
+            ->archive(new ArchiveRecipeOptions(format: ArchiveFormat::Zip))
+            ->run();
+
+        self::assertTrue($result->ok);
+        self::assertCount(5, $captured);
+    }
+
     public function test_run_creates_the_lowered_archive_dag_and_projects_only_the_archive_output(): void
     {
         $captured = [];

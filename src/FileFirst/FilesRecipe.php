@@ -300,7 +300,13 @@ final class FilesRecipe
                 $workflowId,
             );
         }
-        $downloads = $this->client->getWorkflowDownloads($workflowId);
+        $downloads = BuilderInternals::retryOn429(
+            fn () => $this->client->getWorkflowDownloads($workflowId),
+            $deadlineMs,
+            $workflowId,
+            patient: true,
+            cancellation: $cancellation,
+        );
         // TDqmkWpX: the maxWait deadline also covers the downloads fetch itself —
         // re-check AFTER the call so a slow getWorkflowDownloads cannot return a
         // success past the advertised whole-run deadline.

@@ -247,7 +247,13 @@ final class WatermarkedRecipe
                 $workflowId,
             );
         }
-        $downloads = $client->getWorkflowDownloads($workflowId);
+        $downloads = BuilderInternals::retryOn429(
+            static fn () => $client->getWorkflowDownloads($workflowId),
+            $deadlineMs,
+            $workflowId,
+            patient: true,
+            cancellation: $cancellation,
+        );
         if (BuilderInternals::nowMs() >= $deadlineMs) {
             throw new GislTimeoutError(
                 "Workflow {$workflowId} downloads fetch completed after maxWait elapsed.",

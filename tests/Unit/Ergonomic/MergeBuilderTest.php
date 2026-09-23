@@ -79,6 +79,32 @@ final class MergeBuilderTest extends TestCase
         $this->assertSame('completed', $handle->status()->state);
     }
 
+    /** bTNCSX1x: merge's terminal downloads fetch retries a 429. */
+    public function test_run_retries_a_429_on_the_downloads_fetch(): void
+    {
+        $pathA = self::writeTempFile('aaaa');
+        $pathB = self::writeTempFile('bbbb');
+        $wf = '01936fb2-0000-7000-8000-00000000cc03';
+        $captured = [];
+        $http = self::stubClient([
+            self::uploadResponse('01936fb1-7bb3-7000-8000-00000000cc01', 'a.mp4', 'video/mp4', 4),
+            self::uploadResponse('01936fb1-7bb3-7000-8000-00000000cc02', 'b.mp4', 'video/mp4', 4),
+            self::workflowCreatedResponse($wf),
+            self::jsonResponse(200, ['success' => true, 'data' => [
+                'workflow_id' => $wf, 'status' => 'completed',
+                'created_at' => '2026-09-23T11:00:00Z', 'updated_at' => '2026-09-23T11:05:00Z', 'jobs' => [],
+            ]]),
+            new \GuzzleHttp\Psr7\Response(429, ['Content-Type' => 'application/json', 'Retry-After' => '1'], '{"success":false,"error":"RATE_LIMITED","message":"slow"}'),
+            self::jsonResponse(200, ['success' => true, 'data' => ['downloads' => []]]),
+        ], $captured);
+
+        self::makeClient($http)
+            ->merge([$pathA, $pathB], new MergeOptions(mediaKind: 'video'))
+            ->run(new RunOptions(maxWait: '30s', useSSE: false, pollIntervalMs: 1_000));
+
+        $this->assertCount(6, $captured, 'the downloads fetch was retried once');
+    }
+
     public function test_submit_uploads_each_unique_asset_once_then_creates_workflow(): void
     {
         $pathA = self::writeTempFile('aaaa');
