@@ -394,10 +394,13 @@ class GislErgonomicClient extends GislClient
      * before anything uploads. Everything else is validated by the server. NO
      * preset resolution unless `$opType` is `compress`.
      *
-     * Multi-input operations (merge, archive, image/video/audio overlay
-     * watermarks) canNOT be expressed here — they need multiple sources and have
-     * dedicated builders ({@see merge()}, `files(...)->archive(...)`,
-     * `file($a)->watermark($b)`). Use those instead.
+     * Multi-input operations canNOT be expressed here — they need multiple
+     * sources. merge, archive and image/video watermarks have dedicated
+     * builders ({@see merge()}, `files(...)->archive(...)`,
+     * `file($a)->watermark($b)`); use those instead. audio_overlay,
+     * audio_to_video and custom_luma have NO builder: the contract marks all
+     * three `planned` (workflow-create returns `feature_not_available`), so a
+     * builder could only refuse. A test fails when any of them is re-listed.
      *
      * @param array<string, mixed> $options
      */
