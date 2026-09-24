@@ -246,6 +246,41 @@ final class GislClientWorkflowLifecycleTest extends TestCase
         \Gisl\Generated\OpenApi\ObjectSerializer::deserialize(123, \Gisl\Generated\OpenApi\Model\WorkflowCancelBillingEffect::class);
     }
 
+    public function testOperationMessageParamsHydrateAsTheirScalarValues(): void
+    {
+        // codex 102af10968f8: a oneOf of JSON scalars used to hydrate as an EMPTY
+        // model, losing every interpolation value.
+        $client = $this->makeClient($this->stubClient([
+            $this->jsonResponse(200, [
+                'success' => true,
+                'data' => [
+                    'workflow_id' => '01936fb2-0000-7000-8000-000000000001',
+                    'status' => 'failed',
+                    'created_at' => '2026-09-24T08:00:00Z',
+                    'updated_at' => '2026-09-24T08:01:00Z',
+                    'jobs' => [[
+                        'job_id' => '01936fb3-0001-7000-8000-000000000001',
+                        'ref' => 'op',
+                        'status' => 'failed',
+                        'operations' => [[
+                            'id' => '01936fb4-0001-7000-8000-000000000001',
+                            'type' => 'compress',
+                            'status' => 'failed',
+                            'progress' => 0.0,
+                            'error_code' => 'processing_limit_exceeded',
+                            'message_key' => 'operation.processing_limit_exceeded',
+                            'message_params' => ['limit_mb' => 500, 'ratio' => 1.5, 'unit' => 'MB', 'hard' => true],
+                        ]],
+                    ]],
+                ],
+            ]),
+        ]));
+
+        $op = $client->getWorkflowStatus('01936fb2-0000-7000-8000-000000000001')->getJobs()[0]->getOperations()[0];
+
+        self::assertSame(['limit_mb' => 500, 'ratio' => 1.5, 'unit' => 'MB', 'hard' => true], $op->getMessageParams());
+    }
+
     public function testTheRequestSideStillRejectsAnUnknownInlineEnumValue(): void
     {
         // Only DEserialisation is tolerant: a caller building a model still
