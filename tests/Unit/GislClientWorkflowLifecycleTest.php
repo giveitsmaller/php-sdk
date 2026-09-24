@@ -156,6 +156,104 @@ final class GislClientWorkflowLifecycleTest extends TestCase
         }
     }
 
+    // ---------------------------------------------------------------
+    // drJpKvXS: a RESPONSE enum value this SDK predates hydrates verbatim
+    // (measured: the published 0.23.0 threw InvalidArgumentException here).
+    // ---------------------------------------------------------------
+
+    public function testUnknownInlineAndRefEnumValuesInAResponseHydrate(): void
+    {
+        $client = $this->makeClient($this->stubClient([
+            $this->jsonResponse(200, [
+                'success' => true,
+                'data' => [
+                    'workflow_id' => '01936fb2-0000-7000-8000-000000000001',
+                    'status' => 'cancelled_by_a_future_rule',          // inline enum on WorkflowCancelResponse
+                    'cancelled_at' => '2026-04-29T12:00:00Z',
+                    'billing_effect' => 'a_future_billing_effect',     // $ref enum WorkflowCancelBillingEffect
+                ],
+            ]),
+        ]));
+
+        $response = $client->cancelWorkflow('01936fb2-0000-7000-8000-000000000001');
+
+        self::assertSame('cancelled_by_a_future_rule', $response->getStatus());
+        self::assertSame('a_future_billing_effect', $response->getBillingEffect());
+        self::assertSame('01936fb2-0000-7000-8000-000000000001', $response->getWorkflowId());
+    }
+
+    public function testAPausedDetailWithRequiredActionResumeHydrates(): void
+    {
+        $client = $this->makeClient($this->stubClient([
+            $this->jsonResponse(200, [
+                'success' => true,
+                'data' => [
+                    'workflow_id' => '01936fb2-0000-7000-8000-000000000001',
+                    'status' => 'paused_insufficient_credits',
+                    'created_at' => '2026-09-24T08:00:00Z',
+                    'updated_at' => '2026-09-24T08:00:00Z',
+                    'jobs' => [],
+                    'paused_detail' => [
+                        'paused_at' => '2026-09-24T08:00:00Z',
+                        'expires_at' => '2026-10-01T08:00:00Z',
+                        'required_action' => 'resume',   // contracts ruling on api #747; not in this SDK's enum
+                        'links' => ['resume' => '/api/workflows/01936fb2-0000-7000-8000-000000000001/resume'],
+                    ],
+                ],
+            ]),
+        ]));
+
+        $status = $client->getWorkflowStatus('01936fb2-0000-7000-8000-000000000001');
+
+        self::assertSame('resume', $status->getPausedDetail()?->getRequiredAction());
+    }
+
+    public function testAKnownDiscriminatorAndOtherSetterValidationSurviveHydration(): void
+    {
+        // codex 2e371b9ff15d: the discriminated source model keeps its wire `type`.
+        $source = \Gisl\Generated\OpenApi\ObjectSerializer::deserialize(
+            (object) ['type' => 'upload', 'file_id' => '01936fb1-7bb3-7000-8000-000000000010'],
+            \Gisl\Generated\OpenApi\Model\WorkflowSource::class,
+        );
+        self::assertSame('upload', $source->getType());
+
+        // codex c35c37c60bff: non-enum setter validation (the UUIDv7 pattern on
+        // workflow_id) still runs on hydration.
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/workflow_id .*must conform to the pattern/');
+        \Gisl\Generated\OpenApi\ObjectSerializer::deserialize(
+            (object) ['workflow_id' => 'not-a-uuid', 'status' => 'cancelled', 'cancelled_at' => '2026-04-29T12:00:00Z', 'billing_effect' => 'none'],
+            WorkflowCancelResponse::class,
+        );
+    }
+
+    public function testANumericEnumStaysStrictOnHydration(): void
+    {
+        // codex ac616ebad85d: only unknown STRING vocabulary is tolerated. A const-
+        // pinned numeric enum that also carries a minimum keeps every setter check.
+        $this->expectException(\InvalidArgumentException::class);
+        \Gisl\Generated\OpenApi\ObjectSerializer::deserialize(
+            (object) ['multipart_concurrency_default' => 0],
+            \Gisl\Generated\OpenApi\Model\UploadThresholds::class,
+        );
+    }
+
+    public function testANonStringRefEnumPayloadIsStillRejected(): void
+    {
+        // codex 9853ff74e58f: tolerance is for unknown STRING vocabulary only.
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/Invalid value for enum .*WorkflowCancelBillingEffect/');
+        \Gisl\Generated\OpenApi\ObjectSerializer::deserialize(123, \Gisl\Generated\OpenApi\Model\WorkflowCancelBillingEffect::class);
+    }
+
+    public function testTheRequestSideStillRejectsAnUnknownInlineEnumValue(): void
+    {
+        // Only DEserialisation is tolerant: a caller building a model still
+        // gets the generated validation.
+        $this->expectException(\InvalidArgumentException::class);
+        (new WorkflowCancelResponse())->setStatus('not_a_status');
+    }
+
     public function testCancelWorkflowHappyPath(): void
     {
         $captured = [];
