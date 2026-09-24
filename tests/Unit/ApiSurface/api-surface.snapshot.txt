@@ -175,6 +175,7 @@ final class Gisl\Sdk\Errors\GislStreamHostNotDeclaredError extends Gisl\Sdk\Erro
 final class Gisl\Sdk\Errors\GislTierRestrictedError extends Gisl\Sdk\Errors\GislApiError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
 final class Gisl\Sdk\Errors\GislTransportError extends Gisl\Sdk\Errors\GislNetworkError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
 final class Gisl\Sdk\Errors\GislUndeclaredAssetError extends Gisl\Sdk\Errors\GislConfigError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislUnsupportedFileTypeError extends Gisl\Sdk\Errors\GislApiError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
 final class Gisl\Sdk\Errors\GislUnusedAssetError extends Gisl\Sdk\Errors\GislConfigError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
 final class Gisl\Sdk\Errors\GislUploadCapExceededError extends Gisl\Sdk\Errors\GislApiError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
 final class Gisl\Sdk\Errors\GislValidationError extends Gisl\Sdk\Errors\GislApiError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable

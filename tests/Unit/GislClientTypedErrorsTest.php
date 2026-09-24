@@ -21,6 +21,7 @@ use Gisl\Generated\OpenApi\Model\WorkflowExpiredResponse;
 use Gisl\Generated\OpenApi\Model\WorkflowStatusResponse;
 use Gisl\Generated\OpenApi\Model\WorkflowStatusSuccessEnvelope;
 use Gisl\Sdk\Errors\GislApiError;
+use Gisl\Sdk\Errors\GislUnsupportedFileTypeError;
 use Gisl\Sdk\Errors\GislAuthError;
 use Gisl\Sdk\Errors\GislAuthRejectionError;
 use Gisl\Sdk\Errors\GislBalanceExhaustedError;
@@ -187,6 +188,35 @@ final class GislClientTypedErrorsTest extends TestCase
             self::assertSame('errors.balance.exhausted', $e->messageKey);
             self::assertSame('en-GB', $e->locale);
             self::assertSame(['available' => 0, 'required' => 5], $e->messageParams);
+        }
+    }
+
+    public function testUnsupportedFileTypeOnUploadDispatches(): void
+    {
+        $captured = [];
+        $http = $this->stubClient([
+            $this->jsonResponse(415, [
+                'success' => false,
+                'error' => 'UNSUPPORTED_FILE_TYPE',
+                'message' => 'This file type is not supported.',
+            ]),
+        ], $captured);
+        $client = $this->makeClient($http);
+        $path = (string) \tempnam(\sys_get_temp_dir(), 'gisl415');
+        \file_put_contents($path, 'bytes');
+
+        try {
+            $client->uploadFile($path);
+            self::fail('Expected GislUnsupportedFileTypeError');
+        } catch (GislUnsupportedFileTypeError $e) {
+            // eWtnqHZm: NOT a tier restriction - no upgrade can process this type.
+            self::assertNotInstanceOf(GislTierRestrictedError::class, $e);
+            self::assertSame(415, $e->statusCode);
+            self::assertSame('UNSUPPORTED_FILE_TYPE', $e->errorCode);
+            self::assertSame('This file type is not supported.', $e->getMessage());
+            self::assertStringEndsWith('/api/uploads', $captured[0]->getUri()->getPath());
+        } finally {
+            @\unlink($path);
         }
     }
 

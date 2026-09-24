@@ -62,6 +62,7 @@ use Gisl\Sdk\Http\MultipartPartUploader;
 use Gisl\Sdk\Http\RateLimitHeaders;
 use Gisl\Sdk\Http\UploadSource;
 use Gisl\Sdk\Errors\GislMultipartSessionAuthRequiredError;
+use Gisl\Sdk\Errors\GislUnsupportedFileTypeError;
 use Gisl\Sdk\Errors\GislMultipartSessionNotFoundError;
 use Gisl\Sdk\Errors\GislMultipartSessionOwnershipError;
 use Gisl\Sdk\Errors\GislNetworkError;
@@ -3532,6 +3533,21 @@ class GislClient
         }
         if ($statusCode === 403 && $errorType === 'MULTIPART_SESSION_AUTH_REQUIRED') {
             throw new GislMultipartSessionAuthRequiredError(
+                $message,
+                $statusCode,
+                $errorCode,
+                $decoded,
+                $messageKey,
+                $locale,
+                $messageParams,
+                $responseHeaders,
+                $contentLanguage,
+            );
+        }
+        // 415 — a file type no tier can process (eWtnqHZm). The contract body
+        // is a plain ErrorEnvelope, so the status is the discriminator.
+        if ($statusCode === 415) {
+            throw new GislUnsupportedFileTypeError(
                 $message,
                 $statusCode,
                 $errorCode,
