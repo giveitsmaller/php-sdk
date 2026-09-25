@@ -83,34 +83,36 @@ final class ImageOutputRoutes
     ];
 
     /**
-     * Per-route, per-output-format honored + planned option keys, mirroring
+     * Per-route, per-output-format honored + planned + inert option keys, mirroring
+     * (`inert` = accepted but no effect, contract `inert_options`: sent, never
+     * refused; today only PNG `optimization_level`)
      * `image-output-routes.json` `media.image`. `source_op` is uniform
      * (same_format→compress, format_change→convert) so it is a derivation rule,
      * not a table column. `same_format` is keyed by the INPUT token;
      * `format_change` by the OUTPUT token.
      *
      * @var array{
-     *   same_format: array<string, array{honored: list<string>, planned: list<string>}>,
-     *   format_change: array<string, array{honored: list<string>, planned: list<string>}>,
+     *   same_format: array<string, array{honored: list<string>, planned: list<string>, inert: list<string>}>,
+     *   format_change: array<string, array{honored: list<string>, planned: list<string>, inert: list<string>}>,
      * }
      */
     public const IMAGE_OUTPUT_ROUTES = [
         'same_format' => [
-            'avif' => ['honored' => ['auto_orient', 'avif_speed', 'color_profile', 'encoding_mode', 'fit', 'height', 'metadata', 'output_format', 'quality', 'quality_preset', 'target_size_bytes', 'width'], 'planned' => []],
-            'gif' => ['honored' => ['auto_orient', 'color_profile', 'fit', 'height', 'metadata', 'output_format', 'quality', 'width'], 'planned' => []],
-            'jpeg' => ['honored' => ['auto_orient', 'chroma_subsampling', 'color_profile', 'encoding_mode', 'fit', 'height', 'lossless', 'metadata', 'output_format', 'progressive', 'quality', 'quality_preset', 'target_size_bytes', 'width'], 'planned' => []],
-            'png' => ['honored' => ['auto_orient', 'color_profile', 'fit', 'height', 'metadata', 'optimization_level', 'output_format', 'quality', 'width'], 'planned' => []],
-            'svg' => ['honored' => ['metadata', 'output_format'], 'planned' => []],
-            'tiff' => ['honored' => ['auto_orient', 'color_profile', 'fit', 'height', 'metadata', 'output_format', 'quality', 'width'], 'planned' => []],
-            'webp' => ['honored' => ['auto_orient', 'color_profile', 'encoding_mode', 'fit', 'height', 'lossless', 'metadata', 'output_format', 'quality', 'quality_preset', 'target_size_bytes', 'width'], 'planned' => []],
+            'avif' => ['honored' => ['auto_orient', 'avif_speed', 'color_profile', 'encoding_mode', 'fit', 'height', 'metadata', 'output_format', 'quality', 'quality_preset', 'target_size_bytes', 'width'], 'planned' => [], 'inert' => []],
+            'gif' => ['honored' => ['auto_orient', 'color_profile', 'fit', 'height', 'metadata', 'output_format', 'quality', 'width'], 'planned' => [], 'inert' => []],
+            'jpeg' => ['honored' => ['auto_orient', 'chroma_subsampling', 'color_profile', 'encoding_mode', 'fit', 'height', 'lossless', 'metadata', 'output_format', 'progressive', 'quality', 'quality_preset', 'target_size_bytes', 'width'], 'planned' => [], 'inert' => []],
+            'png' => ['honored' => ['auto_orient', 'color_profile', 'fit', 'height', 'metadata', 'output_format', 'quality', 'width'], 'planned' => [], 'inert' => ['optimization_level']],
+            'svg' => ['honored' => ['metadata', 'output_format'], 'planned' => [], 'inert' => []],
+            'tiff' => ['honored' => ['auto_orient', 'color_profile', 'fit', 'height', 'metadata', 'output_format', 'quality', 'width'], 'planned' => [], 'inert' => []],
+            'webp' => ['honored' => ['auto_orient', 'color_profile', 'encoding_mode', 'fit', 'height', 'lossless', 'metadata', 'output_format', 'quality', 'quality_preset', 'target_size_bytes', 'width'], 'planned' => [], 'inert' => []],
         ],
         'format_change' => [
-            'avif' => ['honored' => ['auto_orient', 'color_profile', 'fit', 'height', 'output_format', 'quality', 'width'], 'planned' => ['metadata']],
-            'gif' => ['honored' => ['auto_orient', 'color_profile', 'fit', 'height', 'output_format', 'width'], 'planned' => ['metadata']],
-            'jpeg' => ['honored' => ['auto_orient', 'background', 'color_profile', 'fit', 'height', 'output_format', 'quality', 'width'], 'planned' => ['metadata']],
-            'png' => ['honored' => ['auto_orient', 'color_profile', 'fit', 'height', 'output_format', 'width'], 'planned' => ['metadata']],
-            'tiff' => ['honored' => ['auto_orient', 'color_profile', 'fit', 'height', 'output_format', 'width'], 'planned' => ['metadata']],
-            'webp' => ['honored' => ['auto_orient', 'color_profile', 'fit', 'height', 'output_format', 'quality', 'width'], 'planned' => ['metadata']],
+            'avif' => ['honored' => ['auto_orient', 'color_profile', 'fit', 'height', 'output_format', 'quality', 'width'], 'planned' => ['metadata'], 'inert' => []],
+            'gif' => ['honored' => ['auto_orient', 'color_profile', 'fit', 'height', 'output_format', 'width'], 'planned' => ['metadata'], 'inert' => []],
+            'jpeg' => ['honored' => ['auto_orient', 'background', 'color_profile', 'fit', 'height', 'output_format', 'quality', 'width'], 'planned' => ['metadata'], 'inert' => []],
+            'png' => ['honored' => ['auto_orient', 'color_profile', 'fit', 'height', 'output_format', 'width'], 'planned' => ['metadata'], 'inert' => []],
+            'tiff' => ['honored' => ['auto_orient', 'color_profile', 'fit', 'height', 'output_format', 'width'], 'planned' => ['metadata'], 'inert' => []],
+            'webp' => ['honored' => ['auto_orient', 'color_profile', 'fit', 'height', 'output_format', 'quality', 'width'], 'planned' => ['metadata'], 'inert' => []],
         ],
     ];
 
@@ -188,6 +190,7 @@ final class ImageOutputRoutes
      *   inputToken: string,
      *   honored: array<string, true>,
      *   planned: array<string, true>,
+     *   inert: array<string, true>,
      * }|null
      */
     public static function resolveOutputRoute(string $inputToken, ?string $outputFormat): ?array
@@ -205,6 +208,7 @@ final class ImageOutputRoutes
                 'inputToken' => $inputToken,
                 'honored' => self::keySet($cell['honored']),
                 'planned' => self::keySet($cell['planned']),
+                'inert' => self::keySet($cell['inert']),
             ];
         }
         $cell = self::IMAGE_OUTPUT_ROUTES['format_change'][$outToken] ?? null;
@@ -234,6 +238,7 @@ final class ImageOutputRoutes
             'inputToken' => $inputToken,
             'honored' => self::keySet([...$transcoderHonored, ...$inputGated]),
             'planned' => self::keySet($cell['planned']),
+            'inert' => self::keySet($cell['inert']),
         ];
     }
 

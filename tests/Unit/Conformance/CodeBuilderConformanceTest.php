@@ -307,10 +307,12 @@ final class CodeBuilderConformanceTest extends TestCase
                     self::assertNotNull($token, "unknown image mime '{$mime}' in group '{$e['group']}'");
                     $cell = ImageOutputRoutes::IMAGE_OUTPUT_ROUTES['same_format'][$token] ?? null;
                     self::assertNotNull($cell, "no same_format route for token '{$token}'");
+                    // ACCEPTED is honored OR inert (contract inert_options, e.g. PNG
+                    // optimization_level): output() still takes it, with no effect.
                     self::assertContains(
                         $e['key'],
-                        $cell['honored'],
-                        "{$e['group']}.{$e['key']} routes to output() but is not honored on the '{$token}' route",
+                        [...$cell['honored'], ...$cell['inert']],
+                        "{$e['group']}.{$e['key']} routes to output() but is not accepted on the '{$token}' route",
                     );
                 }
             } else {

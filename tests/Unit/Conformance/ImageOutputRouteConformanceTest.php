@@ -164,6 +164,25 @@ final class ImageOutputRouteConformanceTest extends TestCase
     }
 
     /**
+     * @param 'same_format'|'format_change' $route
+     */
+    #[DataProvider('routeProvider')]
+    public function test_route_inert_options_match(string $route, string $expectedSourceOp): void
+    {
+        $cells = self::$image[$route];
+        self::assertIsArray($cells);
+        foreach ($cells as $fmt => $cell) {
+            self::assertIsArray($cell);
+            $expected = $cell['inert_options'];
+            self::assertIsArray($expected);
+            \sort($expected);
+            $actual = ImageOutputRoutes::IMAGE_OUTPUT_ROUTES[$route][$fmt]['inert'];
+            \sort($actual);
+            self::assertSame($expected, $actual, "{$route}.{$fmt} inert options drifted");
+        }
+    }
+
+    /**
      * @return iterable<string, array{0: 'same_format'|'format_change', 1: string}>
      */
     public static function routeProvider(): iterable
@@ -189,7 +208,7 @@ final class ImageOutputRouteConformanceTest extends TestCase
             self::assertIsArray($cells);
             foreach ($cells as $cell) {
                 self::assertIsArray($cell);
-                foreach ([...$cell['honored_options'], ...$cell['planned_options']] as $k) {
+                foreach ([...$cell['honored_options'], ...$cell['planned_options'], ...$cell['inert_options']] as $k) {
                     $keys[(string) $k] = true;
                 }
             }

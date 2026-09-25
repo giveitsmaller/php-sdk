@@ -918,7 +918,7 @@ final class Recipe
                     conflictingFields: [$key],
                 );
             }
-            if (!isset($resolved['honored'][$key])) {
+            if (!isset($resolved['honored'][$key]) && !isset($resolved['inert'][$key])) {
                 $target = $requested ?? $resolved['inputToken'];
                 throw new GislConfigError(
                     "output(): '{$key}' is not honored on the {$resolved['route']} route "
