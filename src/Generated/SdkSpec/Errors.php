@@ -32,6 +32,20 @@ final class Errors
      * }>
      */
     public const ERROR_CODES = [
+        'response_contract_violation' => [
+            'code' => 'response_contract_violation',
+            'category' => 'api',
+            'source' => 'SDK_local',
+            'status' => 'planned',
+            'httpStatus' => null,
+            'retryable' => false,
+            'sdkClass' => 'GislResponseContractError',
+            'description' => 'The API answered 2xx but the body does not match the contract (a required field missing, or a field of the wrong type), so the SDK could not read it. Distinct from a transport failure and from an API error: typically the SDK and the API are on different contract versions, for example during a co-land. Not retryable: re-reading the same host returns the same body. Requested by sdks (u6Q9oxuI) so a raw deserialiser TypeError never escapes a typed public method; sdks promote it to wired with the class.',
+            'metadataSchema' => [
+                'operation' => 'string',
+                'path' => 'string',
+            ],
+        ],
         'stream_host_not_declared' => [
             'code' => 'stream_host_not_declared',
             'category' => 'config',
@@ -790,6 +804,7 @@ to a single artifact OR use .mapEach() to fan out.
      */
     public const ERROR_CATEGORIES = [
         'api' => [
+            'response_contract_violation',
             'feature_tier_restricted',
             'tier_restriction',
             'multipart_session_not_found',
