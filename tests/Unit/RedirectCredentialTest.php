@@ -169,7 +169,10 @@ final class RedirectCredentialTest extends TestCase
         // following Symfony client, and the constructor must switch it off
         // (codex 17b915c107f7 - a manual wrap here would stay green if the
         // constructor stopped wrapping).
-        $saved = \iterator_to_array(ClassDiscovery::getStrategies(), false);
+        // getStrategies() returns an array; iterator_to_array() accepts one only
+        // from PHP 8.2, and composer.json admits 8.1 (py7FB6jR).
+        $strategies = ClassDiscovery::getStrategies();
+        $saved = \is_array($strategies) ? \array_values($strategies) : \iterator_to_array($strategies, false);
         ClassDiscovery::prependStrategy(SymfonyNativeDiscoveryStrategy::class);
         ClassDiscovery::clearCache();
         try {
