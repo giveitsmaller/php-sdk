@@ -36,11 +36,11 @@ final class Errors
             'code' => 'response_contract_violation',
             'category' => 'api',
             'source' => 'SDK_local',
-            'status' => 'planned',
+            'status' => 'wired',
             'httpStatus' => null,
             'retryable' => false,
             'sdkClass' => 'GislResponseContractError',
-            'description' => 'The API answered 2xx but the body does not match the contract (a required field missing, or a field of the wrong type), so the SDK could not read it. Distinct from a transport failure and from an API error: typically the SDK and the API are on different contract versions, for example during a co-land. Not retryable: re-reading the same host returns the same body. Requested by sdks (u6Q9oxuI) so a raw deserialiser TypeError never escapes a typed public method; sdks promote it to wired with the class.',
+            'description' => 'The API answered 2xx but the body does not match the contract (a required field missing, or a field of the wrong type), so the SDK could not read it. Distinct from a transport failure and from an API error: typically the SDK and the API are on different contract versions, for example during a co-land. Not retryable: re-reading the same host returns the same body. Requested by sdks (u6Q9oxuI) so a raw deserialiser TypeError never escapes a typed public method. WIRED 2026-09-26 (sdks #477, both SDKs). The two SDKs differ ON PURPOSE on one case: PHP does NOT raise it for a merely ABSENT required field (a co-land window ships fields contract-first, e.g. WorkflowCreateResponse.anonymous); TypeScript does, for required maps and lists, via FromJSON.',
             'metadataSchema' => [
                 'operation' => 'string',
                 'path' => 'string',
