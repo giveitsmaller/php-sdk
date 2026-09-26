@@ -54,6 +54,7 @@ final class FixtureLoader
         'getCreditsBalance',
         'getCreditsUsage',
         'getAccountLimits',
+        'getProfile',
         'getMetadata',
         'getSchema',
         'login',

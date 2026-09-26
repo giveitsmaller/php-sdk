@@ -837,6 +837,9 @@ final class Invoke
             case 'getAccountLimits':
                 return $client->getAccountLimits();
 
+            case 'getProfile':
+                return $client->getProfile();
+
             case 'getCreditsUsage':
                 if (!isset($args[0])) {
                     return $client->getCreditsUsage(null);

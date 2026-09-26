@@ -6,6 +6,7 @@ namespace Gisl\Sdk;
 
 use Gisl\Generated\OpenApi\Model\AudioWatermarkDecodeRequest;
 use Gisl\Generated\OpenApi\Model\AudioWatermarkDecodeResponse;
+use Gisl\Generated\OpenApi\Model\AuthenticatedIdentity;
 use Gisl\Generated\OpenApi\Model\AuthErrorResponse;
 use Gisl\Generated\OpenApi\Model\AuthErrorType;
 use Gisl\Generated\OpenApi\Model\AuthRejectionEnvelope;
@@ -21,6 +22,7 @@ use Gisl\Generated\OpenApi\Model\ExternalImportCreatedResponse;
 use Gisl\Generated\OpenApi\Model\ExternalImportRequest;
 use Gisl\Generated\OpenApi\Model\FeatureNotAvailableResponse;
 use Gisl\Generated\OpenApi\Model\FeatureTierRestrictedResponse;
+use Gisl\Generated\OpenApi\Model\GetProfile200ResponseData;
 use Gisl\Generated\OpenApi\Model\LoginUser200ResponseData;
 use Gisl\Generated\OpenApi\Model\LoginUserRequest;
 use Gisl\Generated\OpenApi\Model\MetadataResponse;
@@ -2388,6 +2390,61 @@ class GislClient
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
         return $this->hydrate(AccountLimits::class, $data, '/api/v2/account/limits');
+    }
+
+    /**
+     * Who am I? The identity the configured credentials resolve to
+     * (6zgxH2JI). `GET /api/auth/profile`; the envelope's `data.user` is
+     * unwrapped to {@see AuthenticatedIdentity}.
+     *
+     * Read-only and cheap, so it is safe as a precondition: compare `getId()`
+     * against the account you mean to act on BEFORE a destructive call such as
+     * deleting an account — an API key and a user id supplied separately are
+     * otherwise never checked against each other.
+     *
+     * @throws \Gisl\Sdk\Errors\GislAuthError 401, as on every other call.
+     * @throws \Gisl\Sdk\Errors\GislApiError 404 `USER_NOT_FOUND` when the
+     *         principal no longer resolves to a stored user.
+     * @throws GislResponseContractError a 2xx whose body does not carry
+     *         `data.user` with a string `id`.
+     *
+     * Mirrors `packages/typescript/src/client.ts::getProfile`.
+     */
+    public function getProfile(): AuthenticatedIdentity
+    {
+        $path = '/api/auth/profile';
+        $request = $this->buildRequest(
+            method: 'GET',
+            path: $path,
+        );
+
+        /** @var array<string, mixed> $data */
+        $data = $this->sendAndUnwrap($request);
+        $envelope = $this->hydrate(GetProfile200ResponseData::class, $data, $path);
+
+        // The generated deserialiser does not enforce `required`: a missing
+        // `user` or `id` hydrates to null, and a whoami that silently returns
+        // no id is the one answer a pre-destructive-call check must never get.
+        /** @var AuthenticatedIdentity|null $user */
+        $user = $envelope->getUser();
+        if (!$user instanceof AuthenticatedIdentity) {
+            throw new GislResponseContractError(
+                "Response from {$path} does not match the contract: expected `data.user` with a string `id`.",
+                $path,
+                'user',
+            );
+        }
+        /** @var string|null $userId */
+        $userId = $user->getId();
+        if (!\is_string($userId)) {
+            throw new GislResponseContractError(
+                "Response from {$path} does not match the contract: expected `data.user` with a string `id`.",
+                $path,
+                'id',
+            );
+        }
+
+        return $user;
     }
 
     // ---------------------------------------------------------------------
