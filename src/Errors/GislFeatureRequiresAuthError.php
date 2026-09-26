@@ -10,11 +10,10 @@ namespace Gisl\Sdk\Errors;
  * the operation name so callers can recover by switching to an
  * authenticated factory or routing to a different op.
  *
- * Today the only consumer is the parking-gate on
- * {@see \Gisl\Sdk\Gisl::internalAnonymous()} — while
- * {@see \Gisl\Sdk\Gisl::ANONYMOUS_ALLOWLIST} is empty, every anonymous
- * invocation raises this error before any client is returned. The
- * per-operation allowlist gate lands with the P2 operation builder.
+ * Raised by the client {@see \Gisl\Sdk\Gisl::anonymous()} returns
+ * ({@see \Gisl\Sdk\GislAnonymousClient}) for any method outside
+ * {@see \Gisl\Sdk\Gisl::ANONYMOUS_ALLOWLIST}, and for a guest upload too large
+ * for the single-shot path — always before any request.
  *
  * Mirrors `packages/typescript/src/errors.ts` `GislFeatureRequiresAuthError`.
  */

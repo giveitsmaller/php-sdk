@@ -31,33 +31,67 @@ use Psr\Http\Message\StreamFactoryInterface;
  *    so the "unknown environment" fail-closed throw the TS reference
  *    enforces by hand is structurally implicit here.
  *  - Anonymous-capable operation gating (TS `wrapAnonymous`, which uses
- *    a `Proxy`) is plumbed internally only — {@see internalAnonymous()}
- *    constructs a {@see GislClient} that bypasses the credential chain
- *    entirely. The public surface intentionally does NOT expose a
- *    `Gisl::anonymous()` method: the allowlist
- *    ({@see Gisl::ANONYMOUS_ALLOWLIST}) is empty, so a public anonymous
- *    factory would ship dead surface. When the free-tier launch lands a
- *    non-empty allowlist (per `docs/plans/sdk-cross-language-foundation.md`
- *    §4.10), a follow-up will widen the public surface + implement the
- *    per-operation gate as part of the operation builder (P2).
+ *    a `Proxy`) is the {@see GislAnonymousClient} subclass that
+ *    {@see anonymous()} returns: every method outside
+ *    {@see ANONYMOUS_ALLOWLIST} is overridden to throw before any I/O.
  */
 final class Gisl
 {
     /**
-     * Operations that may be invoked on an internally-anonymous client
-     * without raising an auth error. Empty until the free-tier launch
-     * decision lands — see class docblock.
+     * Low-level {@see GislClient} methods a {@see anonymous()} client may call.
+     * Every other method throws {@see GislFeatureRequiresAuthError} before any
+     * I/O ({@see GislAnonymousClient} overrides each one).
      *
-     * Consumers must not depend on the emptiness today. The gate that
-     * uses this allowlist (per-operation method check) lands with P2's
-     * operation builder; until then, no public surface exposes anonymous
-     * mode at all, so the list is purely a parking-invariant marker.
+     * ⚠️ THIS LIST IS DERIVED, NOT CHOSEN (owner decision 610(4): the guest
+     * surface is exactly what the API accepts). Each entry is here because
+     * every endpoint it can reach on an anonymous client is `auth: optional`
+     * (or `anonymous`) in the vendored `availability.json` AND open to guests
+     * in the API:
+     *  - `uploadFile` -> `POST /api/uploads` ONLY. A guest upload is
+     *    single-shot: a file over the 10,000,000-byte single-shot cap, or a
+     *    `resumeUploadId`, is refused locally before any request.
+     *  - `getMetadata` -> `GET /api/uploads/{id}/metadata`
+     *  - `createWorkflow`, `createWorkflowAwaitingProbe` -> `POST /api/workflows`
+     *    (the latter's probe wait meets the gate: `waitForProbe` is not listed)
+     *  - `getWorkflowStatus`, `waitForWorkflow` -> `GET /api/workflows/{id}/status`
+     *  - `getWorkflowDownloads` -> `GET /api/workflows/{id}/downloads`
+     *  - `streamEvents` -> `GET /api/workflows/{id}/events`
+     *  - `getSchema` -> `GET /api/operations/schema`
+     *  - `submitContact` -> `POST /api/contact`
+     *  - `maybeWaitForVideoProbe` -> nothing: a no-op on an anonymous client,
+     *    because the probe endpoint is `required` and the wait is best-effort
+     *
+     * ⚠️ WHERE THE CONTRACT AND THE API DISAGREE, THE API WINS (hub directive).
+     * Measured 2026-09-26 in compression_api `config/packages/security.yaml`
+     * (origin/main 566d3350): multipart initiate and operation retry are
+     * `IS_AUTHENTICATED_FULLY`, although `availability.json` marks both
+     * `optional`. So multipart is not on the guest surface (making 10,000,000
+     * bytes, the single-shot cap, the effective guest file limit) and
+     * `retryOperation` is excluded — both named, reasoned exclusions in the
+     * conformance test, to be removed when the contract is corrected.
+     *
+     * `AnonymousAllowlistConformanceTest` fails in both directions: an entry
+     * reaching a `required` endpoint, or a non-`required` endpoint no entry
+     * reaches and no exclusion names. Mirrors TS `ANONYMOUS_ALLOWLIST`.
+     *
+     * WHAT a guest may upload and run is enforced by the API, not here — see
+     * {@see anonymous()}.
      *
      * @internal
-     *
-     * @var list<string>
      */
-    public const ANONYMOUS_ALLOWLIST = [];
+    public const ANONYMOUS_ALLOWLIST = [
+        'uploadFile',
+        'getMetadata',
+        'createWorkflow',
+        'createWorkflowAwaitingProbe',
+        'getWorkflowStatus',
+        'waitForWorkflow',
+        'getWorkflowDownloads',
+        'streamEvents',
+        'getSchema',
+        'submitContact',
+        'maybeWaitForVideoProbe',
+    ];
 
     /**
      * Construct an ergonomic-layer-resolved low-level {@see GislClient}.
@@ -141,47 +175,110 @@ final class Gisl
     }
 
     /**
-     * Construct a client that ENTIRELY bypasses the credential chain — no
-     * env / profile key can leak into the request (TS r1 high
-     * `e9e1c1182d56`). The returned client carries no Authorization
-     * header.
+     * Construct an ergonomic client with NO credential — the guest front door
+     * (`OuegCUtq`):
      *
-     * **Parking-gate active.** While {@see ANONYMOUS_ALLOWLIST} is empty,
-     * every call raises {@see GislFeatureRequiresAuthError} BEFORE
-     * constructing a client. This is the load-bearing parity-with-TS
-     * guarantee: today there is no callable anonymous surface anywhere
-     * in the PHP SDK — neither a public `Gisl::anonymous()` nor a
-     * `@internal` factory that returns an ungated client. When the
-     * free-tier launch lands a non-empty allowlist (per
-     * `docs/plans/sdk-cross-language-foundation.md` §4.10 + plan §12),
-     * a follow-up will widen the public surface AND add the
-     * per-operation gate alongside the operation builder (P2). The
-     * resolver branch in {@see createInternal()} is already plumbed
-     * (the `allowAnonymous` parameter); only this method's parking
-     * gate stands between today and that future state.
+     *     $client = Gisl::anonymous(environment: Environment::Staging);
+     *     $result = $client->file('photo.jpg')->compress()->run();
      *
-     * @internal Not part of the public API. Calling this method today
-     *           always throws — it is a placeholder for the P2-era
-     *           anonymous factory.
+     * Never reads an API key from anywhere (explicit, `GISL_API_KEY`, or the
+     * `~/.gisl/credentials` profile) and sends no session cookie, so no
+     * request it makes carries a credential of any kind.
+     *
+     * Only the methods in {@see ANONYMOUS_ALLOWLIST} work — upload, workflow
+     * create, status, wait, downloads, events, metadata, schema, contact.
+     * Everything else (credits, limits, cancel, resume, retry, list, probe,
+     * profile, login/logout...) throws
+     * {@see GislFeatureRequiresAuthError} before any I/O. The file-first and
+     * single-op builders (`file()`, `files()`, `compress()`, `run()`,
+     * `submit()`) work through that gate.
+     *
+     * The workflow capability token (`cap`) an anonymous create returns is
+     * remembered per workflow and sent as `X-Workflow-Capability` on that
+     * workflow's status / downloads / events reads, so `run()` and
+     * `submit()->wait()` need nothing from you. It lives only in this client:
+     * a workflow re-attached from another process has no `cap`, so read it
+     * with the low-level `getWorkflowStatus($id, $capability)`.
+     *
+     * **What a guest may do is the API's rule, not the SDK's.** The SDK does
+     * not pre-check the media, operation or quota rules, so they cannot drift
+     * from the server's; it checks only the file size, which is a transport
+     * fact (above the single-shot cap the only route is multipart). As the API
+     * enforces it today (owner decision 610(4); not yet declared
+     * machine-readably in the contract, so it is stated here rather than
+     * pinned):
+     *  - uploads: images only, at most 10,000,000 bytes per file,
+     *    single-shot. The API's guest cap is 10 MiB, but multipart needs an
+     *    account, so the single-shot cap is the one that binds. A larger file
+     *    is refused HERE, before any request, with
+     *    {@see GislFeatureRequiresAuthError}; a non-image is refused by the
+     *    API as a {@see Errors\GislTierRestrictedError} (restriction kind
+     *    `mime_type`).
+     *  - operations: `compress`, `convert` and `thumbnail`. Anything else is a
+     *    403 at workflow create: a {@see Errors\GislApiError} with `errorCode`
+     *    `ANONYMOUS_OPERATION_NOT_ALLOWED`.
+     *  - 30 workflow creates per IP per 24 hours: then a
+     *    {@see Errors\GislApiError} with `errorCode` `ANONYMOUS_QUOTA_EXHAUSTED`
+     *    (plus the usual per-minute 429s).
+     *
+     * {@see create()} is unchanged: without a key it still throws
+     * {@see GislMissingCredentialsError} and never falls back to this mode.
+     *
+     * @param array<string, string> $headers Extra headers merged into every request.
      */
-    public static function internalAnonymous(): never
-    {
-        throw new GislFeatureRequiresAuthError(
-            operation: '__anonymous_factory__',
-            message: 'Anonymous client construction is parked while '
-                . 'Gisl::ANONYMOUS_ALLOWLIST is empty. No operations are '
-                . 'approved for anonymous use yet. Pass apiKey: to '
-                . 'Gisl::create() for authenticated access. The '
-                . 'underlying anonymous bypass is plumbed internally '
-                . '(createInternal allowAnonymous branch) — it ships '
-                . 'alongside the P2 operation builder + a non-empty '
-                . 'allowlist.',
+    public static function anonymous(
+        ?Environment $environment = null,
+        ?string $baseUrl = null,
+        array $headers = [],
+        ?int $timeoutMs = null,
+        ?ClientInterface $httpClient = null,
+        ?RequestFactoryInterface $requestFactory = null,
+        ?StreamFactoryInterface $streamFactory = null,
+        ?PresetDefaults $presetDefaults = null,
+        ?string $locale = null,
+        ?string $streamBaseUrl = null,
+    ): GislAnonymousClient {
+        $client = self::createInternal(
+            apiKey: null,
+            environment: $environment,
+            baseUrl: $baseUrl,
+            profile: null,
+            profilePath: null,
+            useSessionCookie: false,
+            // No caller-supplied header may carry a credential (codex on the
+            // anonymous PR): Authorization and Cookie are dropped, any case.
+            headers: \array_filter(
+                $headers,
+                static fn (string $name): bool => !\in_array(\strtolower($name), ['authorization', 'cookie'], true),
+                \ARRAY_FILTER_USE_KEY,
+            ),
+            timeoutMs: $timeoutMs,
+            // A guest cannot upload multipart, so there are no multipart knobs;
+            // createInternal pins the threshold to the single-shot cap.
+            multipartThresholdBytes: null,
+            multipartConcurrency: null,
+            multipartMaxAttempts: null,
+            multipartRetryBaseMs: null,
+            httpClient: $httpClient,
+            requestFactory: $requestFactory,
+            streamFactory: $streamFactory,
+            allowAnonymous: true,
+            presetDefaults: $presetDefaults,
+            locale: $locale,
+            streamBaseUrl: $streamBaseUrl,
         );
+        if (!$client instanceof GislAnonymousClient) {
+            // Unreachable: createInternal's anonymous branch builds exactly
+            // this class. Checked rather than asserted so a refactor that
+            // breaks it cannot hand a guest an ungated client.
+            throw new \LogicException('Gisl::anonymous() must build a GislAnonymousClient.');
+        }
+        return $client;
     }
 
     /**
      * Inner factory shared by {@see create()} and
-     * {@see internalAnonymous()} — extracted so the anonymous branch can
+     * {@see anonymous()} — extracted so the anonymous branch can
      * ENTIRELY skip the credential chain rather than just suppressing
      * its throw. Mirrors `_createInternal` in
      * `packages/typescript/src/gisl.ts:179-246`.
@@ -236,14 +333,16 @@ final class Gisl
                 headers: $headers,
                 timeout: $timeoutMs,
                 useSessionCookie: false,
-                multipartThresholdBytes: $multipartThresholdBytes,
+                // Pinned: every upload the gate lets through (<= the
+                // single-shot cap) must route single-shot.
+                multipartThresholdBytes: GislAnonymousClient::MAX_UPLOAD_BYTES,
                 multipartConcurrency: $multipartConcurrency,
                 multipartMaxAttempts: $multipartMaxAttempts,
                 multipartRetryBaseMs: $multipartRetryBaseMs,
                 locale: $locale,
                 streamBaseUrl: $resolvedStreamBaseUrl,
             );
-            return new GislErgonomicClient(
+            return new GislAnonymousClient(
                 $config,
                 $httpClient,
                 $requestFactory,

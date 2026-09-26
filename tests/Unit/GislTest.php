@@ -10,6 +10,7 @@ use Gisl\Sdk\Errors\GislConfigError;
 use Gisl\Sdk\Errors\GislFeatureRequiresAuthError;
 use Gisl\Sdk\Errors\GislMissingCredentialsError;
 use Gisl\Sdk\Gisl;
+use Gisl\Sdk\GislAnonymousClient;
 use Gisl\Sdk\GislClient;
 use Gisl\Sdk\Http\CurlMultiPartUploader;
 use GuzzleHttp\Psr7\HttpFactory;
@@ -285,51 +286,29 @@ final class GislTest extends TestCase
     }
 
     // -----------------------------------------------------------------
-    // Anonymous capability — internal-only (no public Gisl::anonymous)
+    // Anonymous — Gisl::anonymous() (OuegCUtq). Behaviour and the contract
+    // pin live in GislAnonymousClientTest / AnonymousAllowlistConformanceTest;
+    // these cover the factory.
     // -----------------------------------------------------------------
 
-    public function testInternalAnonymousThrowsWhileAllowlistEmpty(): void
+    public function testAnonymousBypassesTheCredentialChainEntirely(): void
     {
-        // Parking-gate (codex r1 #8bf28ca2815b): while
-        // Gisl::ANONYMOUS_ALLOWLIST is empty, internalAnonymous() must
-        // refuse to produce a client — no publicly-callable code path
-        // may bypass the credential chain. The gate fires BEFORE
-        // anything observable could leak. The future P2 operation
-        // builder lifts this gate when the allowlist becomes non-empty.
+        // Load-bearing TS-port r1 e9e1c1182d56: env AND profile both populated,
+        // and the anonymous client must still carry no key.
         putenv('GISL_API_KEY=env-key-must-never-reach-anon-client');
+        $client = Gisl::anonymous(
+            httpClient: $this->stubClient(),
+            requestFactory: $this->factory,
+            streamFactory: $this->factory,
+        );
 
-        try {
-            Gisl::internalAnonymous();
-            self::fail('Expected GislFeatureRequiresAuthError');
-        } catch (GislFeatureRequiresAuthError $e) {
-            self::assertSame('__anonymous_factory__', $e->operation);
-            self::assertStringContainsString('parked', $e->getMessage());
-            self::assertStringContainsString('ANONYMOUS_ALLOWLIST', $e->getMessage());
-        }
+        self::assertInstanceOf(GislAnonymousClient::class, $client);
+        self::assertNull($client->config->apiKey);
+        self::assertFalse($client->config->useSessionCookie);
     }
 
-    public function testInternalAnonymousErrorIsConfigErrorSubtype(): void
+    public function testCreateInternalAnonymousBranchIgnoresAProfileKey(): void
     {
-        // Mirrors TS errors.ts:412 — `GislFeatureRequiresAuthError
-        // extends GislConfigError`. A `catch (GislConfigError $e)`
-        // block must catch the parking-gate throw.
-        try {
-            Gisl::internalAnonymous();
-            self::fail('Expected GislFeatureRequiresAuthError');
-        } catch (GislConfigError $e) {
-            self::assertInstanceOf(GislFeatureRequiresAuthError::class, $e);
-        }
-    }
-
-    public function testCreateInternalAnonymousBranchBypassesCredentialChain(): void
-    {
-        // Capability-plumbed verification (load-bearing TS-port r1
-        // e9e1c1182d56). The parking gate above hides
-        // internalAnonymous() from public callers, but the underlying
-        // bypass IS plumbed in createInternal(allowAnonymous=true).
-        // Verify it via reflection: env + profile both populated, the
-        // resolver must NOT be reached, and the produced client must
-        // carry no apiKey.
         putenv('GISL_API_KEY=env-key-must-not-leak-through-bypass');
         $profilePath = $this->writeProfile(
             "[default]\napi_key = profile-key-also-no-leak\n",
@@ -352,50 +331,47 @@ final class GislTest extends TestCase
             $this->stubClient(),
             $this->factory,
             $this->factory,
-            true, // allowAnonymous — the parked branch under test.
+            true, // allowAnonymous
         );
 
-        self::assertInstanceOf(GislClient::class, $client);
-        self::assertNull(
-            $client->config->apiKey,
-            'allowAnonymous=true must produce a client with no apiKey '
-            . 'even when env and profile both have one populated.',
-        );
-        self::assertFalse($client->config->useSessionCookie);
+        self::assertInstanceOf(GislAnonymousClient::class, $client);
+        self::assertNull($client->config->apiKey);
     }
 
-    public function testNoPublicInternalAnonymousAsLegacyAnonymousAlias(): void
+    public function testCreateStillRefusesAMissingKeyAndNeverFallsBackToAnonymous(): void
     {
-        // Reinforces the parking-invariant: internalAnonymous() exists
-        // (the placeholder), but it has the parking gate. There is no
-        // alias `Gisl::anonymous()` masking it.
-        $reflection = new \ReflectionClass(Gisl::class);
-        $internal = $reflection->getMethod('internalAnonymous');
-        self::assertTrue($internal->isPublic());
-        self::assertTrue($internal->isStatic());
-        self::assertTrue(
-            $internal->hasReturnType(),
-            'internalAnonymous() must declare its return type — `never` today.',
+        $this->expectException(GislMissingCredentialsError::class);
+        Gisl::create(
+            profilePath: $this->tmpDir . '/no-such-credentials',
+            httpClient: $this->stubClient(),
+            requestFactory: $this->factory,
+            streamFactory: $this->factory,
         );
     }
 
-    public function testNoPublicAnonymousMethod(): void
+    public function testAnonymousRefusalIsAConfigErrorSubtype(): void
     {
-        // The parking-invariant: while ANONYMOUS_ALLOWLIST is empty,
-        // there is no public Gisl::anonymous() to call.
-        $reflection = new \ReflectionClass(Gisl::class);
-
-        self::assertFalse(
-            $reflection->hasMethod('anonymous'),
-            'Gisl::anonymous() must not be exposed publicly while ANONYMOUS_ALLOWLIST is empty.',
+        // Mirrors TS errors.ts — `GislFeatureRequiresAuthError extends
+        // GislConfigError`, so a `catch (GislConfigError $e)` catches the gate.
+        $client = Gisl::anonymous(
+            httpClient: $this->stubClient(),
+            requestFactory: $this->factory,
+            streamFactory: $this->factory,
         );
+        try {
+            $client->getCreditsBalance();
+            self::fail('Expected GislFeatureRequiresAuthError');
+        } catch (GislConfigError $e) {
+            self::assertInstanceOf(GislFeatureRequiresAuthError::class, $e);
+        }
     }
 
-    public function testAnonymousAllowlistIsEmpty(): void
+    public function testTheParkedPlaceholderIsGone(): void
     {
-        // Audit-gate parking-invariant. Mirrors TS gisl.ts:53 readonly
-        // empty tuple — emptiness is part of the contract.
-        self::assertCount(0, Gisl::ANONYMOUS_ALLOWLIST);
+        // internalAnonymous() was a `never`-returning placeholder while the
+        // allowlist was parked; Gisl::anonymous() replaces it.
+        self::assertFalse((new \ReflectionClass(Gisl::class))->hasMethod('internalAnonymous'));
+        self::assertNotSame([], Gisl::ANONYMOUS_ALLOWLIST);
     }
 
     // -----------------------------------------------------------------

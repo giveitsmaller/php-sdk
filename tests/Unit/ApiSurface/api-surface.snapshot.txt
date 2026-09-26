@@ -94,6 +94,7 @@ const Gisl\Sdk\Generated\SdkSpec\Presets::PRESETS = {"image_compress":{"Size":{"
 const Gisl\Sdk\Generated\SdkSpec\Version::PRESET_CONFIG_HASH = "sha256:354814f7906f85be6a6ca5ede6c0722c83cdc058fd658a9bb2b0996520466c6d"
 const Gisl\Sdk\Generated\SdkSpec\Version::PRESET_VERSION = "1.6"
 const Gisl\Sdk\Generated\SdkSpec\Version::SDK_SPEC_VERSION = "2.9.0"
+const Gisl\Sdk\GislAnonymousClient::MAX_UPLOAD_BYTES = 10000000
 const Gisl\Sdk\GislClientConfig::DEFAULT_MULTIPART_CONCURRENCY = 4
 const Gisl\Sdk\GislClientConfig::DEFAULT_MULTIPART_FIRST_CHUNK_SIZE_BYTES = 8388608
 const Gisl\Sdk\GislClientConfig::DEFAULT_MULTIPART_MAX_ATTEMPTS = 3
@@ -204,6 +205,7 @@ final class Gisl\Sdk\GetSchemaHitResult extends Gisl\Sdk\GetSchemaResult
 final class Gisl\Sdk\GetSchemaNotModifiedResult extends Gisl\Sdk\GetSchemaResult
 final class Gisl\Sdk\GetSchemaOptions
 final class Gisl\Sdk\Gisl
+final class Gisl\Sdk\GislAnonymousClient extends Gisl\Sdk\GislErgonomicClient < Gisl\Sdk\GislClient
 final class Gisl\Sdk\GislClientConfig
 final class Gisl\Sdk\GislSseEvent
 final class Gisl\Sdk\GislSseParseFailure
@@ -417,6 +419,35 @@ method Gisl\Sdk\FileFirst\WatermarkedRecipe::transform()
 method Gisl\Sdk\GetSchemaHitResult::__construct()
 method Gisl\Sdk\GetSchemaNotModifiedResult::__construct()
 method Gisl\Sdk\GetSchemaOptions::__construct()
+method Gisl\Sdk\GislAnonymousClient::__construct()
+method Gisl\Sdk\GislAnonymousClient::archiveWorkflow()
+method Gisl\Sdk\GislAnonymousClient::cancelWorkflow()
+method Gisl\Sdk\GislAnonymousClient::createCheckoutSession()
+method Gisl\Sdk\GislAnonymousClient::createExternalImport()
+method Gisl\Sdk\GislAnonymousClient::createWorkflow()
+method Gisl\Sdk\GislAnonymousClient::decodeAudioWatermark()
+method Gisl\Sdk\GislAnonymousClient::getAccountLimits()
+method Gisl\Sdk\GislAnonymousClient::getCreditsBalance()
+method Gisl\Sdk\GislAnonymousClient::getCreditsUsage()
+method Gisl\Sdk\GislAnonymousClient::getProfile()
+method Gisl\Sdk\GislAnonymousClient::getUploadStatus()
+method Gisl\Sdk\GislAnonymousClient::getWorkflowDownloads()
+method Gisl\Sdk\GislAnonymousClient::getWorkflowStatus()
+method Gisl\Sdk\GislAnonymousClient::keepaliveUpload()
+method Gisl\Sdk\GislAnonymousClient::listWorkflows()
+method Gisl\Sdk\GislAnonymousClient::login()
+method Gisl\Sdk\GislAnonymousClient::logout()
+method Gisl\Sdk\GislAnonymousClient::maybeWaitForVideoProbe()
+method Gisl\Sdk\GislAnonymousClient::preflightClips()
+method Gisl\Sdk\GislAnonymousClient::presignParts()
+method Gisl\Sdk\GislAnonymousClient::probeUpload()
+method Gisl\Sdk\GislAnonymousClient::restoreWorkflow()
+method Gisl\Sdk\GislAnonymousClient::resumeWorkflow()
+method Gisl\Sdk\GislAnonymousClient::retryOperation()
+method Gisl\Sdk\GislAnonymousClient::streamEvents()
+method Gisl\Sdk\GislAnonymousClient::uploadFile()
+method Gisl\Sdk\GislAnonymousClient::waitForProbe()
+method Gisl\Sdk\GislAnonymousClient::workflows()
 method Gisl\Sdk\GislClient::__construct()
 method Gisl\Sdk\GislClient::archiveWorkflow()
 method Gisl\Sdk\GislClient::cancelWorkflow()
@@ -842,6 +873,7 @@ static method Gisl\Sdk\FileFirst\WatermarkGate::lowerWatermarkOp()
 static method Gisl\Sdk\FileFirst\WatermarkGate::resolveWireOp()
 static method Gisl\Sdk\FileFirst\WatermarkGate::validateOverlay()
 static method Gisl\Sdk\Generated\SdkSpec\Presets::shippedDefaultsFor()
+static method Gisl\Sdk\Gisl::anonymous()
 static method Gisl\Sdk\Gisl::create()
 static method Gisl\Sdk\Http\RateLimitHeaders::isApiRetryableStatus()
 static method Gisl\Sdk\Http\RateLimitHeaders::parseRetryAfterMs()
