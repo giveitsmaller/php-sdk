@@ -61,14 +61,11 @@ final class Gisl
      *  - `maybeWaitForVideoProbe` -> nothing: a no-op on an anonymous client,
      *    because the probe endpoint is `required` and the wait is best-effort
      *
-     * ⚠️ WHERE THE CONTRACT AND THE API DISAGREE, THE API WINS (hub directive).
-     * Measured 2026-09-26 in compression_api `config/packages/security.yaml`
-     * (origin/main 566d3350): multipart initiate and operation retry are
-     * `IS_AUTHENTICATED_FULLY`, although `availability.json` marks both
-     * `optional`. So multipart is not on the guest surface (making 10,000,000
-     * bytes, the single-shot cap, the effective guest file limit) and
-     * `retryOperation` is excluded — both named, reasoned exclusions in the
-     * conformance test, to be removed when the contract is corrected.
+     * Multipart (initiate and complete) and operation retry require an
+     * account: the API enforced that first, and since contracts v2.217.0
+     * `availability.json` says so too, so they need no exclusion. That makes
+     * 10,000,000 bytes (the single-shot cap) the effective guest file limit,
+     * and `retryOperation` is not on the guest surface.
      *
      * `AnonymousAllowlistConformanceTest` fails in both directions: an entry
      * reaching a `required` endpoint, or a non-`required` endpoint no entry
@@ -204,9 +201,9 @@ final class Gisl
      * not pre-check the media, operation or quota rules, so they cannot drift
      * from the server's; it checks only the file size, which is a transport
      * fact (above the single-shot cap the only route is multipart). As the API
-     * enforces it today (owner decision 610(4); not yet declared
-     * machine-readably in the contract, so it is stated here rather than
-     * pinned):
+     * enforces it today (owner decision 610(4); declared since contracts
+     * v2.217.0 in `anonymous-policy.yaml`, which the contracts package
+     * ships):
      *  - uploads: images only, at most 10,000,000 bytes per file,
      *    single-shot. The API's guest cap is 10 MiB, but multipart needs an
      *    account, so the single-shot cap is the one that binds. A larger file

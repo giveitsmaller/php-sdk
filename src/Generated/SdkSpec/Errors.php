@@ -584,6 +584,19 @@ to a single artifact OR use .mapEach() to fan out.
                 'actual' => 'string',
             ],
         ],
+        'file_too_large' => [
+            'code' => 'file_too_large',
+            'category' => 'api',
+            'source' => 'ErrorEnvelope.error',
+            'status' => 'planned',
+            'httpStatus' => 413,
+            'retryable' => false,
+            'sdkClass' => 'GislUploadCapExceededError',
+            'description' => '413 — an upload exceeded the endpoint\'s maximum byte size (the single-shot maximum; larger files use multipart). Wire `FILE_TOO_LARGE`, `error_type: file_too_large`, `message_params.max_bytes`. The upload-cap family, beside image_dimensions_too_large. PLANNED: the API answers this case with 400 BAD_REQUEST today and moves it to this 413 under card E8xFECmG; promote to wired when it emits.',
+            'metadataSchema' => [
+                'max_bytes' => 'integer',
+            ],
+        ],
         'image_dimensions_too_large' => [
             'code' => 'image_dimensions_too_large',
             'category' => 'api',
@@ -816,6 +829,7 @@ to a single artifact OR use .mapEach() to fan out.
             'upload_duration_exceeds_tier',
             'probe_pending',
             'requires_reencode',
+            'file_too_large',
             'image_dimensions_too_large',
             'unsupported_file_type',
             'workflow_failed',

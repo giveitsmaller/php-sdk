@@ -80,7 +80,7 @@ final class AnonymousAllowlistConformanceTest extends TestCase
         'probeUpload' => [['POST /api/uploads/{id}/probe'], null],
         'waitForProbe' => [['POST /api/uploads/{id}/probe'], null],
         'preflightClips' => [['POST /api/uploads/{id}/probe'], null],
-        'retryOperation' => [['POST /api/operations/{id}/retry'], self::API_REQUIRES_AUTH_RETRY],
+        'retryOperation' => [['POST /api/operations/{id}/retry'], null],
         'login' => [
             ['POST /api/auth/login'],
             'The endpoint accepts guests, but logging in turns the client into a session client. '
@@ -88,27 +88,8 @@ final class AnonymousAllowlistConformanceTest extends TestCase
         ],
     ];
 
-    /*
-     * ⚠️ CONTRACT-VS-API DISAGREEMENTS. The contract marks these `optional`,
-     * but the API requires authentication — measured 2026-09-26 in
-     * compression_api `compression/config/packages/security.yaml`
-     * access_control (origin/main 566d3350): `^/api/uploads/multipart/initiate$`
-     * and `^/api/operations/[^/]+/retry$` are `IS_AUTHENTICATED_FULLY`. The API
-     * is the source of truth for what a guest may do. Delete these exclusions
-     * when the contract is corrected; the stale-exclusion check goes red on its
-     * own once it is.
-     */
-    private const API_REQUIRES_AUTH_MULTIPART = 'contract says optional, but the API requires auth on multipart '
-        . 'initiate (security.yaml IS_AUTHENTICATED_FULLY), so a guest cannot start a multipart upload and '
-        . 'complete is unreachable';
-    private const API_REQUIRES_AUTH_RETRY = 'contract says optional, but the API requires auth on retry '
-        . '(security.yaml IS_AUTHENTICATED_FULLY)';
-
     /** Non-`required` endpoints no allowlisted method reaches, and why. */
     private const ENDPOINT_EXCLUSIONS = [
-        'POST /api/uploads/multipart/initiate' => self::API_REQUIRES_AUTH_MULTIPART,
-        'POST /api/uploads/multipart/complete' => self::API_REQUIRES_AUTH_MULTIPART,
-        'POST /api/operations/{id}/retry' => self::API_REQUIRES_AUTH_RETRY,
         'GET /healthz' => 'infrastructure probe; the SDK has no method for it',
         'GET /readyz' => 'infrastructure probe; the SDK has no method for it',
         'POST /api/auth/login' => 'policy exclusion: see EXCLUDED_METHODS login',

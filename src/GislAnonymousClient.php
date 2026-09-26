@@ -299,8 +299,7 @@ final class GislAnonymousClient extends GislErgonomicClient
     }
 
     /**
-     * The contract marks retry `optional`, but the API requires auth on it
-     * (compression_api security.yaml, measured 2026-09-26). The API wins.
+     * Retry requires an account (the API, and the contract since v2.217.0).
      */
     public function retryOperation(string $operationId): never
     {
