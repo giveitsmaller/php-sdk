@@ -175,9 +175,13 @@ class GislClient
         ?StreamFactoryInterface $streamFactory = null,
         ?MultipartPartUploader $partUploader = null,
     ) {
-        $this->httpClient = $httpClient ?? self::withoutRedirects(Psr18ClientDiscovery::find());
-        $this->requestFactory = $requestFactory ?? Psr17FactoryDiscovery::findRequestFactory();
-        $this->streamFactory = $streamFactory ?? Psr17FactoryDiscovery::findStreamFactory();
+        $this->httpClient = $httpClient ?? self::withoutRedirects(
+            self::discover(static fn () => Psr18ClientDiscovery::find(), 'PSR-18 HTTP client'),
+        );
+        $this->requestFactory = $requestFactory
+            ?? self::discover(static fn () => Psr17FactoryDiscovery::findRequestFactory(), 'PSR-17 request factory');
+        $this->streamFactory = $streamFactory
+            ?? self::discover(static fn () => Psr17FactoryDiscovery::findStreamFactory(), 'PSR-17 stream factory');
         $this->partUploader = $partUploader;
         $this->sseCooldownKey = new \stdClass();
     }
@@ -3748,6 +3752,39 @@ class GislClient
             }
         }
         return true;
+    }
+
+    /**
+     * Run a php-http discovery call; when nothing is installed, raise a
+     * GislConfigError that says what to install instead of the raw discovery
+     * exception (hub prod smoke 2026-09-26, LwYmMZpR). composer.json requires
+     * the psr/http-*-implementation virtual packages, so the php-http/discovery
+     * Composer plugin installs one when it is allowed to run; this is the path
+     * when it is not (disabled, or a non-interactive install that never
+     * allowed it).
+     *
+     * @template T
+     * @param callable(): T $find
+     * @return T
+     */
+    private static function discover(callable $find, string $what): mixed
+    {
+        try {
+            return $find();
+        } catch (\Http\Discovery\Exception\NotFoundException $e) {
+            // Only "nothing installed". A client that IS installed but fails to
+            // construct (ClassInstantiationFailedException, same marker
+            // interface) keeps its own cause rather than being reported absent.
+            throw new GislConfigError(
+                "No {$what} is installed. Install the SDK with an HTTP client:\n"
+                . "  composer require giveitsmaller/sdk\n"
+                . "  composer require guzzlehttp/guzzle http-interop/http-factory-guzzle\n"
+                . '(or pass your own PSR-18 client and PSR-17 factories to the client).',
+                reason: 'http_client_not_found',
+                suggestion: 'composer require guzzlehttp/guzzle http-interop/http-factory-guzzle',
+                previous: $e,
+            );
+        }
     }
 
     /**

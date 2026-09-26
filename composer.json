@@ -7,18 +7,20 @@
     },
     "type": "library",
     "license": "Apache-2.0",
-  "homepage": "https://docs.giveitsmaller.com",
-  "support": {
-    "docs": "https://docs.giveitsmaller.com",
-    "issues": "https://github.com/giveitsmaller/php-sdk/issues",
-    "source": "https://github.com/giveitsmaller/php-sdk"
-  },
+    "homepage": "https://docs.giveitsmaller.com",
+    "support": {
+        "docs": "https://docs.giveitsmaller.com",
+        "issues": "https://github.com/giveitsmaller/php-sdk/issues",
+        "source": "https://github.com/giveitsmaller/php-sdk"
+    },
     "require": {
         "php": "^8.1",
         "psr/http-client": "^1.0",
         "psr/http-factory": "^1.0",
         "psr/http-message": "^1.1 || ^2.0",
         "php-http/discovery": "^1.19",
+        "psr/http-client-implementation": "*",
+        "psr/http-factory-implementation": "*",
         "giveitsmaller/contracts": "^0.80.0"
     },
     "require-dev": {
@@ -30,12 +32,19 @@
         "symfony/http-client": "^6.4.40 || ^7.4.12",
         "symfony/yaml": "^6.4.40 || ^7.4.12"
     },
+    "suggest": {
+        "guzzlehttp/guzzle": "The PSR-18 HTTP client the SDK needs if your project has none. Install with: composer require guzzlehttp/guzzle http-interop/http-factory-guzzle",
+        "http-interop/http-factory-guzzle": "The PSR-17 factories for Guzzle; install together with guzzlehttp/guzzle.",
+        "symfony/http-client": "An alternative PSR-18 HTTP client (with nyholm/psr7 for PSR-17)."
+    },
     "conflict": {
         "guzzlehttp/guzzle": "<7.12.1",
         "guzzlehttp/psr7": "<2.12.1"
     },
     "autoload": {
-        "psr-4": { "Gisl\\Sdk\\": "src/" }
+        "psr-4": {
+            "Gisl\\Sdk\\": "src/"
+        }
     },
     "autoload-dev": {
         "psr-4": {
@@ -47,7 +56,9 @@
         {
             "type": "path",
             "url": "../../generated/php",
-            "options": { "symlink": true }
+            "options": {
+                "symlink": true
+            }
         }
     ],
     "config": {
@@ -59,6 +70,9 @@
     "scripts": {
         "test": "phpunit",
         "phpstan": "phpstan analyse",
-        "check": ["@test", "@phpstan"]
+        "check": [
+            "@test",
+            "@phpstan"
+        ]
     }
 }

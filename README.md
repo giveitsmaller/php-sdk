@@ -8,7 +8,17 @@ The official PHP SDK for **Give It Smaller** (GISL) — a file compression and m
 
 ## Install
 
-The SDK code-targets PSR-18 / PSR-17 and resolves a concrete HTTP client at runtime via `php-http/discovery`. Install the SDK plus any PSR-18 implementation — Guzzle is the path of least resistance:
+The SDK code-targets PSR-18 / PSR-17 and resolves a concrete HTTP client at runtime via `php-http/discovery`. When your project has no PSR-18/PSR-17 implementation, the `php-http/discovery` Composer plugin installs one, but only if Composer lets it run:
+
+- **Interactive** `composer require giveitsmaller/sdk`: Composer asks whether to trust `php-http/discovery`; answer yes and it installs a client.
+- **Non-interactive** (CI, Docker builds, `--no-interaction`): Composer does not ask and does not run an unapproved plugin, so no client is installed. Allow the plugin first:
+
+```bash
+composer config allow-plugins.php-http/discovery true
+composer require giveitsmaller/sdk
+```
+
+Or install a client yourself; Guzzle is the path of least resistance. Without any client, constructing the SDK raises a `GislConfigError` saying what to install:
 
 ```bash
 composer require giveitsmaller/sdk guzzlehttp/guzzle http-interop/http-factory-guzzle
@@ -19,6 +29,13 @@ Requires **PHP ^8.1**.
 > **Bring your own PSR-18 client.** The SDK's runtime imports only PSR-18 interfaces, so you can use any implementation (e.g. Symfony HttpClient) instead of Guzzle — inject it via `Gisl::create(httpClient: ...)`. Published on [Packagist](https://packagist.org/packages/giveitsmaller/sdk) — the `composer require` above is all you need (no `repositories` block or auth token).
 
 ## Quickstart
+
+Install the SDK and an HTTP client:
+
+```bash
+composer require giveitsmaller/sdk
+composer require guzzlehttp/guzzle http-interop/http-factory-guzzle
+```
 
 The SDK is **file-first**: you always start from a file (`->file($path)` for one,
 `->files([$paths])` for many) and call operations *on* it.
