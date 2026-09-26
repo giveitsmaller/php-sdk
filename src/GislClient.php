@@ -67,6 +67,7 @@ use Gisl\Sdk\Errors\GislMultipartSessionNotFoundError;
 use Gisl\Sdk\Errors\GislMultipartSessionOwnershipError;
 use Gisl\Sdk\Errors\GislNetworkError;
 use Gisl\Sdk\Errors\GislRequestNotSentError;
+use Gisl\Sdk\Errors\GislResponseContractError;
 use Gisl\Sdk\Errors\GislStreamHostNotDeclaredError;
 use Gisl\Sdk\Errors\GislTransportError;
 use Gisl\Sdk\Errors\GislTierRestrictedError;
@@ -314,7 +315,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
-        $response = $this->hydrate(UploadResponse::class, $data);
+        $response = $this->hydrate(UploadResponse::class, $data, '/api/uploads');
 
         // Match the multipart path's progress contract: fire once at end. The
         // single-shot wire has no chunked granularity to report, but firing
@@ -552,7 +553,7 @@ class GislClient
             'mime_type' => $initiate->getMimeType(),
             'size_bytes' => $totalSize,
             'constraints_applied' => ObjectSerializer::sanitizeForSerialization($constraintsApplied),
-        ]);
+        ], '/api/uploads/multipart/complete');
     }
 
     /**
@@ -879,7 +880,7 @@ class GislClient
                 // comparator filters undefined/missing keys; mirrors TS.
                 'processing_class_pre_assignment' => 'unknown',
             ],
-        ]);
+        ], '/api/uploads/multipart/complete');
     }
 
     /**
@@ -1283,7 +1284,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
-        return $this->hydrate(MultipartInitiateResponse::class, $data);
+        return $this->hydrate(MultipartInitiateResponse::class, $data, '/api/uploads/multipart/initiate');
     }
 
     /**
@@ -1462,7 +1463,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
-        return $this->hydrate(WorkflowCreateResponse::class, $data);
+        return $this->hydrate(WorkflowCreateResponse::class, $data, '/api/workflows');
     }
 
     /**
@@ -1491,7 +1492,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
-        return $this->hydrate(WorkflowStatusResponse::class, $data);
+        return $this->hydrate(WorkflowStatusResponse::class, $data, "/api/workflows/{$encoded}/status");
     }
 
     /**
@@ -1534,7 +1535,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
-        return $this->hydrate(WorkflowListResponse::class, $data);
+        return $this->hydrate(WorkflowListResponse::class, $data, '/api/workflows');
     }
 
     /**
@@ -1598,7 +1599,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
-        return $this->hydrate(WorkflowDownloadResponse::class, $data);
+        return $this->hydrate(WorkflowDownloadResponse::class, $data, "/api/workflows/{$encoded}/downloads");
     }
 
     /**
@@ -1933,7 +1934,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
-        return $this->hydrate(WorkflowCancelResponse::class, $data);
+        return $this->hydrate(WorkflowCancelResponse::class, $data, "/api/workflows/{$encoded}/cancel");
     }
 
     /**
@@ -1956,7 +1957,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
-        return $this->hydrate(WorkflowArchiveResponse::class, $data);
+        return $this->hydrate(WorkflowArchiveResponse::class, $data, "/api/workflows/{$encoded}/archive");
     }
 
     /**
@@ -1973,7 +1974,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
-        return $this->hydrate(WorkflowRestoreResponse::class, $data);
+        return $this->hydrate(WorkflowRestoreResponse::class, $data, "/api/workflows/{$encoded}/restore");
     }
 
     /**
@@ -2001,7 +2002,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
-        return $this->hydrate(WorkflowResumeResponse::class, $data);
+        return $this->hydrate(WorkflowResumeResponse::class, $data, "/api/workflows/{$encoded}/resume");
     }
 
     /**
@@ -2025,7 +2026,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
-        return $this->hydrate(RetryResponse::class, $data);
+        return $this->hydrate(RetryResponse::class, $data, "/api/operations/{$encoded}/retry");
     }
 
     /**
@@ -2046,7 +2047,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
-        return $this->hydrate(MetadataResponse::class, $data);
+        return $this->hydrate(MetadataResponse::class, $data, "/api/uploads/{$encoded}/metadata");
     }
 
     /**
@@ -2173,7 +2174,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->unwrapEnvelope($response);
-        return $this->hydrate(LoginUser200ResponseData::class, $data);
+        return $this->hydrate(LoginUser200ResponseData::class, $data, '/api/auth/login');
     }
 
     /**
@@ -2308,7 +2309,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
-        return $this->hydrate(BillingCheckoutSession::class, $data);
+        return $this->hydrate(BillingCheckoutSession::class, $data, '/api/billing/checkout');
     }
 
     // ---------------------------------------------------------------------
@@ -2335,7 +2336,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
-        return $this->hydrate(CreditsBalanceResponse::class, $data);
+        return $this->hydrate(CreditsBalanceResponse::class, $data, '/api/v2/credits/balance');
     }
 
     /**
@@ -2365,7 +2366,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
-        return $this->hydrate(CreditsUsageResponse::class, $data);
+        return $this->hydrate(CreditsUsageResponse::class, $data, '/api/v2/credits/usage');
     }
 
     /**
@@ -2386,7 +2387,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
-        return $this->hydrate(AccountLimits::class, $data);
+        return $this->hydrate(AccountLimits::class, $data, '/api/v2/account/limits');
     }
 
     // ---------------------------------------------------------------------
@@ -2460,18 +2461,22 @@ class GislClient
         if ($statusCode >= 200 && $statusCode < 300) {
             $rawBody = (string) $response->getBody();
             if ($rawBody === '') {
-                throw new GislError(
-                    "Empty response body from /api/operations/schema (status {$statusCode}).",
+                throw new GislResponseContractError(
+                    "Response from /api/operations/schema does not match the contract: empty body (status {$statusCode}).",
+                    '/api/operations/schema',
                 );
             }
             try {
                 /** @var array<string, mixed> $decoded */
                 $decoded = \json_decode($rawBody, associative: true, flags: JSON_THROW_ON_ERROR);
             } catch (\JsonException $e) {
-                throw new GislError(
+                // u6Q9oxuI: a 2xx that is not JSON is a contract violation.
+                // A GislError subclass, so an existing catch still catches it.
+                throw new GislResponseContractError(
                     "Server returned non-JSON body for /api/operations/schema (status {$statusCode}): "
                     . $e->getMessage(),
-                    0,
+                    '/api/operations/schema',
+                    null,
                     $e,
                 );
             }
@@ -2480,7 +2485,7 @@ class GislClient
             // the OperationsSchemaResponse directly, not wrapped in
             // `{ success: true, data: ... }`. Hydrate straight from the
             // decoded body.
-            $schema = $this->hydrate(OperationsSchemaResponse::class, $decoded);
+            $schema = $this->hydrate(OperationsSchemaResponse::class, $decoded, '/api/operations/schema');
             return new GetSchemaHitResult($schema, $etag, $lastModified);
         }
 
@@ -2528,7 +2533,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
-        return $this->hydrate(UploadProbeResponse::class, $data);
+        return $this->hydrate(UploadProbeResponse::class, $data, "/api/uploads/{$encoded}/probe");
     }
 
     /**
@@ -2795,7 +2800,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
-        return $this->hydrate(AudioWatermarkDecodeResponse::class, $data);
+        return $this->hydrate(AudioWatermarkDecodeResponse::class, $data, '/api/audio-watermark/decode');
     }
 
     /**
@@ -2837,7 +2842,7 @@ class GislClient
 
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
-        return $this->hydrate(ExternalImportCreatedResponse::class, $data);
+        return $this->hydrate(ExternalImportCreatedResponse::class, $data, '/api/external-imports');
     }
 
     // ---------------------------------------------------------------------
@@ -3718,15 +3723,62 @@ class GislClient
      * is shallow and would leave nested fields as untyped arrays — broken
      * for any caller using getter chains like `$result->getJobs()[0]->getJobId()`.
      *
+     * A 2xx body the deserialiser cannot read raises
+     * {@see GislResponseContractError} (u6Q9oxuI) instead of leaking the
+     * deserialiser's own throwable (a generated setter's
+     * `InvalidArgumentException` for an out-of-range or pattern-violating
+     * value, an `Invalid array` for a wrong-typed list) or a `TypeError` for a
+     * non-object payload. EVERY success body goes through here;
+     * `ResponseContractGateTest` fails on a new unwrapped
+     * `ObjectSerializer::deserialize` call.
+     *
+     * ⚠️ A REQUIRED field that is simply ABSENT is deliberately NOT a violation
+     * here: it hydrates as null, exactly as the TS SDK leaves it `undefined`.
+     * Checking `listInvalidProperties()` for it was tried and rejected — new
+     * required RESPONSE fields ship contract-first (e.g.
+     * `WorkflowCreateResponse::anonymous`, "ships FIRST and alone"), so
+     * failing the whole call on an absent one would break every call against
+     * a producer that has not deployed yet: the co-land window, where the
+     * consumer must be able to read new-OR-old.
+     *
      * @template T of object
-     * @param class-string<T>      $modelClass
-     * @param array<string, mixed> $data
+     * @param class-string<T> $modelClass
+     * @param mixed           $data      the unwrapped body; not an array ⇒ violation
+     * @param string          $operation the request path this body answered
      * @return T
      */
-    private function hydrate(string $modelClass, array $data): object
+    private function hydrate(string $modelClass, mixed $data, string $operation): object
     {
-        /** @var T $instance */
-        $instance = ObjectSerializer::deserialize($data, $modelClass, []);
+        $operation = \explode('?', $operation, 2)[0];
+        // A JSON LIST decodes to a PHP list and ObjectSerializer would cast it to
+        // an object with numeric keys: a hollow DTO, not an error. Every model
+        // here is an object, so a list is a contract violation too.
+        if (!\is_array($data) || ($data !== [] && \array_is_list($data))) {
+            // Typed `array` here used to make a scalar/null `data` a raw
+            // TypeError under strict_types — the same escape, one level up.
+            throw new GislResponseContractError(
+                "Response from {$operation} does not match the contract: expected an object, got "
+                . \get_debug_type($data) . '.',
+                $operation,
+            );
+        }
+        try {
+            /** @var T $instance */
+            $instance = ObjectSerializer::deserialize($data, $modelClass, []);
+        } catch (\Throwable $e) {
+            // The generated setters name the field they reject
+            // ("invalid value for $total_parts when calling …"); nothing else does.
+            $field = \preg_match('/invalid value for \$(\w+) when calling/', $e->getMessage(), $m) === 1
+                ? $m[1]
+                : null;
+            throw new GislResponseContractError(
+                "Response from {$operation} does not match the contract: " . $e->getMessage(),
+                $operation,
+                $field,
+                $e,
+            );
+        }
+
         return $instance;
     }
 

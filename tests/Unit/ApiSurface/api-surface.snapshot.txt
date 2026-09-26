@@ -169,6 +169,7 @@ final class Gisl\Sdk\Errors\GislNoSuchKeyError extends Gisl\Sdk\Errors\GislError
 final class Gisl\Sdk\Errors\GislPerInputOptionsNotSupportedError extends Gisl\Sdk\Errors\GislConfigError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
 final class Gisl\Sdk\Errors\GislProbePendingError extends Gisl\Sdk\Errors\GislApiError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
 final class Gisl\Sdk\Errors\GislRequestNotSentError extends Gisl\Sdk\Errors\GislNetworkError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
+final class Gisl\Sdk\Errors\GislResponseContractError extends Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
 final class Gisl\Sdk\Errors\GislResultNotReadyError extends Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
 final class Gisl\Sdk\Errors\GislSinkError extends Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
 final class Gisl\Sdk\Errors\GislStreamHostNotDeclaredError extends Gisl\Sdk\Errors\GislConfigError < Gisl\Sdk\Errors\GislError < RuntimeException < Exception implements Stringable, Throwable
@@ -325,6 +326,8 @@ method Gisl\Sdk\Errors\GislNetworkError::__construct()
 method Gisl\Sdk\Errors\GislPerInputOptionsNotSupportedError::__construct()
 method Gisl\Sdk\Errors\GislProbePendingError::__construct()
 method Gisl\Sdk\Errors\GislRequestNotSentError::retryable()
+method Gisl\Sdk\Errors\GislResponseContractError::__construct()
+method Gisl\Sdk\Errors\GislResponseContractError::retryable()
 method Gisl\Sdk\Errors\GislResultNotReadyError::__construct()
 method Gisl\Sdk\Errors\GislResultNotReadyError::getState()
 method Gisl\Sdk\Errors\GislResultNotReadyError::getWorkflowId()
@@ -645,6 +648,8 @@ readonly property Gisl\Sdk\Errors\GislMultipartPartError::$partNumber : int
 readonly property Gisl\Sdk\Errors\GislMultipartPartError::$uploadId : string
 readonly property Gisl\Sdk\Errors\GislPerInputOptionsNotSupportedError::$mediaKind : string
 readonly property Gisl\Sdk\Errors\GislProbePendingError::$typedPayload : Gisl\Generated\OpenApi\Model\ProbePendingResponse
+readonly property Gisl\Sdk\Errors\GislResponseContractError::$operation : string
+readonly property Gisl\Sdk\Errors\GislResponseContractError::$path : ?string
 readonly property Gisl\Sdk\Errors\GislResultNotReadyError::$state : string
 readonly property Gisl\Sdk\Errors\GislResultNotReadyError::$workflowId : string
 readonly property Gisl\Sdk\Errors\GislSinkError::$reason : string

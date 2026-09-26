@@ -8,6 +8,7 @@ use Gisl\Generated\OpenApi\Model\UploadResponse;
 use Gisl\Sdk\Errors\GislError;
 use Gisl\Sdk\Errors\GislMultipartPartCountError;
 use Gisl\Sdk\Errors\GislMultipartPartError;
+use Gisl\Sdk\Errors\GislResponseContractError;
 use Gisl\Sdk\GislClient;
 use Gisl\Sdk\GislClientConfig;
 use Gisl\Sdk\Http\MultipartPartUploader;
@@ -381,9 +382,17 @@ final class GislClientMultipartTest extends TestCase
         // The generated model setter throws InvalidArgumentException for
         // total_parts > 10000 — surfaces before the SDK guard. (TS
         // divergence: its lax generator would let the guard fire instead.)
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/total_parts.*10000/');
-        $client->uploadFile($filePath);
+        // u6Q9oxuI: it now arrives typed, as a GislResponseContractError
+        // naming the field, with the setter's exception as the cause.
+        try {
+            $client->uploadFile($filePath);
+            self::fail('expected GislResponseContractError');
+        } catch (GislResponseContractError $e) {
+            self::assertSame('total_parts', $e->path);
+            self::assertSame('/api/uploads/multipart/initiate', $e->operation);
+            self::assertInstanceOf(\InvalidArgumentException::class, $e->getPrevious());
+            self::assertMatchesRegularExpression('/total_parts.*10000/', $e->getMessage());
+        }
     }
 
     /**
