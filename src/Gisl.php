@@ -201,22 +201,21 @@ final class Gisl
      * not pre-check the media, operation or quota rules, so they cannot drift
      * from the server's; it checks only the file size, which is a transport
      * fact (above the single-shot cap the only route is multipart). As the API
-     * enforces it today (owner decision 610(4); declared since contracts
-     * v2.217.0 in `anonymous-policy.yaml`, which the contracts package
-     * ships):
-     *  - uploads: images only, at most 10,000,000 bytes per file,
-     *    single-shot. The API's guest cap is 10 MiB, but multipart needs an
-     *    account, so the single-shot cap is the one that binds. A larger file
-     *    is refused HERE, before any request, with
-     *    {@see GislFeatureRequiresAuthError}; a non-image is refused by the
-     *    API as a {@see Errors\GislTierRestrictedError} (restriction kind
-     *    `mime_type`).
+     * enforces it today (declared in `anonymous-policy.yaml` 2.0.0,
+     * contracts v2.218.0, which the contracts package ships):
+     *  - uploads: all media, at most 10,000,000 bytes per file, single-shot
+     *    (multipart needs an account). A larger file is refused HERE, before
+     *    any request, with {@see GislFeatureRequiresAuthError}.
+     *  - video: at most 60 seconds, measured on the upload probe. A longer
+     *    one is a 403 at workflow create: a {@see Errors\GislApiError} with
+     *    `errorCode` `ANONYMOUS_LIMIT_EXCEEDED`.
      *  - operations: `compress`, `convert` and `thumbnail`. Anything else is a
      *    403 at workflow create: a {@see Errors\GislApiError} with `errorCode`
      *    `ANONYMOUS_OPERATION_NOT_ALLOWED`.
-     *  - 30 workflow creates per IP per 24 hours: then a
-     *    {@see Errors\GislApiError} with `errorCode` `ANONYMOUS_QUOTA_EXHAUSTED`
-     *    (plus the usual per-minute 429s).
+     *  - 30 credits per IP per rolling 24 hours, priced like a signed-in
+     *    caller's workflow. A create that would cost more than is left is
+     *    refused whole with a {@see Errors\GislApiError} with `errorCode`
+     *    `ANONYMOUS_QUOTA_EXHAUSTED` (plus the usual per-minute 429s).
      *
      * {@see create()} is unchanged: without a key it still throws
      * {@see GislMissingCredentialsError} and never falls back to this mode.

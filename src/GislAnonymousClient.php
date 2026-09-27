@@ -46,10 +46,10 @@ final class GislAnonymousClient extends GislErgonomicClient
 {
     /**
      * The largest file a guest can upload: the contract's single-shot cap
-     * (`UploadThresholds.single_shot_max_bytes`). The API's own guest cap is
-     * 10 MiB, but multipart needs an account (compression_api security.yaml
-     * requires auth on multipart initiate), so nothing above single-shot can
-     * reach it.
+     * (`UploadThresholds.single_shot_max_bytes`), which `anonymous-policy.yaml`
+     * (`upload.max_file_bytes`) also declares as the guest per-file cap.
+     * Multipart needs an account (compression_api security.yaml requires auth
+     * on multipart initiate), so nothing above it is reachable.
      */
     public const MAX_UPLOAD_BYTES = GislClientConfig::DEFAULT_MULTIPART_THRESHOLD_BYTES;
 
