@@ -237,31 +237,41 @@ final class RecipeTest extends TestCase
         self::assertSame([['type' => 'thumbnail', 'options' => ['width' => 320, 'height' => 240]]], $ops);
     }
 
+    // gkxZIIuw — width/height are OPTIONAL in every thumbnail mime group
+    // (contract v2.148.0). The wire carries exactly the dimensions given.
+
     #[Test]
-    public function thumbnail_rejects_a_missing_height(): void
+    public function thumbnail_with_width_only_sends_only_width(): void
     {
-        // Dhje3Faq: both dimensions are contract-required; a width-only thumbnail
-        // throws synchronously at the verb call (pre-upload), naming `height`.
-        try {
-            $this->recipe('photo.jpg')->thumbnail(['width' => 320]);
-            self::fail('a width-only thumbnail must throw');
-        } catch (GislConfigError $err) {
-            self::assertSame('missing_required_field', $err->reason);
-            self::assertNotNull($err->conflictingFields);
-            self::assertContains('height', $err->conflictingFields);
-        }
+        $ops = $this->operations($this->recipe('photo.jpg')->thumbnail(['width' => 320]));
+        self::assertSame([['type' => 'thumbnail', 'options' => ['width' => 320]]], $ops);
     }
 
     #[Test]
-    public function thumbnail_rejects_a_missing_width(): void
+    public function thumbnail_with_height_only_sends_only_height(): void
+    {
+        $ops = $this->operations($this->recipe('photo.jpg')->thumbnail(['height' => 240, 'fit' => 'max']));
+        self::assertSame([['type' => 'thumbnail', 'options' => ['height' => 240, 'fit' => 'max']]], $ops);
+    }
+
+    #[Test]
+    public function thumbnail_with_neither_dimension_sends_no_options(): void
+    {
+        // Empty options omit the `options` key (see an_op_with_empty_options_omits_the_options_key).
+        self::assertSame([['type' => 'thumbnail']], $this->operations($this->recipe('photo.jpg')->thumbnail()));
+        self::assertSame([['type' => 'thumbnail']], $this->operations($this->recipe('photo.jpg')->thumbnail([])));
+    }
+
+    #[Test]
+    public function thumbnail_still_rejects_a_null_dimension(): void
     {
         try {
-            $this->recipe('photo.jpg')->thumbnail(['height' => 240]);
-            self::fail('a height-only thumbnail must throw');
+            $this->recipe('photo.jpg')->thumbnail(['width' => 320, 'height' => null]);
+            self::fail('a null height must throw');
         } catch (GislConfigError $err) {
-            self::assertSame('missing_required_field', $err->reason);
-            self::assertNotNull($err->conflictingFields);
-            self::assertContains('width', $err->conflictingFields);
+            self::assertSame('type_mismatch', $err->reason);
+            self::assertSame(['height'], $err->conflictingFields);
+            self::assertStringContainsString('thumbnail height cannot be null', $err->getMessage());
         }
     }
 

@@ -82,7 +82,7 @@ final class WatermarkedRecipe
     }
 
     /**
-     * Thumbnail the watermarked output. `width` AND `height` are required.
+     * Thumbnail the watermarked output. `width` / `height` are optional (see {@see Recipe::thumbnail()}).
      *
      * @param array<string, mixed> $options
      */

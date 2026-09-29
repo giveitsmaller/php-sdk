@@ -215,12 +215,11 @@ class GislErgonomicClient extends GislClient
     }
 
     /**
-     * Generate a preview thumbnail. `width` + `height` are REQUIRED (the contract
-     * marks both required for image/video/document); an unknown option key or a
-     * missing dimension is rejected pre-upload (ExVcchMz), not as a server 422.
-     *
-     * `width` + `height` are REQUIRED at runtime (enforced by the guard below);
-     * the shape keys are all marked optional only so the `= []` default type-checks.
+     * Generate a preview thumbnail. `width` and `height` are both OPTIONAL, as in
+     * the contract (every mime group): give one and the server derives the other
+     * from the source aspect ratio; give neither for a 320px longest edge. An
+     * unknown option key or a null dimension is rejected pre-upload (ExVcchMz),
+     * not as a server 422.
      *
      * @param array{
      *   width?: int,

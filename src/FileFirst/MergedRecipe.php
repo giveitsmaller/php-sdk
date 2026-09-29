@@ -89,7 +89,7 @@ final class MergedRecipe
     }
 
     /**
-     * Thumbnail the merged output. `width` AND `height` are required.
+     * Thumbnail the merged output. `width` / `height` are optional (see {@see Recipe::thumbnail()}).
      *
      * @param array<string, mixed> $options
      */

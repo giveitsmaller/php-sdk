@@ -213,31 +213,35 @@ final class OptionValidation
     }
 
     /**
-     * Assert thumbnail `width` AND `height` are both present and non-null (the
-     * contract marks both `required`). PHP drops null/absent values before
-     * lowering, so a missing OR null dimension would otherwise slip through —
-     * `array_key_exists` alone is insufficient, the value must be non-null.
-     * Mirrors the TS `assertThumbnailDimensions`.
+     * Reject an explicit `null` thumbnail `width` / `height`. Both dimensions are
+     * OPTIONAL in the contract (thumbnail.yaml, every mime group, since v2.148.0):
+     * omitting one lets the server derive it from the source aspect ratio,
+     * omitting both gives a 320px longest edge, so an absent key is accepted.
+     * `null` is rejected rather than silently dropped so a null dimension is a
+     * pre-upload error in BOTH SDKs: the TS SDK would otherwise put a JSON `null`
+     * on the wire, which the contract's `type: integer` refuses. Mirrors the TS
+     * `assertThumbnailDimensions`.
      *
      * @param array<string, mixed> $options
      *
-     * @throws GislConfigError reason `missing_required_field` naming the absent
-     *                         dimension(s).
+     * @throws GislConfigError reason `type_mismatch` naming the null dimension(s).
      */
     public static function assertThumbnailDimensions(array $options): void
     {
-        $missing = [];
-        if (!array_key_exists('width', $options) || $options['width'] === null) {
-            $missing[] = 'width';
+        $nulled = [];
+        if (array_key_exists('width', $options) && $options['width'] === null) {
+            $nulled[] = 'width';
         }
-        if (!array_key_exists('height', $options) || $options['height'] === null) {
-            $missing[] = 'height';
+        if (array_key_exists('height', $options) && $options['height'] === null) {
+            $nulled[] = 'height';
         }
-        if ($missing !== []) {
+        if ($nulled !== []) {
             throw new GislConfigError(
-                sprintf('thumbnail requires both width and height (the contract marks both required); missing: %s.', implode(', ', $missing)),
-                'missing_required_field',
-                $missing,
+                sprintf('thumbnail %s cannot be null; pass an integer (1-16384) or omit the key '
+                    . '(the contract makes both optional: omit one to derive it from the source aspect ratio, '
+                    . 'omit both for a 320px longest edge).', implode(' and ', $nulled)),
+                'type_mismatch',
+                $nulled,
             );
         }
     }

@@ -249,8 +249,6 @@ final class OperationBuilderSubmitTest extends TestCase
         ], $captured);
 
         $client = self::makeClient($http);
-        // ExVcchMz — width AND height are required (single-op thumbnail now
-        // validates pre-upload); a width-only bag would throw before submit.
         $handle = $client->thumbnail($tempPath, ['width' => 320, 'height' => 240])
             ->submit(new SubmitOptions(webhook: 'https://example.com/cb'));
 
@@ -336,19 +334,64 @@ final class OperationBuilderSubmitTest extends TestCase
     // asserted GislConfigError with an empty $captured proves the guard fires at
     // the factory before submit. Mirrors the TS gisl.test.ts proxy tests.
 
-    public function test_single_op_thumbnail_rejects_missing_dimensions_pre_upload(): void
+    public function test_single_op_thumbnail_rejects_a_null_dimension_pre_upload(): void
     {
         $captured = [];
         $client = self::makeClient(self::stubClient([], $captured));
         $tempPath = self::writeTempFile('img', 'photo.png');
         try {
-            $client->thumbnail($tempPath, []);
-            self::fail('thumbnail with no dimensions must throw pre-upload');
+            $client->thumbnail($tempPath, ['width' => 320, 'height' => null]);
+            self::fail('thumbnail with a null height must throw pre-upload');
         } catch (GislConfigError $err) {
-            self::assertSame('missing_required_field', $err->getReason());
+            self::assertSame('type_mismatch', $err->getReason());
+            self::assertSame(['height'], $err->getConflictingFields());
         } finally {
             self::assertSame([], $captured, 'no HTTP may fire before the validation throw');
         }
+    }
+
+    /**
+     * gkxZIIuw — width/height are OPTIONAL in the contract (every thumbnail mime
+     * group, v2.148.0). The single-op thumbnail sends exactly the dimensions given.
+     *
+     * @param array<string, mixed>      $options
+     * @param array<string, mixed>|null $expectedWireOptions null = no `options` key
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('singleOpThumbnailDimensionProvider')]
+    public function test_single_op_thumbnail_sends_exactly_the_given_dimensions(
+        array $options,
+        ?array $expectedWireOptions,
+    ): void {
+        $tempPath = self::writeTempFile('img', 'photo.png');
+        $captured = [];
+        $http = self::stubClient([
+            self::uploadResponse('01936fb1-7bb3-7000-8000-0000000000a1'),
+            self::workflowCreateResponse('01936fb2-0000-7000-8000-0000000000a1'),
+        ], $captured);
+
+        self::makeClient($http)->thumbnail($tempPath, $options)
+            ->submit(new SubmitOptions(webhook: 'https://example.com/cb'));
+
+        self::assertCount(2, $captured);
+        $body = \json_decode((string) $captured[1]->getBody(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        $operation = $body['jobs'][0]['operations'][0];
+        self::assertSame('thumbnail', $operation['type']);
+        if ($expectedWireOptions === null) {
+            self::assertArrayNotHasKey('options', $operation);
+        } else {
+            self::assertSame($expectedWireOptions, $operation['options']);
+        }
+    }
+
+    /**
+     * @return iterable<string, array{0: array<string, mixed>, 1: array<string, mixed>|null}>
+     */
+    public static function singleOpThumbnailDimensionProvider(): iterable
+    {
+        yield 'width only' => [['width' => 320], ['width' => 320]];
+        yield 'height only' => [['height' => 240], ['height' => 240]];
+        yield 'neither' => [[], null];
     }
 
     public function test_single_op_thumbnail_rejects_unknown_key_pre_upload(): void

@@ -125,12 +125,13 @@ final class Recipe
     }
 
     /**
-     * Generate a preview / resize. `width` AND `height` (in pixels) are BOTH
-     * required (the contract marks both required for image/video/document); an
-     * unknown key or a missing/null dimension throws `GislConfigError` before any
-     * upload. Any additional per-op thumbnail option (fit/format/quality/…) passes
-     * through; a null OPTIONAL value is dropped from the wire options. Mirrors the
-     * TS `thumbnail({ width, height })`.
+     * Generate a preview / resize. `width` and `height` (in pixels) are both
+     * OPTIONAL, as in the contract (every mime group): give one and the server
+     * derives the other from the source aspect ratio; give neither for a 320px
+     * longest edge. An unknown key or a null dimension throws `GislConfigError`
+     * before any upload. Any additional per-op thumbnail option
+     * (fit/format/quality/…) passes through; a null value for any other key is
+     * dropped from the wire options. Mirrors the TS `thumbnail({ width, height })`.
      *
      * @param array{
      *   width?: int,
@@ -142,15 +143,13 @@ final class Recipe
      *   timestamp?: string,
      *   source?: 'page'|'cover',
      *   page?: int,
-     * } $options `width` + `height` are REQUIRED at runtime (see above /
-     *   {@see OptionValidation::assertThumbnailDimensions()}) but are marked
-     *   optional in the shape so the `= []` default type-checks. Mirrors the TS
-     *   `ThumbnailOptions`.
+     * } $options Mirrors the TS `ThumbnailOptions`; see
+     *   {@see OptionValidation::assertThumbnailDimensions()}.
      */
     public function thumbnail(array $options = []): self
     {
-        // Eager pre-upload validation: unknown keys rejected; width AND height
-        // required (contract marks both required for image/video/document).
+        // Eager pre-upload validation: unknown keys and a null width/height are
+        // rejected; an absent dimension is the contract's aspect-preserving default.
         OptionValidation::validateVerbOptions('thumbnail', $options);
         OptionValidation::assertThumbnailDimensions($options);
         $wire = [];

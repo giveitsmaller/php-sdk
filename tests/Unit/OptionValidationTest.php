@@ -120,45 +120,66 @@ final class OptionValidationTest extends TestCase
         }
     }
 
-    // --- thumbnail requires both dimensions ---------------------------------
+    // --- thumbnail: both dimensions OPTIONAL (gkxZIIuw) ----------------------
+    // The contract makes width/height optional in every thumbnail mime group
+    // (v2.148.0): one omitted is derived from the source aspect ratio, both
+    // omitted is a 320px longest edge. Only an explicit null is refused.
 
     /**
      * @param array<string, mixed> $options
-     * @param list<string>         $expectedMissing
+     * @param list<string>         $expectedNulled
      */
     #[Test]
-    #[DataProvider('missingThumbnailDimensionProvider')]
-    public function thumbnail_missing_or_null_dimension_throws_missing_required_field(
+    #[DataProvider('nullThumbnailDimensionProvider')]
+    public function thumbnail_null_dimension_throws_type_mismatch(
         array $options,
-        array $expectedMissing,
+        array $expectedNulled,
+        string $expectedMessage,
     ): void {
         try {
             OptionValidation::assertThumbnailDimensions($options);
-            self::fail('a missing/null thumbnail dimension must throw');
+            self::fail('a null thumbnail dimension must throw');
         } catch (GislConfigError $err) {
-            self::assertSame('missing_required_field', $err->reason);
-            self::assertSame($expectedMissing, $err->conflictingFields);
+            self::assertSame('type_mismatch', $err->reason);
+            self::assertSame($expectedNulled, $err->conflictingFields);
+            self::assertStringContainsString($expectedMessage, $err->getMessage());
+            self::assertStringContainsString('omit the key', $err->getMessage());
+            // The old message claimed the contract requires both; it does not.
+            self::assertDoesNotMatchRegularExpression('/requires both|marks both required/', $err->getMessage());
         }
     }
 
     /**
-     * @return iterable<string, array{0: array<string, mixed>, 1: list<string>}>
+     * @return iterable<string, array{0: array<string, mixed>, 1: list<string>, 2: string}>
      */
-    public static function missingThumbnailDimensionProvider(): iterable
+    public static function nullThumbnailDimensionProvider(): iterable
     {
-        yield 'no dims' => [[], ['width', 'height']];
-        yield 'width only' => [['width' => 320], ['height']];
-        yield 'height only' => [['height' => 240], ['width']];
-        yield 'null width' => [['width' => null, 'height' => 240], ['width']];
-        yield 'null height' => [['width' => 320, 'height' => null], ['height']];
-        yield 'both null' => [['width' => null, 'height' => null], ['width', 'height']];
+        yield 'null width' => [['width' => null, 'height' => 240], ['width'], 'thumbnail width cannot be null'];
+        yield 'null height' => [['width' => 320, 'height' => null], ['height'], 'thumbnail height cannot be null'];
+        yield 'both null' => [['width' => null, 'height' => null], ['width', 'height'], 'thumbnail width and height cannot be null'];
     }
 
+    /**
+     * @param array<string, mixed> $options
+     */
     #[Test]
-    public function thumbnail_with_both_dimensions_passes(): void
+    #[DataProvider('acceptedThumbnailDimensionProvider')]
+    public function thumbnail_accepts_one_both_or_neither_dimension(array $options): void
     {
         $this->expectNotToPerformAssertions();
-        OptionValidation::assertThumbnailDimensions(['width' => 320, 'height' => 240]);
+        OptionValidation::assertThumbnailDimensions($options);
+    }
+
+    /**
+     * @return iterable<string, array{0: array<string, mixed>}>
+     */
+    public static function acceptedThumbnailDimensionProvider(): iterable
+    {
+        yield 'both' => [['width' => 320, 'height' => 240]];
+        yield 'width only' => [['width' => 320]];
+        yield 'height only' => [['height' => 240]];
+        yield 'neither' => [[]];
+        yield 'neither, other options' => [['fit' => 'max', 'format' => 'png']];
     }
 
     // --- watermark validates against the image ∪ video union -----------------
@@ -239,30 +260,25 @@ final class OptionValidationTest extends TestCase
     }
 
     #[Test]
-    public function thumbnail_missing_dimension_throws_synchronously_at_the_verb_call(): void
+    public function thumbnail_with_one_or_no_dimension_is_accepted_at_the_verb_call(): void
     {
-        try {
-            $this->recipe('photo.jpg')->thumbnail(['width' => 320]);
-            self::fail('a width-only thumbnail must throw at the verb call');
-        } catch (GislConfigError $err) {
-            self::assertSame('missing_required_field', $err->reason);
-            self::assertNotNull($err->conflictingFields);
-            self::assertContains('height', $err->conflictingFields);
-        }
+        self::assertSame(1, $this->recipe('photo.jpg')->thumbnail(['width' => 320])->stepCount());
+        self::assertSame(1, $this->recipe('photo.jpg')->thumbnail(['height' => 240])->stepCount());
+        self::assertSame(1, $this->recipe('photo.jpg')->thumbnail()->stepCount());
     }
 
     #[Test]
     public function thumbnail_null_dimension_throws_synchronously_at_the_verb_call(): void
     {
-        // PHP drops null before lowering, so a null dimension must be caught by
-        // the both-required gate (array_key_exists alone is insufficient).
+        // PHP drops null before lowering, so without this guard a null dimension
+        // would silently become an omitted one; TS would send a JSON null. Both
+        // SDKs refuse it pre-upload.
         try {
             $this->recipe('photo.jpg')->thumbnail(['width' => 320, 'height' => null]);
             self::fail('a null height must throw at the verb call');
         } catch (GislConfigError $err) {
-            self::assertSame('missing_required_field', $err->reason);
-            self::assertNotNull($err->conflictingFields);
-            self::assertContains('height', $err->conflictingFields);
+            self::assertSame('type_mismatch', $err->reason);
+            self::assertSame(['height'], $err->conflictingFields);
         }
     }
 
@@ -288,19 +304,34 @@ final class OptionValidationTest extends TestCase
     }
 
     #[Test]
-    public function merged_thumbnail_missing_dimension_throws_at_the_verb_call(): void
+    public function merged_thumbnail_null_dimension_throws_at_the_verb_call(): void
     {
         $merged = new MergedRecipe(
             [FileInput::path('a.mp4'), FileInput::path('b.mp4')],
             new MergeOptions(mediaKind: 'video'),
         );
         try {
-            $merged->thumbnail(['width' => 320]);
-            self::fail('a width-only MergedRecipe thumbnail must throw');
+            $merged->thumbnail(['width' => 320, 'height' => null]);
+            self::fail('a null-height MergedRecipe thumbnail must throw');
         } catch (GislConfigError $err) {
-            self::assertSame('missing_required_field', $err->getReason());
-            self::assertNotNull($err->getConflictingFields());
-            self::assertContains('height', $err->getConflictingFields());
+            self::assertSame('type_mismatch', $err->getReason());
+            self::assertSame(['height'], $err->getConflictingFields());
+        }
+    }
+
+    #[Test]
+    public function merged_thumbnail_unknown_key_throws_at_the_verb_call(): void
+    {
+        $merged = new MergedRecipe(
+            [FileInput::path('a.mp4'), FileInput::path('b.mp4')],
+            new MergeOptions(mediaKind: 'video'),
+        );
+        try {
+            $merged->thumbnail(['width' => 320, 'nope' => 1]);
+            self::fail('an unknown MergedRecipe thumbnail key must throw');
+        } catch (GislConfigError $err) {
+            self::assertSame('unknown_field', $err->getReason());
+            self::assertSame(['nope'], $err->getConflictingFields());
         }
     }
 
@@ -318,16 +349,15 @@ final class OptionValidationTest extends TestCase
     }
 
     #[Test]
-    public function watermarked_thumbnail_missing_dimension_throws_at_the_verb_call(): void
+    public function watermarked_thumbnail_null_dimension_throws_at_the_verb_call(): void
     {
         $watermarked = (new Recipe(FileInput::path('photo.jpg')))->watermark($this->overlay());
         try {
-            $watermarked->thumbnail(['width' => 320]);
-            self::fail('a width-only WatermarkedRecipe thumbnail must throw');
+            $watermarked->thumbnail(['width' => null, 'height' => 240]);
+            self::fail('a null-width WatermarkedRecipe thumbnail must throw');
         } catch (GislConfigError $err) {
-            self::assertSame('missing_required_field', $err->getReason());
-            self::assertNotNull($err->getConflictingFields());
-            self::assertContains('height', $err->getConflictingFields());
+            self::assertSame('type_mismatch', $err->getReason());
+            self::assertSame(['width'], $err->getConflictingFields());
         }
     }
 

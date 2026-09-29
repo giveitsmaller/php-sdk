@@ -408,7 +408,7 @@ final class OperationBuilder
 
         // 2. Build + create the workflow with the resolved wire options.
         $job = new JobDefinitionPayload(
-            operations: [new OperationDef(type: $this->opType, options: $resolved['wireOptions'])],
+            operations: [new OperationDef(type: $this->opType, options: self::wireOptionsOrNull($resolved['wireOptions']))],
             id: 'op',
             source: Sources::upload($uploadResp->getFileId() ?? ''),
         );
@@ -506,7 +506,7 @@ final class OperationBuilder
         BuilderInternals::throwIfCancelled($options->cancellation, 'workflow creation');
 
         $job = new JobDefinitionPayload(
-            operations: [new OperationDef(type: $this->opType, options: $resolved['wireOptions'])],
+            operations: [new OperationDef(type: $this->opType, options: self::wireOptionsOrNull($resolved['wireOptions']))],
             id: 'op',
             source: Sources::upload($uploadResp->getFileId() ?? ''),
         );
@@ -622,5 +622,19 @@ final class OperationBuilder
                 sources: ResolvedOptionsSources::empty(),
             ),
         );
+    }
+
+    /**
+     * An empty options bag is OMITTED from the wire, not sent. PHP encodes an
+     * empty array as a JSON LIST (`"options":[]`), which is not the object the
+     * contract declares; the file-first lowering already omits empty options the
+     * same way. Reachable since a bare `thumbnail($input)` became valid (gkxZIIuw).
+     *
+     * @param array<string, mixed> $wireOptions
+     * @return array<string, mixed>|null
+     */
+    private static function wireOptionsOrNull(array $wireOptions): ?array
+    {
+        return $wireOptions === [] ? null : $wireOptions;
     }
 }

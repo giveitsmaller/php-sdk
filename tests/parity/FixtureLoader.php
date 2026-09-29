@@ -1072,9 +1072,6 @@ final class FixtureLoader
                         throw new \RuntimeException("[{$ctx}] thumbnail '{$dim}' must be a positive integer");
                     }
                 }
-                if (!\array_key_exists('width', $op) && !\array_key_exists('height', $op)) {
-                    throw new \RuntimeException("[{$ctx}] thumbnail requires at least one of width/height");
-                }
                 break;
             case 'compress':
                 if (\array_key_exists('optimize', $op) && (!\is_string($op['optimize']) || $op['optimize'] === '')) {
