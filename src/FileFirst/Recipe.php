@@ -325,8 +325,11 @@ final class Recipe
      * Audio/document/animated-GIF/unsupported-subtype/undetectable bases
      * throw locally BEFORE any upload (the planned-op gate). `$options` carries
      * the wire watermark options (`anchor`, `opacity`, `margin_x`, `margin_y`,
-     * `overlay_width`). `overlays[]` (multi-overlay stack) is a valid contract key
-     * but is NOT usable via watermark() — rejected at lowering. Returns a
+     * `overlay_width`, or `overlays[]` for the multi-overlay stack). Pass a list
+     * of 1-8 overlay recipes for the multi-overlay stack (contract
+     * `multi_overlay_stack`, jpeg/png/webp bases only): each becomes its own
+     * overlay source, in list order, and `overlays[$i]` places `$overlay[$i]`, so
+     * `overlays[]`, when given, must have exactly one entry per overlay. Returns a
      * {@see WatermarkedRecipe} (chain post-watermark
      * `compress`/`convert`/`thumbnail`, then `run`/`submit`). Distinct from
      * {@see textWatermark()} (single-input text overlay). Mirrors the TS
@@ -339,13 +342,14 @@ final class Recipe
      *   opacity?: float,
      *   overlay_width?: string,
      *   overlays?: list<array{anchor?: 'top_left'|'top_center'|'top_right'|'center_left'|'center'|'center_right'|'bottom_left'|'bottom_center'|'bottom_right', margin_x?: string, margin_y?: string, opacity?: float, overlay_width?: string}>,
-     * } $options The flat single-overlay keys place the single positional overlay;
-     *   `overlays[]` is kept as a valid contract wire key but watermark() rejects it
-     *   at lowering (`overlays_unsupported`) — the facade builds only one overlay
-     *   source, so multi-overlay stacking is a future feature. Keys are all optional
-     *   so the `= []` default type-checks. Mirrors the TS `WatermarkOptions`.
+     * } $options The flat single-overlay keys place a single overlay; `overlays[]`
+     *   places each overlay of a stack, index-aligned. The SDK does not enforce that
+     *   the two are exclusive — set both and the server answers `invalid_options`.
+     *   Keys are all optional so the `= []` default type-checks. Mirrors the TS
+     *   `WatermarkOptions`.
+     * @param Recipe|list<Recipe> $overlay One overlay, or 1-8 for the multi-overlay stack.
      */
-    public function watermark(Recipe $overlay, array $options = []): WatermarkedRecipe
+    public function watermark(Recipe|array $overlay, array $options = []): WatermarkedRecipe
     {
         // Eager pre-upload key validation (against image_watermark ∪ video_watermark,
         // since the base media may be undetectable here; routing is gated separately).
@@ -356,7 +360,9 @@ final class Recipe
         if ($media !== null) {
             WatermarkGate::resolveWireOp($media, $mime);
         }
-        WatermarkGate::validateOverlay($overlay);
+        foreach (WatermarkGate::normalizeOverlays($overlay) as $each) {
+            WatermarkGate::validateOverlay($each);
+        }
 
         return new WatermarkedRecipe(
             $this->input,

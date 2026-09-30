@@ -30,7 +30,9 @@ use Gisl\Sdk\WorkflowConstants;
  * effective media). A multi-input op: base + overlay each enter via their own
  * `passthrough` source job (`src_0` base, `src_1` overlay; their own preceding
  * steps lower into those jobs), and the `watermark` job consumes them via
- * `job_output` inputs tagged `role: base` / `role: overlay`. Post-watermark
+ * `job_output` inputs tagged `role: base` / `role: overlay`. With a multi-overlay
+ * stack each overlay gets its own source job (`src_1` … `src_N`, in overlay
+ * order) and its own `role: overlay` input. Post-watermark
  * `compress`/`convert`/`thumbnail`/`transform` steps lower into a downstream
  * `post` job on the watermark output (`image_watermark` is `sole_op`).
  *
@@ -40,21 +42,26 @@ use Gisl\Sdk\WorkflowConstants;
  */
 final class WatermarkedRecipe
 {
+    /** @var list<Recipe> */
+    private readonly array $overlays;
+
     /**
      * @param list<RecipeStep>     $baseSteps        The base recipe's preceding steps (lower into src_0).
-     * @param array<string, mixed> $watermarkOptions Wire watermark options (anchor/opacity/margin_x/...).
+     * @param Recipe|list<Recipe>  $overlay          One overlay, or 1-8 for the multi-overlay stack (src_1..src_N).
+     * @param array<string, mixed> $watermarkOptions Wire watermark options (anchor/opacity/margin_x/.../overlays).
      * @param list<RecipeStep>     $postSteps        Ops applied to the watermark output, in order.
      */
     public function __construct(
         private readonly FileInput $baseInput,
         private readonly array $baseSteps,
-        private readonly Recipe $overlay,
+        Recipe|array $overlay,
         private readonly array $watermarkOptions,
         private readonly array $postSteps = [],
         private readonly ?PresetDefaults $presetDefaults = null,
         private readonly ?PresetDefaults $scopedPresetDefaults = null,
         private readonly ?GislClient $client = null,
     ) {
+        $this->overlays = WatermarkGate::normalizeOverlays($overlay);
     }
 
     /**
@@ -122,7 +129,7 @@ final class WatermarkedRecipe
         return new self(
             $this->baseInput,
             $this->baseSteps,
-            $this->overlay,
+            $this->overlays,
             $this->watermarkOptions,
             [...$this->postSteps, $step],
             $this->presetDefaults,
@@ -143,10 +150,10 @@ final class WatermarkedRecipe
      * them via `job_output` (role base/overlay). The watermark op is `sole_op`
      * (ADR-0025), so `operations[]` is exactly `[image_watermark|video_watermark]`;
      * any post-watermark ops lower into a downstream `post` job. `$fileIds` is
-     * `[baseId, overlayId]` (upload order). Throws pre-lowering if the base media
+     * `[baseId, overlayId, …]` (upload order). Throws pre-lowering if the base media
      * is undetectable/unsupported (the planned-op gate). Mirrors the TS lowering.
      *
-     * @param list<string> $fileIds [baseId, overlayId]
+     * @param list<string> $fileIds [baseId, overlayId, …]
      */
     public function toWorkflowPayload(array $fileIds, ?string $callbackUrl = null): WorkflowCreatePayload
     {
@@ -154,7 +161,6 @@ final class WatermarkedRecipe
         $wireOp = WatermarkGate::resolveWireOp($media, $mime);
 
         $baseId = $fileIds[0];
-        $overlayId = $fileIds[1];
 
         // src_0: the base (its preceding steps, else a lossless passthrough).
         $baseOps = $this->baseSteps !== []
@@ -164,29 +170,31 @@ final class WatermarkedRecipe
                 'watermark base',
             )->operations
             : [new OperationDef(type: 'passthrough')];
-        // src_1: the overlay recipe (its own steps, else a lossless passthrough).
-        $overlayOps = $this->overlay->recipeSteps() !== []
-            ? Recipe::nestedSingleJob($this->overlay->toWorkflowPayload($overlayId), 'watermark overlay')->operations
-            : [new OperationDef(type: 'passthrough')];
-
         $srcBase = new JobDefinitionPayload(operations: $baseOps, id: 'src_0', source: Sources::upload($baseId));
-        $srcOverlay = new JobDefinitionPayload(operations: $overlayOps, id: 'src_1', source: Sources::upload($overlayId));
+        $inputs = [['source' => Sources::jobOutput('src_0'), 'role' => 'base']];
 
-        $inputs = [
-            ['source' => Sources::jobOutput('src_0'), 'role' => 'base'],
-            ['source' => Sources::jobOutput('src_1'), 'role' => 'overlay'],
-        ];
+        // src_1..src_N: each overlay recipe (its own steps, else a lossless passthrough).
+        $srcOverlays = [];
+        foreach ($this->overlays as $i => $overlay) {
+            $overlayId = $fileIds[$i + 1];
+            $srcId = 'src_' . ($i + 1);
+            $overlayOps = $overlay->recipeSteps() !== []
+                ? Recipe::nestedSingleJob($overlay->toWorkflowPayload($overlayId), 'watermark overlay')->operations
+                : [new OperationDef(type: 'passthrough')];
+            $srcOverlays[] = new JobDefinitionPayload(operations: $overlayOps, id: $srcId, source: Sources::upload($overlayId));
+            $inputs[] = ['source' => Sources::jobOutput($srcId), 'role' => 'overlay'];
+        }
         // `image_watermark` / `video_watermark` are `sole_op` (ADR-0025): the op
         // MUST be alone in its job. Post-watermark steps lower into a DOWNSTREAM
         // job (see {@see RunResult::POST_STEP_JOB_REF}) that consumes the watermark
         // output via `job_output`. PIiUit28.
         $watermarkJob = new JobDefinitionPayload(
-            operations: [WatermarkGate::lowerWatermarkOp($wireOp, $this->watermarkOptions)],
+            operations: [WatermarkGate::lowerWatermarkOp($wireOp, $this->watermarkOptions, \count($this->overlays), $mime)],
             id: 'watermark',
             inputs: $inputs,
         );
 
-        $jobs = [$srcBase, $srcOverlay, $watermarkJob];
+        $jobs = [$srcBase, ...$srcOverlays, $watermarkJob];
         $postOps = $this->lowerPostSteps($wireOp);
         if ($postOps !== []) {
             $jobs[] = new JobDefinitionPayload(
@@ -314,10 +322,14 @@ final class WatermarkedRecipe
         return $this->client;
     }
 
-    /** Base + overlay inputs, in upload/lowering order (`[base, overlay]`). */
+    /**
+     * Base + overlay inputs, in upload/lowering order (`[base, overlay, …]`).
+     *
+     * @return list<FileInput>
+     */
     private function inputsInOrder(): array
     {
-        return [$this->baseInput, $this->overlay->recipeInput()];
+        return [$this->baseInput, ...\array_map(static fn (Recipe $overlay): FileInput => $overlay->recipeInput(), $this->overlays)];
     }
 
     /**
@@ -329,7 +341,9 @@ final class WatermarkedRecipe
     {
         [$media, $mime] = WatermarkGate::effectiveBase($this->baseInput, $this->baseSteps);
         WatermarkGate::resolveWireOp($media, $mime);
-        WatermarkGate::validateOverlay($this->overlay);
+        foreach ($this->overlays as $overlay) {
+            WatermarkGate::validateOverlay($overlay);
+        }
     }
 
     /**

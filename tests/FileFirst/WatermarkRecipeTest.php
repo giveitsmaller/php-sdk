@@ -380,50 +380,138 @@ final class WatermarkRecipeTest extends TestCase
         self::assertSame([['type' => 'passthrough']], $jobs[1]['operations']);
     }
 
-    // ── overlays[] gate (Vbbdq9C4) ──────────────────────────────────────────
-    // watermark() composites exactly ONE overlay (the positional overlay, src_1),
-    // so overlays[] references sources the facade can't build — reject at lowering.
+    // ── multi-overlay stack, overlays[] (tU8XJAfh) ─────────────────────────
+    // Contract image_watermark `features.multi_overlay_stack` (stable): 1-8
+    // overlay sources, `overlays[$i]` places source $i, jpeg/png/webp bases only.
 
-    public function test_rejects_non_empty_overlays_at_lowering(): void
+    private function reasonOf(callable $fn): ?string
     {
         try {
-            $this->recipe('photo.jpg')->watermark($this->overlay(), ['overlays' => [['anchor' => 'center']]])
-                ->toWorkflowPayload(['b', 'o'])->toWire();
-            self::fail('overlays[] must be rejected at lowering');
+            $fn();
         } catch (GislConfigError $err) {
-            self::assertSame('overlays_unsupported', $err->reason);
-            self::assertSame(['overlays'], $err->conflictingFields);
-            self::assertMatchesRegularExpression('/overlays\[\]/', $err->getMessage());
+            return $err->reason;
+        }
+        return null;
+    }
+
+    public function test_lowers_an_overlay_list_to_one_source_job_and_input_per_overlay(): void
+    {
+        $placements = [
+            ['anchor' => 'top_left', 'margin_x' => '10px', 'opacity' => 0.8],
+            ['anchor' => 'bottom_right', 'overlay_width' => '20%'],
+        ];
+        $wire = $this->recipe('photo.jpg')
+            ->watermark([$this->overlay('logo.png'), $this->overlay('badge.png')], ['overlays' => $placements])
+            ->toWorkflowPayload(['b', 'o1', 'o2'])->toWire();
+        /** @var list<array<string, mixed>> $jobs */
+        $jobs = $wire['jobs'];
+        self::assertSame(['src_0', 'src_1', 'src_2', 'watermark'], \array_column($jobs, 'id'));
+        self::assertSame(['type' => 'upload', 'file_id' => 'o2'], $jobs[2]['source']);
+        $wm = $this->watermarkJob($wire);
+        self::assertSame(
+            [['src_0', 'base'], ['src_1', 'overlay'], ['src_2', 'overlay']],
+            \array_map(static fn (array $i): array => [$i['source']['from'], $i['role']], $wm['inputs']),
+        );
+        self::assertSame(['type' => 'image_watermark', 'options' => ['overlays' => $placements]], $wm['operations'][0]);
+    }
+
+    public function test_accepts_one_entry_overlays_for_a_single_overlay(): void
+    {
+        // Contract `minItems: 1`: a single overlay may be placed via overlays[].
+        $wire = $this->recipe('photo.png')->watermark($this->overlay(), ['overlays' => [['anchor' => 'center']]])
+            ->toWorkflowPayload(['b', 'o'])->toWire();
+        self::assertSame(['overlays' => [['anchor' => 'center']]], $this->watermarkJob($wire)['operations'][0]['options']);
+    }
+
+    public function test_refuses_flat_options_together_with_overlays(): void
+    {
+        // Mutually exclusive in the contract (invalid_options server-side): refused before upload.
+        try {
+            $this->recipe('photo.jpg')
+                ->watermark([$this->overlay(), $this->overlay('b.png')], ['opacity' => 0.4, 'overlays' => [[], ['anchor' => 'center']]])
+                ->toWorkflowPayload(['b', 'o1', 'o2']);
+            self::fail('expected GislConfigError');
+        } catch (GislConfigError $e) {
+            self::assertSame('invalid_combination', $e->reason);
+            self::assertSame(['overlays', 'opacity'], $e->conflictingFields);
         }
     }
 
-    public function test_rejects_empty_overlays_at_lowering(): void
+    public function test_a_null_flat_option_still_conflicts_with_overlays(): void
     {
-        // Contract `minItems: 1` makes an empty overlays[] invalid too.
-        $this->expectException(GislConfigError::class);
-        $this->expectExceptionMessageMatches('/overlays\[\]/');
-        $this->recipe('photo.jpg')->watermark($this->overlay(), ['overlays' => []])
-            ->toWorkflowPayload(['b', 'o'])->toWire();
+        // A present `anchor => null` is still sent on the wire, so it still conflicts.
+        self::assertSame('invalid_combination', $this->reasonOf(
+            fn () => $this->recipe('photo.jpg')
+                ->watermark([$this->overlay(), $this->overlay('b.png')], ['anchor' => null, 'overlays' => [[], []]])
+                ->toWorkflowPayload(['b', 'o1', 'o2']),
+        ));
     }
 
-    public function test_overlays_gate_is_deferred_to_lowering_not_the_verb_call(): void
+    public function test_refuses_several_overlays_without_overlays(): void
     {
-        // The verb call constructs the recipe without throwing; the gate fires
-        // when toWorkflowPayload() lowers the watermark op.
-        $wr = $this->recipe('photo.jpg')->watermark($this->overlay(), ['overlays' => [['anchor' => 'center']]]);
+        // The flat options place ONE overlay; a second needs overlays[].
+        foreach ([[], ['anchor' => 'center']] as $options) {
+            self::assertSame('overlays_count_mismatch', $this->reasonOf(
+                fn () => $this->recipe('photo.jpg')->watermark([$this->overlay(), $this->overlay('b.png')], $options)
+                    ->toWorkflowPayload(['b', 'o1', 'o2']),
+            ));
+        }
+    }
+
+    public function test_refuses_overlays_whose_length_differs_from_the_overlay_count(): void
+    {
+        foreach ([[['anchor' => 'top_left'], ['anchor' => 'center']], [], null, ['a' => ['anchor' => 'center']]] as $given) {
+            self::assertSame('overlays_count_mismatch', $this->reasonOf(
+                fn () => $this->recipe('photo.jpg')->watermark($this->overlay(), ['overlays' => $given])
+                    ->toWorkflowPayload(['b', 'o']),
+            ), \json_encode($given, JSON_THROW_ON_ERROR));
+        }
+    }
+
+    public function test_overlays_check_is_at_lowering_not_the_verb_call(): void
+    {
+        // The verb call constructs the recipe; the count check fires when
+        // toWorkflowPayload() lowers the watermark op.
+        $wr = $this->recipe('photo.jpg')->watermark($this->overlay(), ['overlays' => [[], []]]);
         self::assertInstanceOf(WatermarkedRecipe::class, $wr);
-        $this->expectException(GislConfigError::class);
-        $wr->toWorkflowPayload(['b', 'o'])->toWire();
+        self::assertSame('overlays_count_mismatch', $this->reasonOf(fn () => $wr->toWorkflowPayload(['b', 'o'])));
     }
 
-    public function test_rejects_present_null_overlays_at_lowering(): void
+    public function test_refuses_overlays_or_several_overlays_on_a_tiff_or_bmp_base(): void
     {
-        // array_key_exists (not isset): a present `overlays => null` must reject
-        // too, matching the TS `overlays !== undefined` reject-all intent.
-        $this->expectException(GislConfigError::class);
-        $this->expectExceptionMessageMatches('/overlays\[\]/');
-        $this->recipe('photo.jpg')->watermark($this->overlay(), ['overlays' => null])
-            ->toWorkflowPayload(['b', 'o'])->toWire();
+        self::assertSame('overlays_unsupported_base', $this->reasonOf(
+            fn () => $this->recipe('scan.tiff')->watermark($this->overlay(), ['overlays' => [['anchor' => 'center']]])
+                ->toWorkflowPayload(['b', 'o']),
+        ));
+        self::assertSame('overlays_unsupported_base', $this->reasonOf(
+            fn () => $this->recipe('pic.bmp')->watermark([$this->overlay(), $this->overlay('b.png')])
+                ->toWorkflowPayload(['b', 'o1', 'o2']),
+        ));
+    }
+
+    public function test_refuses_zero_or_more_than_eight_overlays_at_the_verb_call(): void
+    {
+        self::assertSame('invalid_overlay_count', $this->reasonOf(fn () => $this->recipe('photo.jpg')->watermark([])));
+        $nine = \array_map(fn (int $i): Recipe => $this->overlay("o{$i}.png"), \range(0, 8));
+        self::assertSame('invalid_overlay_count', $this->reasonOf(fn () => $this->recipe('photo.jpg')->watermark($nine)));
+        $eight = \array_slice($nine, 0, 8);
+        $ids = ['b', ...\array_map(static fn (int $i): string => "o{$i}", \range(0, 7))];
+        $placements = \array_fill(0, 8, []);
+        self::assertCount(10, $this->recipe('photo.jpg')->watermark($eight, ['overlays' => $placements])->toWorkflowPayload($ids)->toWire()['jobs']);
+    }
+
+    public function test_refuses_a_non_recipe_element_in_the_overlay_list(): void
+    {
+        self::assertSame('invalid_overlay', $this->reasonOf(
+            fn () => $this->recipe('photo.jpg')->watermark([$this->overlay(), 'logo.png']),
+        ));
+    }
+
+    public function test_validates_every_overlay_in_the_list_as_an_image(): void
+    {
+        self::assertSame('invalid_overlay_media', $this->reasonOf(
+            fn () => $this->recipe('photo.jpg')->watermark([$this->overlay(), $this->overlay('clip.mp4')]),
+        ));
     }
 
     public function test_still_lowers_flat_single_overlay_options(): void
@@ -627,8 +715,9 @@ final class WatermarkRecipeTest extends TestCase
     public function test_run_preflights_the_chain_before_any_upload(): void
     {
         // The shared MultiInputUpload helper lowers with placeholder ids before
-        // uploading, so a lowering-time gate (here overlays[]) throws pre-upload —
-        // ZERO HTTP requests are made. Mirrors the TS file-first preflight (T3ltXsou).
+        // uploading, so a lowering-time gate (here an overlays[] count mismatch)
+        // throws pre-upload — ZERO HTTP requests are made. Mirrors the TS
+        // file-first preflight (T3ltXsou).
         $captured = [];
         $http = $this->stubClient([], $captured);
         $client = $this->makeClient($http);
@@ -636,16 +725,56 @@ final class WatermarkRecipeTest extends TestCase
         $overlay = $this->tempFile('png');
         try {
             $client->file($base)
-                ->watermark(new Recipe(FileInput::path($overlay)), ['overlays' => [['anchor' => 'center']]])
+                ->watermark(new Recipe(FileInput::path($overlay)), ['overlays' => [['anchor' => 'center'], []]])
                 ->run();
             self::fail('overlays[] must throw at the pre-upload preflight');
         } catch (GislConfigError $err) {
-            self::assertSame('overlays_unsupported', $err->reason);
+            self::assertSame('overlays_count_mismatch', $err->reason);
         } finally {
             @\unlink($base);
             @\unlink($overlay);
         }
         self::assertCount(0, $captured);
+    }
+
+    public function test_submit_uploads_every_overlay_and_sends_overlays_on_the_wire(): void
+    {
+        $captured = [];
+        $http = $this->stubClient([
+            $this->uploadResponse('01936fb1-7bb3-7000-8000-0000000060b1'),
+            $this->uploadResponse('01936fb1-7bb3-7000-8000-0000000060b2'),
+            $this->uploadResponse('01936fb1-7bb3-7000-8000-0000000060b3'),
+            $this->createResponse(),
+        ], $captured);
+        $client = $this->makeClient($http);
+        $base = $this->tempFile('jpg');
+        $logo = $this->tempFile('png');
+        $badge = $this->tempFile('png');
+        $placements = [['anchor' => 'top_left'], ['anchor' => 'bottom_right', 'opacity' => 0.9]];
+        try {
+            $client->file($base)
+                ->watermark([new Recipe(FileInput::path($logo)), new Recipe(FileInput::path($badge))], ['overlays' => $placements])
+                ->submit();
+        } finally {
+            @\unlink($base);
+            @\unlink($logo);
+            @\unlink($badge);
+        }
+
+        // base + two overlays uploaded → the workflow create is the FOURTH request.
+        self::assertStringContainsString('/api/workflows', (string) $captured[3]->getUri());
+        $body = \json_decode((string) $captured[3]->getBody(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        self::assertSame(['src_0', 'src_1', 'src_2', 'watermark'], \array_column($body['jobs'], 'id'));
+        self::assertSame('01936fb1-7bb3-7000-8000-0000000060b3', $body['jobs'][2]['source']['file_id']);
+        self::assertSame(
+            ['type' => 'image_watermark', 'options' => ['overlays' => $placements]],
+            $body['jobs'][3]['operations'][0],
+        );
+        self::assertSame(['src_0', 'src_1', 'src_2'], \array_map(
+            static fn (array $i): string => $i['source']['from'],
+            $body['jobs'][3]['inputs'],
+        ));
     }
 
     // ── run() stub plumbing (mirrors RecipeRunTest / FilesRecipeTest) ───────

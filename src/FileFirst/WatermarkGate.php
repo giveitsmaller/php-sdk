@@ -198,6 +198,45 @@ final class WatermarkGate
         );
     }
 
+    /** Contract `per_role_cardinality.overlay.max` / `overlays[]` `maxItems`. */
+    private const MAX_OVERLAYS = 8;
+
+    /**
+     * The overlay argument of `watermark()` as a list: one {@see Recipe} is the
+     * single-overlay path, a list is the multi-overlay stack. The contract caps the
+     * overlay role at 1-8 sources, so a count outside that (or a non-Recipe
+     * element) throws pre-upload. Mirrors the TS `_normalizeWatermarkOverlays`.
+     *
+     * @param Recipe|array<mixed> $overlay
+     * @return list<Recipe>
+     */
+    public static function normalizeOverlays(Recipe|array $overlay): array
+    {
+        $overlays = $overlay instanceof Recipe ? [$overlay] : \array_values($overlay);
+        $count = \count($overlays);
+        if ($count < 1 || $count > self::MAX_OVERLAYS) {
+            throw new GislConfigError(
+                'watermark() takes 1 to ' . self::MAX_OVERLAYS . " overlays; got {$count}.",
+                reason: 'invalid_overlay_count',
+                conflictingFields: ['overlay'],
+            );
+        }
+        $recipes = [];
+        foreach ($overlays as $each) {
+            if (!$each instanceof Recipe) {
+                throw new GislConfigError(
+                    'watermark() overlays must be Recipe file-nodes (e.g. $client->file(\'logo.png\')); got '
+                    . \get_debug_type($each) . '.',
+                    reason: 'invalid_overlay',
+                    conflictingFields: ['overlay'],
+                );
+            }
+            $recipes[] = $each;
+        }
+
+        return $recipes;
+    }
+
     /**
      * Validate a watermark overlay locally: the overlay role is always an IMAGE.
      * A KNOWN non-image overlay (audio/video/document) throws pre-upload; an
@@ -217,33 +256,83 @@ final class WatermarkGate
         }
     }
 
+    /** The flat single-overlay placement options, mutually exclusive with `overlays[]`. */
+    private const FLAT_PLACEMENT_KEYS = ['anchor', 'margin_x', 'margin_y', 'opacity', 'overlay_width'];
+
     /**
-     * Lower the watermark op itself. The remaining options (anchor/opacity/
-     * margin_x/margin_y/overlay_width) are already wire keys; empty options omit
-     * the `options` key (byte-identical to the TS `_lowerWatermarkOp`).
+     * Lower the watermark op itself. Every option (the flat keys and `overlays[]`)
+     * is already a wire key; empty options omit the `options` key (byte-identical
+     * to the TS `_lowerWatermarkOp`).
      *
-     * `overlays[]` (the multi-overlay stack) is a live contract option but is NOT
-     * reachable through watermark(): the facade composites exactly ONE overlay —
-     * the positional `overlay` (wire source src_1) — so overlays[1..] reference
-     * sources it cannot create, any entry is invalid on a non-image base, and the
-     * contract's `minItems: 1` makes an empty array invalid too. Reject it here at
-     * lowering (mutation-safe — reads the FINAL options, catching a post-watermark()
-     * `$opts['overlays'] = [...]`). Real multi-overlay stacking is a future feature.
+     * The contract declares the multi-overlay stack (`overlays[]`, and any request
+     * with more than one overlay source) on the `image` group ONLY — jpeg/png/webp;
+     * and `overlays[$i]` places overlay source $i, so its length MUST equal the
+     * overlay count. Both are refused here, at lowering (which the pre-upload
+     * preflight runs), so a post-watermark() `$opts['overlays'] = [...]` mutation
+     * is caught too. A second overlay without `overlays[]`, and `overlays[]` set
+     * alongside a flat placement option, are refused too (both are
+     * `invalid_options` server-side).
      *
      * @param array<string, mixed> $options
      */
-    public static function lowerWatermarkOp(string $wireOp, array $options): OperationDef
-    {
-        // array_key_exists (not isset): a present `overlays => null` must reject
-        // too, matching the TS `overlays !== undefined` reject-all intent.
-        if (array_key_exists('overlays', $options)) {
+    public static function lowerWatermarkOp(
+        string $wireOp,
+        array $options,
+        int $overlayCount = 1,
+        ?string $baseMime = null,
+    ): OperationDef {
+        // array_key_exists (not isset): a present `overlays => null` is checked
+        // too, matching the TS `overlays !== undefined`.
+        $hasOverlays = array_key_exists('overlays', $options);
+        $multiOverlayMimes = self::CAPABILITY[self::OP_IMAGE]['image']['mimes'];
+        if (
+            ($hasOverlays || $overlayCount > 1)
+            && ($wireOp !== self::OP_IMAGE || $baseMime === null || !\in_array($baseMime, $multiOverlayMimes, true))
+        ) {
             throw new GislConfigError(
-                "watermark(): 'overlays[]' (multi-overlay stacking) is not supported — watermark() composites a "
-                . 'single overlay (the positional overlay argument). Use the top-level anchor / opacity / margin_x / '
-                . 'margin_y / overlay_width options to place it. Multi-overlay stacking is a future feature.',
-                reason: 'overlays_unsupported',
+                "watermark(): multiple overlays / 'overlays[]' need a " . \implode(', ', $multiOverlayMimes)
+                . ' base; got ' . ($baseMime ?? 'an undetectable') . ' base. Other bases take a single overlay placed '
+                . 'with the top-level anchor / opacity / margin_x / margin_y / overlay_width options.',
+                reason: 'overlays_unsupported_base',
                 conflictingFields: ['overlays'],
             );
+        }
+        // A second overlay with no `overlays[]` is invalid too: the flat options
+        // place ONE overlay (codex 5fd9cafaf7ca).
+        if (!$hasOverlays && $overlayCount > 1) {
+            throw new GislConfigError(
+                "watermark(): {$overlayCount} overlays need 'overlays[]' with one placement per overlay, in overlay "
+                . 'order; the top-level anchor / opacity / margin_x / margin_y / overlay_width place a single overlay.',
+                reason: 'overlays_count_mismatch',
+                conflictingFields: ['overlays', 'overlay'],
+            );
+        }
+        // `overlays[]` and the flat single-overlay options are mutually exclusive
+        // (`invalid_options`, api + worker); no silent precedence (codex 7383823c9875).
+        $flatSet = \array_values(\array_filter(
+            self::FLAT_PLACEMENT_KEYS,
+            // array_key_exists (not isset): `anchor => null` is still sent, so it still conflicts.
+            static fn (string $key): bool => \array_key_exists($key, $options),
+        ));
+        if ($hasOverlays && $flatSet !== []) {
+            throw new GislConfigError(
+                "watermark(): 'overlays[]' cannot be combined with the single-overlay option(s) "
+                . \implode(', ', $flatSet) . "; put each overlay's placement inside its 'overlays[]' entry.",
+                reason: 'invalid_combination',
+                conflictingFields: ['overlays', ...$flatSet],
+            );
+        }
+        if ($hasOverlays) {
+            $given = $options['overlays'];
+            $givenIsList = \is_array($given) && \array_is_list($given);
+            if (!$givenIsList || \count($given) !== $overlayCount) {
+                throw new GislConfigError(
+                    "watermark(): 'overlays[]' needs exactly one entry per overlay, in overlay order — "
+                    . "{$overlayCount} overlay(s), " . ($givenIsList ? \count($given) . ' entries' : 'not a list') . '.',
+                    reason: 'overlays_count_mismatch',
+                    conflictingFields: ['overlays', 'overlay'],
+                );
+            }
         }
 
         return new OperationDef(type: $wireOp, options: $options === [] ? null : $options);
