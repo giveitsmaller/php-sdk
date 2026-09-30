@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Gisl\Sdk\Tests\Unit\Http;
 
 use Gisl\Sdk\Http\CurlMultiPartUploader;
+use Gisl\Sdk\Tests\Capability;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -26,9 +27,7 @@ final class CurlMultiPartUploaderTest extends TestCase
 
     public function testEmptyPartListUploadsNothingAndReturnsEmptyMap(): void
     {
-        if (!CurlMultiPartUploader::isSupported()) {
-            self::markTestSkipped('ext-curl not loaded');
-        }
+        Capability::require('ext-curl', CurlMultiPartUploader::isSupported(), 'the concurrent uploader needs curl_multi');
 
         $uploader = new CurlMultiPartUploader(maxAttempts: 3, retryBaseMs: 0);
         $calls = 0;

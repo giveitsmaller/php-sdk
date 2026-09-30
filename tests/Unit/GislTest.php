@@ -13,6 +13,7 @@ use Gisl\Sdk\Gisl;
 use Gisl\Sdk\GislAnonymousClient;
 use Gisl\Sdk\GislClient;
 use Gisl\Sdk\Http\CurlMultiPartUploader;
+use Gisl\Sdk\Tests\Capability;
 use GuzzleHttp\Psr7\HttpFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -114,10 +115,7 @@ final class GislTest extends TestCase
         );
 
         // Default multipartConcurrency (4) + ext-curl present -> concurrent path.
-        // (Skips if the test image somehow lacks ext-curl; CI always has it.)
-        if (!CurlMultiPartUploader::isSupported()) {
-            self::markTestSkipped('ext-curl not loaded');
-        }
+        Capability::require('ext-curl', CurlMultiPartUploader::isSupported(), 'the default wiring picks the concurrent uploader only when curl is loaded');
         self::assertInstanceOf(CurlMultiPartUploader::class, $this->readPartUploader($client));
     }
 

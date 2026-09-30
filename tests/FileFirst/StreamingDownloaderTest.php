@@ -10,6 +10,7 @@ use Gisl\Sdk\Errors\GislRequestNotSentError;
 use Gisl\Sdk\Errors\GislTransportError;
 use Gisl\Sdk\Errors\GislSinkError;
 use Gisl\Sdk\FileFirst\StreamingDownloader;
+use Gisl\Sdk\Tests\Capability;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -175,12 +176,14 @@ final class StreamingDownloaderTest extends TestCase
         // status and mislabel a pure open failure as "Download failed with status
         // NNN". Removing the clear() call makes this test fail (order-independent:
         // the prime step runs first WITHIN this test).
-        if (!\function_exists('http_clear_last_response_headers')) {
-            self::markTestSkipped(
-                'http_clear_last_response_headers() is unavailable (< PHP 8.5) — the '
-                . '$http_response_header magic var is per-call, so there is no stale global to clear.',
-            );
-        }
+        // A PHP-version guard, honest below 8.5 (the 8.1-8.4 matrix skips here).
+        // The pinned image is 8.5, so under GISL_REQUIRE_CAPABILITIES a
+        // downgrade fails instead of silently dropping this pin.
+        Capability::require(
+            'PHP >= 8.5 (http_clear_last_response_headers)',
+            \function_exists('http_clear_last_response_headers'),
+            'the $http_response_header magic var is per-call below 8.5, so there is no stale global to clear',
+        );
 
         $base = $this->startLoopbackServer();
 
@@ -219,31 +222,22 @@ final class StreamingDownloaderTest extends TestCase
      * Launch a throwaway loopback `php -S` server on a free port and return its
      * base URL (`http://127.0.0.1:{port}`). Skips (never mocks — a mock would
      * bypass the header-reading magic under test) when the process/server
-     * plumbing is unavailable, so the assertions above never run half-wired.
+     * plumbing is unavailable, so the assertions above never run half-wired —
+     * and FAILS instead under GISL_REQUIRE_CAPABILITIES=1 ({@see Capability}).
      */
     private function startLoopbackServer(): string
     {
-        if (!\function_exists('proc_open')) {
-            self::markTestSkipped('proc_open is unavailable — cannot launch a loopback php -S server to exercise the HTTP-status path.');
-        }
-        if (\PHP_BINARY === '') {
-            self::markTestSkipped('PHP_BINARY is empty — cannot locate the php CLI to launch php -S.');
-        }
+        Capability::require('proc_open', \function_exists('proc_open'), 'cannot launch a loopback php -S server to exercise the HTTP-status path');
+        Capability::require('loopback-server', \PHP_BINARY !== '', 'PHP_BINARY is empty, so the php CLI for php -S cannot be located');
 
         // Bind :0 to let the OS hand out a free port, read it, then release it.
         $probe = @\stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
-        if ($probe === false) {
-            self::markTestSkipped("Could not bind a loopback port for the test server: {$errstr}");
-        }
+        Capability::require('loopback-server', $probe !== false, "could not bind a loopback port for the test server: {$errstr}");
         $address = \stream_socket_get_name($probe, false);
         \fclose($probe);
-        if (!\is_string($address)) {
-            self::markTestSkipped('Could not read the bound loopback address.');
-        }
+        Capability::require('loopback-server', \is_string($address), 'could not read the bound loopback address');
         $colonPos = \strrpos($address, ':');
-        if ($colonPos === false) {
-            self::markTestSkipped('Could not parse the free loopback port.');
-        }
+        Capability::require('loopback-server', $colonPos !== false, "could not parse the free loopback port from {$address}");
         $port = (int) \substr($address, $colonPos + 1);
 
         // Write the router to a real .php file the server executes per request.
@@ -267,13 +261,13 @@ final class StreamingDownloaderTest extends TestCase
             $descriptors,
             $pipes,
         );
-        if (!\is_resource($process)) {
-            self::markTestSkipped('proc_open could not launch `php -S` — the HTTP-status path is not exercised here.');
-        }
+        Capability::require('loopback-server', \is_resource($process), 'proc_open could not launch `php -S`');
         $this->serverProcess = $process;
 
-        // Wait for readiness: retry-connect for up to ~2s before asserting.
-        $deadline = \microtime(true) + 2.0;
+        // Wait for readiness: retry-connect for up to ~10s. 10s, not 2s: under
+        // GISL_REQUIRE_CAPABILITIES a timeout FAILS, and a contended shared box
+        // must not red honestly-but-uselessly.
+        $deadline = \microtime(true) + 10.0;
         while (\microtime(true) < $deadline) {
             $conn = @\fsockopen('127.0.0.1', $port, $connErrno, $connErrstr, 0.2);
             if ($conn !== false) {
@@ -283,7 +277,8 @@ final class StreamingDownloaderTest extends TestCase
             \usleep(50_000);
         }
 
-        self::markTestSkipped('The loopback `php -S` server did not become ready within 2s.');
+        Capability::require('loopback-server', false, 'the loopback `php -S` server did not become ready within 10s');
+        throw new \LogicException('unreachable: Capability::require() skips or fails when absent');
     }
 
     // -------------------------------------------------------------------------
