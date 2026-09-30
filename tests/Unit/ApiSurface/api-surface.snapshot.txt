@@ -567,6 +567,8 @@ readonly property Gisl\Sdk\Ergonomic\ClipEntry::$options : Gisl\Sdk\Ergonomic\Cl
 readonly property Gisl\Sdk\Ergonomic\ClipOptions::$crossfadeDuration : ?float
 readonly property Gisl\Sdk\Ergonomic\ClipOptions::$gapDuration : ?float
 readonly property Gisl\Sdk\Ergonomic\ClipOptions::$transition : ?string
+readonly property Gisl\Sdk\Ergonomic\ClipOptions::$trimEnd : ?float
+readonly property Gisl\Sdk\Ergonomic\ClipOptions::$trimStart : ?float
 readonly property Gisl\Sdk\Ergonomic\Handle::$key : ?string
 readonly property Gisl\Sdk\Ergonomic\Handle::$webhookSecret : ?string
 readonly property Gisl\Sdk\Ergonomic\Handle::$workflowId : string

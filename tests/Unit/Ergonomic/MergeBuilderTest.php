@@ -23,6 +23,7 @@ use Gisl\Sdk\GislErgonomicClient;
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestInterface;
@@ -562,6 +563,144 @@ final class MergeBuilderTest extends TestCase
         $perInput = $mergeJob['inputs'][1]['per_input_options'];
         $this->assertSame('crossfade', $perInput['transition']);
         $this->assertArrayNotHasKey('gap_duration', $perInput);
+    }
+
+    // Ua1arejD — contract merge.{video,audio}.per_input_options declare
+    // trim_start / trim_end (float seconds, min 0).
+    public function test_video_clip_trims_lower_to_per_input_trim_keys(): void
+    {
+        $pathA = self::writeTempFile('a');
+        $pathB = self::writeTempFile('b');
+
+        $captured = [];
+        $http = self::stubClient([
+            self::uploadResponse('01936fb1-7bb3-7000-8000-0000000000a1', 'a.mp4', 'video/mp4', 1),
+            self::uploadResponse('01936fb1-7bb3-7000-8000-0000000000b2', 'b.mp4', 'video/mp4', 1),
+            self::workflowCreatedResponse('01936fb2-0000-7000-8000-000000000a09'),
+        ], $captured);
+
+        $client = self::makeClient($http);
+        $client->merge([$pathA, $pathB], new MergeOptions(mediaKind: 'video'))
+            ->sequence([
+                Merge::asset($pathA),
+                Merge::clip($pathB, new ClipOptions(
+                    transition: 'crossfade',
+                    crossfadeDuration: 1.5,
+                    trimStart: 0.5,
+                    trimEnd: 1.25,
+                )),
+            ])
+            ->submit(new SubmitOptions(webhook: 'https://example.com/cb'));
+
+        $body = self::decodeJson($captured[2]);
+        $mergeJob = $this->assertMergeShapeAndReturnMergeJob($body, 2);
+        $this->assertArrayNotHasKey('per_input_options', $mergeJob['inputs'][0]);
+        $this->assertSame(
+            ['transition' => 'crossfade', 'crossfade_duration' => 1.5, 'trim_start' => 0.5, 'trim_end' => 1.25],
+            $mergeJob['inputs'][1]['per_input_options'],
+        );
+    }
+
+    public function test_audio_clip_trims_lower_including_zero_trim_start(): void
+    {
+        $pathA = self::writeTempFile('a');
+        $pathB = self::writeTempFile('b');
+
+        $captured = [];
+        $http = self::stubClient([
+            self::uploadResponse('01936fb1-7bb3-7000-8000-0000000000a1', 'a.mp3', 'audio/mpeg', 1),
+            self::uploadResponse('01936fb1-7bb3-7000-8000-0000000000b2', 'b.mp3', 'audio/mpeg', 1),
+            self::workflowCreatedResponse('01936fb2-0000-7000-8000-000000000a10'),
+        ], $captured);
+
+        $client = self::makeClient($http);
+        $client->merge([$pathA, $pathB], new MergeOptions(mediaKind: 'audio'))
+            ->sequence([
+                // trimStart 0.0 is a real value (contract min 0), not "unset".
+                Merge::clip($pathA, new ClipOptions(trimStart: 0.0)),
+                Merge::clip($pathB, new ClipOptions(gapDuration: 0.5, trimEnd: 2.5)),
+            ])
+            ->submit(new SubmitOptions(webhook: 'https://example.com/cb'));
+
+        $body = self::decodeJson($captured[2]);
+        $mergeJob = $this->assertMergeShapeAndReturnMergeJob($body, 2);
+        // assertEquals: a JSON round-trip of 0.0 decodes as int 0.
+        $this->assertEquals(['trim_start' => 0], $mergeJob['inputs'][0]['per_input_options']);
+        $this->assertSame(
+            ['gap_duration' => 0.5, 'trim_end' => 2.5],
+            $mergeJob['inputs'][1]['per_input_options'],
+        );
+    }
+
+    public function test_clip_without_trims_sends_no_trim_keys(): void
+    {
+        $pathA = self::writeTempFile('a');
+        $pathB = self::writeTempFile('b');
+
+        $captured = [];
+        $http = self::stubClient([
+            self::uploadResponse('01936fb1-7bb3-7000-8000-0000000000a1', 'a.mp4', 'video/mp4', 1),
+            self::uploadResponse('01936fb1-7bb3-7000-8000-0000000000b2', 'b.mp4', 'video/mp4', 1),
+            self::workflowCreatedResponse('01936fb2-0000-7000-8000-000000000a11'),
+        ], $captured);
+
+        $client = self::makeClient($http);
+        $client->merge([$pathA, $pathB], new MergeOptions(mediaKind: 'video'))
+            ->sequence([
+                Merge::asset($pathA),
+                Merge::clip($pathB, new ClipOptions(transition: 'fade')),
+            ])
+            ->submit(new SubmitOptions(webhook: 'https://example.com/cb'));
+
+        $body = self::decodeJson($captured[2]);
+        $mergeJob = $this->assertMergeShapeAndReturnMergeJob($body, 2);
+        $this->assertSame(['transition' => 'fade'], $mergeJob['inputs'][1]['per_input_options']);
+    }
+
+    /**
+     * @return array<string, array{ClipOptions}>
+     */
+    public static function trimOnlyClipOptions(): array
+    {
+        return [
+            'trimStart' => [new ClipOptions(trimStart: 1.0)],
+            'trimEnd' => [new ClipOptions(trimEnd: 1.0)],
+        ];
+    }
+
+    #[DataProvider('trimOnlyClipOptions')]
+    public function test_image_merge_rejects_trim_only_clip(ClipOptions $options): void
+    {
+        $pathA = self::writeTempFile('a');
+        $pathB = self::writeTempFile('b');
+
+        $captured = [];
+        $client = self::makeClient(self::stubClient([], $captured));
+
+        $thrown = null;
+        try {
+            $client->merge([$pathA, $pathB], new MergeOptions(mediaKind: 'image'))
+                ->sequence([Merge::asset($pathA), Merge::clip($pathB, $options)])
+                ->submit(new SubmitOptions(webhook: 'https://example.com/cb'));
+        } catch (GislPerInputOptionsNotSupportedError $e) {
+            $thrown = $e;
+        }
+
+        $this->assertInstanceOf(GislPerInputOptionsNotSupportedError::class, $thrown);
+        $this->assertSame([], $captured, 'per-input rejection fires before any upload');
+    }
+
+    public function test_clip_options_positional_order_is_unchanged_and_trims_are_appended(): void
+    {
+        // Public VO: the three pre-existing positional params keep their slots.
+        $options = new ClipOptions('fade', 1.0, 0.5, 2.0, 3.0);
+        $this->assertSame('fade', $options->transition);
+        $this->assertSame(1.0, $options->crossfadeDuration);
+        $this->assertSame(0.5, $options->gapDuration);
+        $this->assertSame(2.0, $options->trimStart);
+        $this->assertSame(3.0, $options->trimEnd);
+        $this->assertTrue((new ClipOptions())->isEmpty());
+        $this->assertFalse((new ClipOptions(trimEnd: 0.0))->isEmpty());
     }
 
     public function test_single_asset_below_min_inputs_raises_config_error(): void

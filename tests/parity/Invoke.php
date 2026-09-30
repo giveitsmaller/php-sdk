@@ -1247,6 +1247,8 @@ final class Invoke
                         transition: isset($optsRaw['transition']) ? (string) $optsRaw['transition'] : null,
                         crossfadeDuration: isset($optsRaw['crossfadeDuration']) ? (float) $optsRaw['crossfadeDuration'] : null,
                         gapDuration: isset($optsRaw['gapDuration']) ? (float) $optsRaw['gapDuration'] : null,
+                        trimStart: isset($optsRaw['trimStart']) ? (float) $optsRaw['trimStart'] : null,
+                        trimEnd: isset($optsRaw['trimEnd']) ? (float) $optsRaw['trimEnd'] : null,
                     ),
                 );
             } else {

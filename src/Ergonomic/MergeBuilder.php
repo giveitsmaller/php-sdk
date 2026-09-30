@@ -41,8 +41,10 @@ use Gisl\Sdk\WorkflowConstants;
  *    options raise {@see GislPerInputOptionsNotSupportedError} at plan
  *    time); the merge-level `transition` applies between every join.
  *  - Audio merges: per-input `transition`/`crossfade_duration`/
- *    `gap_duration`; merge-level may also carry `gap_duration`.
- *  - Video merges: per-input `transition`/`crossfade_duration`;
+ *    `gap_duration`/`trim_start`/`trim_end`; merge-level may also carry
+ *    `gap_duration`.
+ *  - Video merges: per-input `transition`/`crossfade_duration`/
+ *    `trim_start`/`trim_end`;
  *    merge-level DROPS `gap_duration` (TS R2 medium ab2422e56ea0).
  *
  * Local validation runs BEFORE any upload (`planSequence()`). The three
@@ -741,6 +743,12 @@ final class MergeBuilder
         }
         if ($opts->gapDuration !== null && $mediaKind === 'audio') {
             $out['gap_duration'] = $opts->gapDuration;
+        }
+        if ($opts->trimStart !== null) {
+            $out['trim_start'] = $opts->trimStart;
+        }
+        if ($opts->trimEnd !== null) {
+            $out['trim_end'] = $opts->trimEnd;
         }
         return $out;
     }
