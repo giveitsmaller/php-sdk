@@ -474,7 +474,9 @@ final class ProbePendingRecoveryTest extends TestCase
             // only the first refusal's message carries the marker.
             self::assertSame('first refusal', $e->getMessage());
         }
-        // anonymous-policy per_minute.workflow_create = 2: a third create would be a 429.
+        // anonymous-policy 2.1.0: a probe_pending refusal does not count against
+        // the guest create limit, so a guest gets the signed-in cap.
+        self::assertSame(ProbePendingRecovery::MAX_CREATE_ATTEMPTS, ProbePendingRecovery::GUEST_MAX_CREATE_ATTEMPTS);
         self::assertCount(ProbePendingRecovery::GUEST_MAX_CREATE_ATTEMPTS, $captured);
         foreach ($captured as $request) {
             self::assertSame('/api/workflows', $request->getUri()->getPath());

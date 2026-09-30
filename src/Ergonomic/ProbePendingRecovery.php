@@ -40,12 +40,12 @@ final class ProbePendingRecovery
     public const GUEST_BACKOFF_BASE_MS = 1_000;
 
     /**
-     * A guest's create cap: `anonymous-policy.yaml` `per_minute.workflow_create`
-     * (2). A third create inside the minute would be a 429, not a recovery, so
-     * a guest gets ONE re-create. Pinned to the policy by
-     * scripts/tests/test_guest_create_cap.py.
+     * A guest's create cap. anonymous-policy 2.1.0 (contracts v2.219.0) says a
+     * `probe_pending` refusal does NOT count against `per_minute.workflow_create`,
+     * so a guest gets the same three creates as a signed-in caller. Pinned to the
+     * policy by scripts/tests/test_guest_create_cap.py.
      */
-    public const GUEST_MAX_CREATE_ATTEMPTS = 2;
+    public const GUEST_MAX_CREATE_ATTEMPTS = 3;
 
     /**
      * @param int|null $probeTimeoutMs ONE budget for the whole recovery - the
