@@ -8,6 +8,7 @@ use Gisl\Generated\OpenApi\Model\WorkflowCreateResponse;
 use Gisl\Sdk\Cancellation;
 use Gisl\Sdk\Errors\GislProbePendingError;
 use Gisl\Sdk\Errors\GislTimeoutError;
+use Gisl\Sdk\GislAnonymousClient;
 use Gisl\Sdk\GislClient;
 use Gisl\Sdk\Http\RateLimitHeaders;
 use Gisl\Sdk\ProbeWaitOptions;
@@ -35,6 +36,17 @@ final class ProbePendingRecovery
     /** Default recovery budget when the caller gives no timeout. */
     private const DEFAULT_RECOVERY_BUDGET_MS = 30_000;
 
+    /** A guest's delay before its re-create when the refusal carries no Retry-After. */
+    public const GUEST_BACKOFF_BASE_MS = 1_000;
+
+    /**
+     * A guest's create cap: `anonymous-policy.yaml` `per_minute.workflow_create`
+     * (2). A third create inside the minute would be a 429, not a recovery, so
+     * a guest gets ONE re-create. Pinned to the policy by
+     * scripts/tests/test_guest_create_cap.py.
+     */
+    public const GUEST_MAX_CREATE_ATTEMPTS = 2;
+
     /**
      * @param int|null $probeTimeoutMs ONE budget for the whole recovery - the
      *                                 refusal's Retry-After plus every probe
@@ -53,20 +65,26 @@ final class ProbePendingRecovery
         bool $enabled = true,
     ): WorkflowCreateResponse {
         $budgetEnd = null;
+        // Every give-up path rethrows the FIRST refusal, as documented; each
+        // retry's own refusal is read only for its Retry-After and job_ref.
+        $original = null;
+        $guest = $client instanceof GislAnonymousClient;
+        $maxAttempts = $guest ? self::GUEST_MAX_CREATE_ATTEMPTS : self::MAX_CREATE_ATTEMPTS;
         for ($attempt = 1; ; $attempt++) {
             // Before EVERY create, the first included (codex ae65d4f34b8e).
             BuilderInternals::throwIfCancelled($cancellation, 'workflow creation');
             try {
                 return $client->createWorkflow($payload);
             } catch (GislProbePendingError $refusal) {
-                if (!$enabled || $attempt >= self::MAX_CREATE_ATTEMPTS) {
-                    throw $refusal;
+                $original ??= $refusal;
+                if (!$enabled || $attempt >= $maxAttempts) {
+                    throw $original;
                 }
             }
             $jobRef = $refusal->typedPayload->getJobRef();
             $fileIds = self::uploadFileIdsForJob($payload, \is_string($jobRef) ? $jobRef : null);
-            if ($fileIds === []) {
-                throw $refusal;
+            if (!$guest && $fileIds === []) {
+                throw $original;
             }
             $budgetEnd ??= BuilderInternals::nowMs() + \max(0, $probeTimeoutMs ?? self::DEFAULT_RECOVERY_BUDGET_MS);
 
@@ -74,15 +92,29 @@ final class ProbePendingRecovery
             // poll/retry (codex 089af94beb8e); slept in <= 1 s slices so a
             // cancel is not ignored for its whole length.
             $retryAfterMs = RateLimitHeaders::parseRetryAfterMs($refusal->responseHeaders['retry-after'] ?? null);
-            if ($retryAfterMs !== null && $retryAfterMs > 0) {
-                self::budgetLeft($retryAfterMs, $budgetEnd, $deadlineMs, $refusal);
-                for ($left = $retryAfterMs; $left > 0; $left -= 1_000) {
+            // anonymous-policy 2.1.0 (5dJrOdVC): the probe endpoint is sign-in only,
+            // so a guest RETRIES THE CREATE after Retry-After, or a backoff when the
+            // refusal carries none, within GUEST_MAX_CREATE_ATTEMPTS and the budget.
+            $delayMs = match (true) {
+                $retryAfterMs !== null && $retryAfterMs > 0 => $retryAfterMs,
+                $guest => self::GUEST_BACKOFF_BASE_MS,
+                default => 0,
+            };
+            if ($delayMs > 0) {
+                self::budgetLeft($delayMs, $budgetEnd, $deadlineMs, $original);
+                for ($left = $delayMs; $left > 0; $left -= 1_000) {
                     BuilderInternals::throwIfCancelled($cancellation, 'the workflow could be re-created');
                     \usleep(\min(1_000, $left) * 1_000);
                 }
             }
+            if ($guest) {
+                // After the sleep, before the re-create: a late wake-up must not
+                // create past the deadline or the budget (codex 08b28b31ad2f).
+                self::budgetLeft(0, $budgetEnd, $deadlineMs, $original);
+                continue;
+            }
             foreach ($fileIds as $fileId) {
-                $budgetLeft = self::budgetLeft(0, $budgetEnd, $deadlineMs, $refusal);
+                $budgetLeft = self::budgetLeft(0, $budgetEnd, $deadlineMs, $original);
                 $deadlineLeft = $deadlineMs === null ? $budgetLeft : $deadlineMs - BuilderInternals::nowMs();
                 $waited = $client->waitForProbe($fileId, new ProbeWaitOptions(
                     timeoutMs: \min($budgetLeft, $deadlineLeft),
@@ -93,7 +125,7 @@ final class ProbePendingRecovery
                 $status = $waited->probe?->getProbeStatus();
                 $statusName = \is_scalar($status) ? (string) $status : '';
                 if (!$waited->landed || $statusName === 'corrupt' || $statusName === 'unsupported_codec') {
-                    throw $refusal;
+                    throw $original;
                 }
             }
             if ($deadlineMs !== null && BuilderInternals::nowMs() >= $deadlineMs) {

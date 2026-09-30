@@ -6,6 +6,7 @@ namespace Gisl\Sdk\Tests\Unit;
 
 use Gisl\Sdk\Errors\GislApiError;
 use Gisl\Sdk\Errors\GislFeatureRequiresAuthError;
+use Gisl\Sdk\Errors\GislProbePendingError;
 use Gisl\Sdk\Errors\GislTierRestrictedError;
 use Gisl\Sdk\Gisl;
 use Gisl\Sdk\GislAnonymousClient;
@@ -293,7 +294,7 @@ final class GislAnonymousClientTest extends TestCase
         self::assertSame([], $this->seen);
     }
 
-    public function testProbePendingRecoveryMeetsTheGateInsteadOfProbing(): void
+    public function testProbePendingRecoveryReCreatesInsteadOfProbing(): void
     {
         $this->createStatus = 422;
         $this->createBody = [
@@ -310,13 +311,16 @@ final class GislAnonymousClientTest extends TestCase
             ),
         ]);
 
+        // 5dJrOdVC (anonymous-policy 2.1.0): the probe endpoint is sign-in only,
+        // so a guest retries the CREATE and never calls waitForProbe. The server
+        // keeps refusing here, so the 1 s budget ends with the original refusal.
         try {
             $this->client()->createWorkflowAwaitingProbe($payload, 1000);
-            self::fail('Expected GislFeatureRequiresAuthError');
-        } catch (GislFeatureRequiresAuthError $e) {
-            self::assertSame('waitForProbe', $e->operation);
+            self::fail('Expected GislProbePendingError');
+        } catch (GislProbePendingError) {
         }
-        self::assertSame(['POST /api/workflows'], $this->paths());
+        self::assertNotSame([], $this->paths());
+        self::assertSame(['POST /api/workflows'], \array_values(\array_unique($this->paths())));
     }
 
     // -----------------------------------------------------------------

@@ -11,6 +11,8 @@ use Gisl\Sdk\Ergonomic\RunOptions;
 use Gisl\Sdk\Errors\GislAbortError;
 use Gisl\Sdk\Errors\GislProbePendingError;
 use Gisl\Sdk\Errors\GislTimeoutError;
+use Gisl\Sdk\Gisl;
+use Gisl\Sdk\GislAnonymousClient;
 use Gisl\Sdk\GislClientConfig;
 use Gisl\Sdk\GislErgonomicClient;
 use Gisl\Sdk\JobDefinitionPayload;
@@ -232,13 +234,13 @@ final class ProbePendingRecoveryTest extends TestCase
         ]);
     }
 
-    private static function refusal(string $jobRef = 'op', ?string $retryAfter = null): ResponseInterface
+    private static function refusal(string $jobRef = 'op', ?string $retryAfter = null, string $message = 'Upload probe has not completed.'): ResponseInterface
     {
         $response = self::jsonResponse(422, [
             'success' => false,
             'error' => 'UNPROCESSABLE_ENTITY',
             'error_type' => 'probe_pending',
-            'message' => 'Upload probe has not completed.',
+            'message' => $message,
             'job_ref' => $jobRef,
         ]);
         return $retryAfter === null ? $response : $response->withHeader('Retry-After', $retryAfter);
@@ -424,5 +426,79 @@ final class ProbePendingRecoveryTest extends TestCase
             ['Content-Type' => 'application/json'],
             \json_encode($body, JSON_THROW_ON_ERROR),
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // 5dJrOdVC — anonymous-policy 2.1.0: the probe endpoint is sign-in only, so
+    // a GUEST refused with probe_pending retries the CREATE after Retry-After
+    // (or a doubling backoff) and never calls the probe. Mirrors the TS
+    // "createWorkflowAwaitingProbe on a guest client" block.
+    // -----------------------------------------------------------------------
+
+    public function testAGuestRunReCreatesWithoutPollingTheProbe(): void
+    {
+        $captured = [];
+        $guest = self::makeGuest(self::stubClient([
+            self::jsonResponse(200, self::uploadOk()),
+            self::refusal('op', '1'),
+            self::jsonResponse(201, self::guestCreateOk()),
+            self::jsonResponse(200, self::statusCompleted()),
+            self::jsonResponse(200, self::downloadsOk()),
+        ], $captured));
+
+        $result = $guest->compress(self::writeTempFile('bytes'))
+            ->run(new RunOptions(maxWait: '5m', useSSE: false, pollIntervalMs: 100));
+
+        self::assertSame('completed', $result->status);
+        $paths = \array_map(static fn (RequestInterface $r): string => $r->getMethod() . ' ' . $r->getUri()->getPath(), $captured);
+        self::assertSame('POST /api/workflows', $paths[1]);
+        self::assertSame('POST /api/workflows', $paths[2], 'the guest re-creates; it does not poll the probe');
+        self::assertSame([], \array_values(\array_filter($paths, static fn (string $p): bool => \str_ends_with($p, '/probe'))));
+        self::assertSame((string) $captured[1]->getBody(), (string) $captured[2]->getBody(), 'the SAME payload is re-created');
+    }
+
+    public function testAGuestGivesUpAfterTheAttemptCapWithTheOriginalRefusal(): void
+    {
+        $captured = [];
+        $guest = self::makeGuest(self::stubClient([
+            self::refusal('op', '1', 'first refusal'),
+            self::refusal('op', '1'),
+            self::refusal('op', '1'),
+        ], $captured));
+
+        try {
+            ProbePendingRecovery::create($guest, self::payload());
+            self::fail('expected GislProbePendingError');
+        } catch (GislProbePendingError $e) {
+            // The FIRST refusal comes back, not the last (codex d63a045d884c):
+            // only the first refusal's message carries the marker.
+            self::assertSame('first refusal', $e->getMessage());
+        }
+        // anonymous-policy per_minute.workflow_create = 2: a third create would be a 429.
+        self::assertCount(ProbePendingRecovery::GUEST_MAX_CREATE_ATTEMPTS, $captured);
+        foreach ($captured as $request) {
+            self::assertSame('/api/workflows', $request->getUri()->getPath());
+        }
+    }
+
+    private static function makeGuest(ClientInterface $http): GislAnonymousClient
+    {
+        $factory = new HttpFactory();
+        return Gisl::anonymous(
+            baseUrl: 'https://api.test.example.com',
+            httpClient: $http,
+            requestFactory: $factory,
+            streamFactory: $factory,
+            streamBaseUrl: 'https://stream.example.com',
+        );
+    }
+
+    /** @return array<string, mixed> */
+    private static function guestCreateOk(): array
+    {
+        $body = self::createOk();
+        $body['data']['anonymous'] = true;
+        $body['data']['cap'] = 'cap_token_from_create';
+        return $body;
     }
 }
