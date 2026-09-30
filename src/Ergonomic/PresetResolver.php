@@ -129,9 +129,9 @@ final class PresetResolver
         'image' => ['quality', 'metadata', 'outputFormat'],
         'audio' => ['bitrate', 'channels', 'sampleRate', 'normalize'],
         'video' => ['codec', 'targetSize', 'crf', 'preset', 'width', 'height', 'fit', 'fps', 'faststart', 'audioCodec', 'audioBitrate'],
-        'document_office' => ['stripMacros', 'stripHiddenData', 'stripUnusedFonts'],
-        'document_odf' => ['stripMetadata', 'stripUnusedStyles'],
-        'document_epub' => ['fontSubsetting', 'stripUnusedCss'],
+        'document_office' => ['quality', 'stripMacros', 'stripHiddenData', 'stripUnusedFonts'],
+        'document_odf' => ['quality', 'stripMetadata', 'stripUnusedStyles'],
+        'document_epub' => ['quality', 'fontSubsetting', 'stripUnusedCss'],
     ];
 
     /**
@@ -182,15 +182,20 @@ final class PresetResolver
      * this hand-maintained allowlist to the generated contract metadata: every
      * field the resolver may emit MUST be a real `compress` contract option key.
      *
+     * Document `quality` is the one STABLE document compress option (compress.yaml
+     * document_office/odf/epub, `sdk_exposure: expose`); it was missing here, so the
+     * only document knob the worker reads was refused as `unknown_field` (f3JiTxkK).
+     * The strip_* keys beside it are `planned` — see PLANNED_COMPRESS_OPTIONS.
+     *
      * @var array<string, list<string>>
      */
     public const KNOWN_WIRE_FIELDS = [
         'image' => ['quality', 'metadata', 'output_format'],
         'audio' => ['bitrate', 'channels', 'sample_rate', 'normalize', 'trim_start', 'trim_end'],
         'video' => ['codec', 'encoding_mode', 'crf', 'target_size_bytes', 'preset', 'width', 'height', 'fit', 'fps', 'faststart', 'audio_codec', 'audio_bitrate', 'trim_start', 'trim_end'],
-        'document_office' => ['strip_macros', 'strip_hidden_data', 'strip_unused_fonts'],
-        'document_odf' => ['strip_metadata', 'strip_unused_styles'],
-        'document_epub' => ['font_subsetting', 'strip_unused_css'],
+        'document_office' => ['quality', 'strip_macros', 'strip_hidden_data', 'strip_unused_fonts'],
+        'document_odf' => ['quality', 'strip_metadata', 'strip_unused_styles'],
+        'document_epub' => ['quality', 'font_subsetting', 'strip_unused_css'],
     ];
 
     /**

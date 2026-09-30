@@ -14,6 +14,9 @@ use Gisl\Sdk\Generated\SdkSpec\Enums\OptimizeFor;
 use Gisl\Sdk\Generated\SdkSpec\Enums\VideoCodec;
 use Gisl\Sdk\Generated\SdkSpec\Version;
 use Gisl\Sdk\Preset\AudioCompressPresetOptions;
+use Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions;
+use Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions;
+use Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions;
 use Gisl\Sdk\Preset\ImageCompressPresetOptions;
 use Gisl\Sdk\Preset\VideoCompressPresetOptions;
 use Gisl\Sdk\PresetDefaults;
@@ -789,5 +792,129 @@ final class PresetResolverTest extends TestCase
         $out = PresetResolver::resolveCompress('image', null, null, null, OptimizeFor::Size, [], audioLossless: true);
         $this->assertSame(65, $out['wireOptions']['quality']);
         $this->assertArrayNotHasKey('bitrate', $out['wireOptions']);
+    }
+
+    // -----------------------------------------------------------------------
+    // Document compress `quality` (f3JiTxkK). compress.yaml gives
+    // document_office / document_odf / document_epub ONE stable option,
+    // `quality` (integer 1-100, default 50, `sdk_exposure: expose`); every other
+    // document option is `planned`. The allowlist carried only the planned
+    // strip_* keys, so the one knob the worker reads was refused as unknown.
+    // Mirrors the TS `document compress quality (f3JiTxkK)` block.
+    // -----------------------------------------------------------------------
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function documentMedia(): array
+    {
+        return [
+            'document_office' => ['document_office'],
+            'document_odf' => ['document_odf'],
+            'document_epub' => ['document_epub'],
+        ];
+    }
+
+    #[DataProvider('documentMedia')]
+    public function testDocumentExplicitQualityReachesTheWire(string $media): void
+    {
+        $out = PresetResolver::resolveCompress($media, null, null, null, null, ['quality' => 40]);
+        $this->assertSame(['quality' => 40], $out['wireOptions']);
+        $this->assertSame(['quality'], $out['resolvedOptions']->sources->explicit);
+    }
+
+    #[DataProvider('documentMedia')]
+    public function testDocumentQualitySurvivesOptimizeWhosePlannedCellsAreDropped(string $media): void
+    {
+        $out = PresetResolver::resolveCompress($media, null, null, null, OptimizeFor::Size, ['quality' => 25]);
+        $this->assertSame(['quality' => 25], $out['wireOptions']);
+    }
+
+    #[DataProvider('documentMedia')]
+    public function testDocumentPresetOverrideQualityIsAcceptedNotBlamedOnImage(string $media): void
+    {
+        $out = PresetResolver::resolveCompress($media, null, null, ['quality' => 30], null, []);
+        $this->assertSame(['quality' => 30], $out['wireOptions']);
+    }
+
+    public function testOutOfRangeQualityIsLeftToTheServerAsForImage(): void
+    {
+        // The compress resolver range-checks no option (image `quality: 101`
+        // passes too); the contract's 1-100 bound is enforced by the api.
+        foreach (['image', 'document_office', 'document_odf', 'document_epub'] as $media) {
+            $out = PresetResolver::resolveCompress($media, null, null, null, null, ['quality' => 101]);
+            $this->assertSame(101, $out['wireOptions']['quality'], $media);
+        }
+    }
+
+    public function testDocumentCompressStillRefusesAKeyTheContractDoesNotDefine(): void
+    {
+        try {
+            PresetResolver::resolveCompress('document_office', null, null, null, null, ['quality' => 40, 'crf' => 23]);
+            $this->fail('expected GislConfigError');
+        } catch (GislConfigError $e) {
+            $this->assertSame('unknown_field', $e->reason);
+            $this->assertSame(['crf'], $e->conflictingFields);
+        }
+    }
+
+    // The TYPED preset surface (PresetDefaults::officeCompress/odfCompress/
+    // epubCompress and the leaf DTOs) must carry document `quality` too, or
+    // the allowlist above is reachable only through raw option bags.
+
+    /**
+     * @return array<string, array{string, \Closure(int): PresetDefaults, \Closure(int): object}>
+     */
+    public static function typedDocumentPresets(): array
+    {
+        return [
+            'document_office' => [
+                'document_office',
+                static fn (int $q): PresetDefaults => PresetDefaults::create()->officeCompress(OptimizeFor::Size, new DocumentOfficeCompressPresetOptions(quality: $q)),
+                static fn (int $q): object => new DocumentOfficeCompressPresetOptions(quality: $q),
+            ],
+            'document_odf' => [
+                'document_odf',
+                static fn (int $q): PresetDefaults => PresetDefaults::create()->odfCompress(OptimizeFor::Size, new DocumentOdfCompressPresetOptions(quality: $q)),
+                static fn (int $q): object => new DocumentOdfCompressPresetOptions(quality: $q),
+            ],
+            'document_epub' => [
+                'document_epub',
+                static fn (int $q): PresetDefaults => PresetDefaults::create()->epubCompress(OptimizeFor::Size, new DocumentEpubCompressPresetOptions(quality: $q)),
+                static fn (int $q): object => new DocumentEpubCompressPresetOptions(quality: $q),
+            ],
+        ];
+    }
+
+    #[DataProvider('typedDocumentPresets')]
+    public function testDocumentClientDefaultQualityReachesTheWire(string $media, \Closure $defaults, \Closure $dto): void
+    {
+        $out = PresetResolver::resolveCompress($media, $defaults(35), null, null, OptimizeFor::Size, []);
+        $this->assertSame(['quality' => 35], $out['wireOptions']);
+        $this->assertSame(['quality'], $out['resolvedOptions']->sources->clientDefault);
+    }
+
+    #[DataProvider('typedDocumentPresets')]
+    public function testDocumentDtoOverrideQualityReachesTheWire(string $media, \Closure $defaults, \Closure $dto): void
+    {
+        $out = PresetResolver::resolveCompress($media, null, null, $dto(30), null, []);
+        $this->assertSame(['quality' => 30], $out['wireOptions']);
+    }
+
+    public function testDocumentPresetMergeKeepsQualityAcrossLayers(): void
+    {
+        // PresetDefaults::merge (client defaults under scoped ones) rebuilds each
+        // document DTO field by field in mergeCell; a field it forgets is lost.
+        $cases = [
+            ['document_office_compress', PresetDefaults::create()->officeCompress(OptimizeFor::Size, new DocumentOfficeCompressPresetOptions(quality: 20)), PresetDefaults::create()->officeCompress(OptimizeFor::Size, new DocumentOfficeCompressPresetOptions(stripMacros: true))],
+            ['document_odf_compress', PresetDefaults::create()->odfCompress(OptimizeFor::Size, new DocumentOdfCompressPresetOptions(quality: 20)), PresetDefaults::create()->odfCompress(OptimizeFor::Size, new DocumentOdfCompressPresetOptions(stripMetadata: true))],
+            ['document_epub_compress', PresetDefaults::create()->epubCompress(OptimizeFor::Size, new DocumentEpubCompressPresetOptions(quality: 20)), PresetDefaults::create()->epubCompress(OptimizeFor::Size, new DocumentEpubCompressPresetOptions(stripUnusedCss: true))],
+        ];
+        foreach ($cases as [$key, $parent, $child]) {
+            $cell = PresetDefaults::merge($parent, $child)->cellFor($key, OptimizeFor::Size);
+            $this->assertNotNull($cell, $key);
+            $this->assertObjectHasProperty('quality', $cell, $key);
+            $this->assertSame(20, $cell->quality, $key);
+        }
     }
 }

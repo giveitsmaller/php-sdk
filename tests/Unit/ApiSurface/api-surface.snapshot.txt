@@ -795,9 +795,12 @@ readonly property Gisl\Sdk\Preset\AudioCompressPresetOptions::$channels : ?int
 readonly property Gisl\Sdk\Preset\AudioCompressPresetOptions::$normalize : ?bool
 readonly property Gisl\Sdk\Preset\AudioCompressPresetOptions::$sampleRate : ?Gisl\Sdk\Generated\SdkSpec\Enums\AudioSampleRate
 readonly property Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions::$fontSubsetting : ?bool
+readonly property Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions::$quality : ?int
 readonly property Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions::$stripUnusedCss : ?bool
+readonly property Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions::$quality : ?int
 readonly property Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions::$stripMetadata : ?bool
 readonly property Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions::$stripUnusedStyles : ?bool
+readonly property Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions::$quality : ?int
 readonly property Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions::$stripHiddenData : ?bool
 readonly property Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions::$stripMacros : ?bool
 readonly property Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions::$stripUnusedFonts : ?bool

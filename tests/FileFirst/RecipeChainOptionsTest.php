@@ -240,6 +240,17 @@ final class RecipeChainOptionsTest extends TestCase
     }
 
     #[Test]
+    public function document_compress_quality_reaches_the_wire(): void
+    {
+        // f3JiTxkK: `quality` is the one stable document compress option; it used
+        // to be refused as unknown_field. Mirrors the TS file-first test.
+        foreach (['report.docx', 'sheet.ods', 'book.epub'] as $path) {
+            $ops = $this->operations($this->recipe($path)->compress(null, ['quality' => 40]));
+            self::assertSame([['type' => 'compress', 'options' => ['quality' => 40]]], $ops, $path);
+        }
+    }
+
+    #[Test]
     public function compress_preset_overrides_route_through_the_override_layer(): void
     {
         $overrides = ['quality' => 42];

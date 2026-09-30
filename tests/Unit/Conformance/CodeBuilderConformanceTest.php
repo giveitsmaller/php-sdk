@@ -59,16 +59,14 @@ final class CodeBuilderConformanceTest extends TestCase
     ];
 
     /**
-     * DEFERRED_EXPOSURE: expose+contract compress options reachable by NO verb today
-     * (product-scope — tracked in the follow-up ticket). Drift-guarded below.
+     * DEFERRED_EXPOSURE: expose+contract compress options reachable by NO verb today.
+     * Drift-guarded below. EMPTY since f3JiTxkK: document `quality` (its only former
+     * entries) is now native in KNOWN_WIRE_FIELDS. A new entry here is a deliberate
+     * deferral.
      *
      * @var array<string, list<string>>
      */
-    private const DEFERRED_EXPOSURE = [
-        'document_office' => ['quality'],
-        'document_odf' => ['quality'],
-        'document_epub' => ['quality'],
-    ];
+    private const DEFERRED_EXPOSURE = [];
 
     /**
      * PRE_EXPOSED: keys KNOWN_WIRE_FIELDS allows AHEAD of the contract (contract marks
@@ -332,6 +330,12 @@ final class CodeBuilderConformanceTest extends TestCase
 
     public function test_deferred_keys_are_reachable_by_no_ergonomic_surface(): void
     {
+        // Positive control (f3JiTxkK): DEFERRED_EXPOSURE is empty, so the loop below
+        // is vacuous. Document `quality`, its former entry, IS reachable now — which
+        // is exactly what the loop's assertArrayNotHasKey would reject if re-deferred.
+        foreach (['document_office', 'document_odf', 'document_epub'] as $documentGroup) {
+            self::assertArrayHasKey('quality', self::mediaReachableKeys($documentGroup));
+        }
         foreach (self::DEFERRED_EXPOSURE as $media => $keys) {
             $group = null;
             foreach (\array_keys(self::compressGroups()) as $g) {

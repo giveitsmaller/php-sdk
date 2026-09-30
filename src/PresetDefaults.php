@@ -165,16 +165,19 @@ final class PresetDefaults
                     stripMacros: $child->stripMacros ?? $parent->stripMacros,
                     stripHiddenData: $child->stripHiddenData ?? $parent->stripHiddenData,
                     stripUnusedFonts: $child->stripUnusedFonts ?? $parent->stripUnusedFonts,
+                    quality: $child->quality ?? $parent->quality,
                 ),
             $parent instanceof DocumentOdfCompressPresetOptions && $child instanceof DocumentOdfCompressPresetOptions
                 => new DocumentOdfCompressPresetOptions(
                     stripMetadata: $child->stripMetadata ?? $parent->stripMetadata,
                     stripUnusedStyles: $child->stripUnusedStyles ?? $parent->stripUnusedStyles,
+                    quality: $child->quality ?? $parent->quality,
                 ),
             $parent instanceof DocumentEpubCompressPresetOptions && $child instanceof DocumentEpubCompressPresetOptions
                 => new DocumentEpubCompressPresetOptions(
                     fontSubsetting: $child->fontSubsetting ?? $parent->fontSubsetting,
                     stripUnusedCss: $child->stripUnusedCss ?? $parent->stripUnusedCss,
+                    quality: $child->quality ?? $parent->quality,
                 ),
             default => throw new \LogicException(
                 'Preset cell merge received mismatched or unknown leaf types: '
