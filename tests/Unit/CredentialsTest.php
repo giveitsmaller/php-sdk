@@ -7,6 +7,7 @@ namespace Gisl\Sdk\Tests\Unit;
 use Gisl\Sdk\Credentials;
 use Gisl\Sdk\Environment;
 use Gisl\Sdk\Errors\GislConfigError;
+use Gisl\Sdk\Tests\Unit\Support\UnreadableProfileStreamWrapper;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -227,31 +228,31 @@ final class CredentialsTest extends TestCase
 
     public function testUnreadableProfileThrowsConfigError(): void
     {
-        if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
-            self::markTestSkipped('Running as root bypasses POSIX read perms.');
-        }
-        $profilePath = $this->writeProfile("[default]\napi_key = readable-value\n");
-        chmod($profilePath, 0);
-        // chmod(0) does not make a file unreadable to root, and the POSIX euid
-        // guard above misses CI runners that lack the `posix` extension
-        // (function_exists() is false → guard skipped → test runs as root and
-        // the file stays readable). Skip when the precondition the test needs —
-        // an actually-unreadable file — isn't met, regardless of how we got there.
-        clearstatcache(true, $profilePath);
-        if (is_readable($profilePath)) {
-            chmod($profilePath, 0600);
-            self::markTestSkipped('chmod 0 did not make the profile unreadable (running as root?).');
-        }
+        // The file exists (is_file passes) but cannot be opened, by a means
+        // root cannot bypass — chmod 0 made this test skip in every
+        // environment we run, all of which are root.
+        UnreadableProfileStreamWrapper::register();
+        $profilePath = UnreadableProfileStreamWrapper::SCHEME . '://credentials';
         try {
             Credentials::resolveApiKey(profilePath: $profilePath);
             self::fail('Expected GislConfigError');
         } catch (GislConfigError $e) {
             self::assertStringContainsString('Failed to read', $e->getMessage());
             self::assertStringContainsString($profilePath, $e->getMessage());
-            self::assertStringNotContainsString('readable-value', $e->getMessage());
+            // The live no-leak control: the message is the literal plus the
+            // path and nothing else, so no file content or OS detail can ride
+            // along without turning this red.
+            self::assertSame(
+                "Failed to read shared credentials file at {$profilePath} "
+                . '(permission denied or filesystem error)',
+                $e->getMessage(),
+            );
+            // Defence-in-depth only: on this branch no variable holds the
+            // file's contents, so this cannot fail today. It guards a future
+            // edit that brings contents into scope.
+            self::assertStringNotContainsString('api_key', $e->getMessage());
         } finally {
-            // Restore perms so tearDown's rmDir can unlink.
-            chmod($profilePath, 0600);
+            UnreadableProfileStreamWrapper::unregister();
         }
     }
 
