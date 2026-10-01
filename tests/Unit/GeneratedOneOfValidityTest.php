@@ -29,14 +29,12 @@ final class GeneratedOneOfValidityTest extends TestCase
     public static function values(): iterable
     {
         // Request side: WorkflowSource (upload | job_output | external_import | connection).
-        // The generated constructor overwrites the `type` discriminator with the
-        // class name (a separate generator quirk, card filed alongside), so the
-        // value is set after construction.
-        yield 'source: upload branch' => [self::source('upload', ['file_id' => self::FILE_ID]), true];
-        yield 'source: job_output branch' => [self::source('job_output', ['from' => 'op_1']), true];
-        yield 'source: type only completes no branch' => [self::source('upload', []), false];
+        // The constructor keeps the `type` the caller passes (VrYKRWwN).
+        yield 'source: upload branch' => [new WorkflowSource(['type' => 'upload', 'file_id' => self::FILE_ID]), true];
+        yield 'source: job_output branch' => [new WorkflowSource(['type' => 'job_output', 'from' => 'op_1']), true];
+        yield 'source: type only completes no branch' => [new WorkflowSource(['type' => 'upload']), false];
         // `from` completes job_output's fields, but type=upload is not that branch.
-        yield 'source: upload type with job_output fields' => [self::source('upload', ['from' => 'op_1']), false];
+        yield 'source: upload type with job_output fields' => [new WorkflowSource(['type' => 'upload', 'from' => 'op_1']), false];
 
         // A response whose branches differ by a constrained array (`violations`, minItems 1).
         yield '422: plain error branch, no violations' => [
@@ -59,19 +57,18 @@ final class GeneratedOneOfValidityTest extends TestCase
         yield 'produces: empty completes no branch' => [new CapabilityProduces([]), false];
     }
 
-    /** @param array<string, mixed> $fields */
-    private static function source(string $type, array $fields): WorkflowSource
-    {
-        $source = new WorkflowSource($fields);
-        $source->setType($type);
-        return $source;
-    }
-
     #[DataProvider('values')]
     public function testValidityFollowsTheBranches(object $model, bool $expected): void
     {
         \assert(\method_exists($model, 'valid') && \method_exists($model, 'listInvalidProperties'));
         self::assertSame($expected, $model->valid(), \implode('; ', $model->listInvalidProperties()));
+    }
+
+    public function testTheConstructorKeepsTheCallersDiscriminatorAndDefaultsOnlyWhenAbsent(): void
+    {
+        self::assertSame('job_output', (new WorkflowSource(['type' => 'job_output']))->getType());
+        // Absent: the generator's model-name default, as before (VrYKRWwN keeps it).
+        self::assertSame('WorkflowSource', (new WorkflowSource([]))->getType());
     }
 
     public function testAValueCompletingNoBranchSaysWhichFieldsWouldComplete(): void
