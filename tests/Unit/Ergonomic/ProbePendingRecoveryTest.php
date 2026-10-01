@@ -457,30 +457,52 @@ final class ProbePendingRecoveryTest extends TestCase
         self::assertSame((string) $captured[1]->getBody(), (string) $captured[2]->getBody(), 'the SAME payload is re-created');
     }
 
-    public function testAGuestGivesUpAfterTheAttemptCapWithTheOriginalRefusal(): void
+    public function testAGuestKeepsReCreatingPastThreeRefusalsUntilTheBudgetThenRethrowsTheFirst(): void
     {
+        // fNSQUeDS: no count cap for a guest (refusals do not count against its
+        // create limit); the budget ends it. Retry-After 1 s, budget 3.5 s.
         $captured = [];
         $guest = self::makeGuest(self::stubClient([
             self::refusal('op', '1', 'first refusal'),
             self::refusal('op', '1'),
             self::refusal('op', '1'),
+            self::refusal('op', '1'),
+            self::refusal('op', '1'),
         ], $captured));
 
         try {
-            ProbePendingRecovery::create($guest, self::payload());
+            ProbePendingRecovery::create($guest, self::payload(), probeTimeoutMs: 3_500);
             self::fail('expected GislProbePendingError');
         } catch (GislProbePendingError $e) {
-            // The FIRST refusal comes back, not the last (codex d63a045d884c):
-            // only the first refusal's message carries the marker.
+            // The FIRST refusal comes back, not the last (codex d63a045d884c).
             self::assertSame('first refusal', $e->getMessage());
         }
-        // anonymous-policy 2.1.0: a probe_pending refusal does not count against
-        // the guest create limit, so a guest gets the signed-in cap.
-        self::assertSame(ProbePendingRecovery::MAX_CREATE_ATTEMPTS, ProbePendingRecovery::GUEST_MAX_CREATE_ATTEMPTS);
-        self::assertCount(ProbePendingRecovery::GUEST_MAX_CREATE_ATTEMPTS, $captured);
+        self::assertGreaterThan(ProbePendingRecovery::MAX_CREATE_ATTEMPTS, \count($captured));
         foreach ($captured as $request) {
             self::assertSame('/api/workflows', $request->getUri()->getPath());
         }
+    }
+
+    public function testAGuestMakesOneLastCreateAtTheBudgetBoundary(): void
+    {
+        // Budget 1.5 s, no Retry-After: create, wait 1 s, create, the next 2 s wait
+        // would cross the budget, so wait the 0.5 s left and create once more.
+        $captured = [];
+        $guest = self::makeGuest(self::stubClient([
+            self::refusal('op'),
+            self::refusal('op'),
+            self::jsonResponse(201, self::guestCreateOk()),
+        ], $captured));
+
+        ProbePendingRecovery::create($guest, self::payload(), probeTimeoutMs: 1_500);
+
+        self::assertCount(3, $captured);
+    }
+
+    public function testAGuestsDefaultBudgetIsThePolicyProbeWaitBound(): void
+    {
+        self::assertSame(900_000, ProbePendingRecovery::GUEST_PROBE_WAIT_BOUND_MS);
+        self::assertSame(30_000, ProbePendingRecovery::GUEST_BACKOFF_MAX_MS);
     }
 
     private static function makeGuest(ClientInterface $http): GislAnonymousClient

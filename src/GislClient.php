@@ -2727,9 +2727,13 @@ class GislClient
      * for the named job's upload probe, then re-creates the SAME payload. Gives
      * up by rethrowing the original {@see GislProbePendingError} when the probe
      * does not land within `$probeTimeoutMs` (default 30 s), lands corrupt or
-     * unsupported_codec, or three creates are refused. A no-op when the server
-     * never refuses. Every ergonomic run()/submit() already uses it. Mirrors TS
-     * `createWorkflowAwaitingProbe`.
+     * unsupported_codec, or three creates are refused. On a guest client
+     * ({@see Gisl::anonymous()}) it does NOT poll (the probe endpoint is sign-in
+     * only): it re-creates on Retry-After, else a 1 s doubling backoff capped at
+     * 30 s, with no count cap, until the budget (default 900 s, the policy's
+     * probe_wait_bound_seconds) runs out, with one last create at the boundary.
+     * A no-op when the server never refuses. Every ergonomic run()/submit()
+     * already uses it. Mirrors TS `createWorkflowAwaitingProbe`.
      */
     public function createWorkflowAwaitingProbe(
         WorkflowCreatePayload $payload,

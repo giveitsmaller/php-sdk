@@ -36,16 +36,28 @@ final class ProbePendingRecovery
     /** Default recovery budget when the caller gives no timeout. */
     private const DEFAULT_RECOVERY_BUDGET_MS = 30_000;
 
-    /** A guest's delay before its re-create when the refusal carries no Retry-After. */
+    /** A guest's first re-create delay when the refusal carries no Retry-After; doubles per attempt. */
     public const GUEST_BACKOFF_BASE_MS = 1_000;
 
     /**
-     * A guest's create cap. anonymous-policy 2.1.0 (contracts v2.219.0) says a
-     * `probe_pending` refusal does NOT count against `per_minute.workflow_create`,
-     * so a guest gets the same three creates as a signed-in caller. Pinned to the
-     * policy by scripts/tests/test_guest_create_cap.py.
+     * Timer slack allowed for a guest's last create at the budget boundary: a
+     * wake-up later than this past the budget rethrows instead of creating.
      */
-    public const GUEST_MAX_CREATE_ATTEMPTS = 3;
+    private const GUEST_BOUNDARY_SLACK_MS = 1_000;
+
+    /** The longest a guest's doubling backoff grows to between re-creates. */
+    public const GUEST_BACKOFF_MAX_MS = 30_000;
+
+    /**
+     * A guest's default recovery budget: anonymous-policy 2.2.0
+     * `video.probe_wait_bound_seconds` (900 s). Past that bound after the upload
+     * the API stops answering `probe_pending` and proceeds, so giving up sooner
+     * fails a run the server would accept (fNSQUeDS). A guest re-creates without
+     * a count cap: under 2.1.0 a `probe_pending` refusal does not count against
+     * `per_minute.workflow_create`. The caller's budget and deadline still win.
+     * Pinned to the policy by scripts/tests/test_guest_create_cap.py.
+     */
+    public const GUEST_PROBE_WAIT_BOUND_MS = 900_000;
 
     /**
      * @param int|null $probeTimeoutMs ONE budget for the whole recovery - the
@@ -69,7 +81,9 @@ final class ProbePendingRecovery
         // retry's own refusal is read only for its Retry-After and job_ref.
         $original = null;
         $guest = $client instanceof GislAnonymousClient;
-        $maxAttempts = $guest ? self::GUEST_MAX_CREATE_ATTEMPTS : self::MAX_CREATE_ATTEMPTS;
+        $maxAttempts = $guest ? \PHP_INT_MAX : self::MAX_CREATE_ATTEMPTS;
+        // A guest's last create lands AT the budget boundary, not one backoff short of it.
+        $guestFinalCreate = false;
         for ($attempt = 1; ; $attempt++) {
             // Before EVERY create, the first included (codex ae65d4f34b8e).
             BuilderInternals::throwIfCancelled($cancellation, 'workflow creation');
@@ -86,7 +100,8 @@ final class ProbePendingRecovery
             if (!$guest && $fileIds === []) {
                 throw $original;
             }
-            $budgetEnd ??= BuilderInternals::nowMs() + \max(0, $probeTimeoutMs ?? self::DEFAULT_RECOVERY_BUDGET_MS);
+            $budgetEnd ??= BuilderInternals::nowMs()
+                + \max(0, $probeTimeoutMs ?? ($guest ? self::GUEST_PROBE_WAIT_BOUND_MS : self::DEFAULT_RECOVERY_BUDGET_MS));
 
             // The contract's Retry-After is the suggested delay before the next
             // poll/retry (codex 089af94beb8e); slept in <= 1 s slices so a
@@ -94,24 +109,50 @@ final class ProbePendingRecovery
             $retryAfterMs = RateLimitHeaders::parseRetryAfterMs($refusal->responseHeaders['retry-after'] ?? null);
             // anonymous-policy 2.1.0 (5dJrOdVC): the probe endpoint is sign-in only,
             // so a guest RETRIES THE CREATE after Retry-After, or a backoff when the
-            // refusal carries none, within GUEST_MAX_CREATE_ATTEMPTS and the budget.
+            // refusal carries none (doubling, capped at GUEST_BACKOFF_MAX_MS), until the budget runs out.
             $delayMs = match (true) {
                 $retryAfterMs !== null && $retryAfterMs > 0 => $retryAfterMs,
-                $guest => self::GUEST_BACKOFF_BASE_MS,
+                // An int shift with a bounded exponent: guest attempts are uncapped,
+                // and `2 **` turns into a float (then overflows) as they grow.
+                $guest => \min(self::GUEST_BACKOFF_BASE_MS << \min($attempt - 1, 15), self::GUEST_BACKOFF_MAX_MS),
                 default => 0,
             };
+            if ($guest) {
+                if ($guestFinalCreate) {
+                    throw $original;
+                }
+                // When the next wait would cross the budget, wait only what is left
+                // and make ONE last create at the boundary: the server may start
+                // accepting exactly at the policy bound. The deadline still wins.
+                $now = BuilderInternals::nowMs();
+                $waitMs = $delayMs;
+                if ($now + $waitMs >= $budgetEnd) {
+                    $waitMs = \max(0, $budgetEnd - $now);
+                    $guestFinalCreate = true;
+                }
+                if ($deadlineMs !== null && $now + $waitMs >= $deadlineMs) {
+                    throw new GislTimeoutError('maxWait elapsed while recovering from probe_pending');
+                }
+                for ($left = $waitMs; $left > 0; $left -= 1_000) {
+                    BuilderInternals::throwIfCancelled($cancellation, 'the workflow could be re-created');
+                    \usleep(\min(1_000, $left) * 1_000);
+                }
+                // A late wake-up must not create past the deadline (codex 08b28b31ad2f),
+                // nor past the budget beyond a timer's slack (codex a7a76673694a).
+                if ($deadlineMs !== null && BuilderInternals::nowMs() >= $deadlineMs) {
+                    throw new GislTimeoutError('maxWait elapsed while recovering from probe_pending');
+                }
+                if (BuilderInternals::nowMs() > $budgetEnd + self::GUEST_BOUNDARY_SLACK_MS) {
+                    throw $original;
+                }
+                continue;
+            }
             if ($delayMs > 0) {
                 self::budgetLeft($delayMs, $budgetEnd, $deadlineMs, $original);
                 for ($left = $delayMs; $left > 0; $left -= 1_000) {
                     BuilderInternals::throwIfCancelled($cancellation, 'the workflow could be re-created');
                     \usleep(\min(1_000, $left) * 1_000);
                 }
-            }
-            if ($guest) {
-                // After the sleep, before the re-create: a late wake-up must not
-                // create past the deadline or the budget (codex 08b28b31ad2f).
-                self::budgetLeft(0, $budgetEnd, $deadlineMs, $original);
-                continue;
             }
             foreach ($fileIds as $fileId) {
                 $budgetLeft = self::budgetLeft(0, $budgetEnd, $deadlineMs, $original);
