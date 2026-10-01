@@ -190,4 +190,20 @@ final class GislClientMaybeWaitForVideoProbeTest extends TestCase
         // No exception is the assertion — assert reaching here.
         $this->addToAssertionCount(1);
     }
+
+    public function test_probe_not_applicable_returns_after_one_request_without_throwing(): void
+    {
+        // 8L4JJMx6: terminal arm — never-bounce, and no second poll (the 200 stays queued).
+        $body = \json_encode([
+            'success' => false,
+            'error' => 'UNPROCESSABLE_ENTITY',
+            'error_type' => 'probe_not_applicable',
+        ], JSON_THROW_ON_ERROR);
+        $client = $this->makeClient([
+            new Response(422, ['Content-Type' => 'application/json'], $body),
+            $this->probeOk(),
+        ]);
+        $client->maybeWaitForVideoProbe(self::FID, enabled: true, isVideo: true, sizeBytes: self::LARGE, timeoutMs: 5000);
+        self::assertCount(1, $this->captured);
+    }
 }

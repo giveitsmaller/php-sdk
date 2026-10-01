@@ -2654,10 +2654,19 @@ class GislClient
      * would route the file to. Designed for the long-form merge edge case
      * where a single bad input would fail the whole workflow.
      *
-     * Endpoint availability is `stable`. The probe runs asynchronously after
-     * upload: until the result has landed this returns `422`
-     * `feature_not_available` (surfaced as {@see GislFeatureNotAvailableError})
-     * — i.e. that 422 means "probe not landed yet", NOT "not implemented".
+     * Endpoint availability is `beta`. The probe runs asynchronously after
+     * upload; while no result is cached this returns a `422` discriminated on
+     * `error_type` (contracts `tRVvMOvy`):
+     * - `probe_not_ready` — not landed YET; retry (optional `Retry-After`).
+     *   Thrown as a base {@see GislApiError} (`statusCode` 422,
+     *   `payload['error_type']`).
+     * - `probe_not_applicable` — this upload's type is never probed (e.g. an
+     *   image); terminal, no result will ever exist. Base {@see GislApiError}.
+     * - `feature_not_available` (thrown as {@see GislFeatureNotAvailableError})
+     *   — TRANSITIONAL: what the server sends today for BOTH causes above; it
+     *   does NOT mean "not implemented". The server switches to the two arms
+     *   above only after an SDK release that reads them is published.
+     *
      * Once landed it returns a `200` with any `probe_status`. For video uploads
      * the landed probe carries the codec + duration the server needs to admit
      * the parallel split, so calling this (or {@see waitForProbe()}) before
@@ -2686,9 +2695,16 @@ class GislClient
      * sees the video's codec + duration and admits the ~3× parallel split.
      *
      * Loop (per the API wire contract):
-     * - `422 feature_not_available` → probe not landed yet → keep polling
+     * - `422 probe_not_ready` → probe not landed yet → keep polling
      *   (exponential full-jitter backoff, honouring a `Retry-After` header when
      *   present, clamped to the remaining budget).
+     * - `422 probe_not_applicable` → STOP. This upload's type is never probed
+     *   (e.g. an image), so no result will ever exist: returns `landed: false`,
+     *   reason `not_applicable`, after ONE request — no retry, no wait.
+     * - `422 feature_not_available` → TRANSITIONAL arm the server sends today
+     *   for both causes above → polled like `probe_not_ready`. Its retry
+     *   ceiling is `timeoutMs`: a never-probed upload answered this way
+     *   returns reason `timeout` once the budget runs out.
      * - any `200` → STOP. Returns `landed: true` regardless of `probe_status`
      *   (ok / corrupt / unsupported_codec / missing_metadata) — the server +
      *   fan-out gate decide split-vs-single from the landed metadata; the SDK
@@ -2696,8 +2712,8 @@ class GislClient
      * - `5xx` (prober crash) → retry a couple of times, then give up.
      * - timeout → give up.
      *
-     * **Never bounces:** on give-up (timeout / repeated 5xx / transport) it
-     * returns `landed: false` with a `reason` rather than throwing, so the
+     * **Never bounces:** on give-up (timeout / repeated 5xx / transport / not
+     * applicable) it returns `landed: false` with a `reason` rather than throwing, so the
      * caller proceeds to create the workflow anyway (the server's size
      * heuristic routes it; worst case = today's single-task behaviour). Genuine
      * failures — `404 upload_not_found`, auth errors, or a cancelled token — DO
@@ -2755,7 +2771,8 @@ class GislClient
                 $probe = $this->probeUpload($fileId);
                 return new ProbeWaitResult(landed: true, probe: $probe);
             } catch (GislFeatureNotAvailableError $e) {
-                // Not landed yet — keep polling.
+                // Not landed yet — keep polling. The transitional arm (either
+                // cause); `timeoutMs` is its ceiling.
                 $retryAfterMs = RateLimitHeaders::parseRetryAfterMs($e->responseHeaders['retry-after'] ?? null);
             } catch (GislRequestNotSentError $e) {
                 // codex 9a189c13784b: this reports retryable() === false, so
@@ -2777,7 +2794,17 @@ class GislClient
                     return new ProbeWaitResult(landed: false, reason: 'prober_error');
                 }
             } catch (GislApiError $e) {
-                if ($e->statusCode >= 500) {
+                // The probe 422's discriminator (tRVvMOvy): both new arms arrive as a
+                // base GislApiError whose payload is the raw wire envelope.
+                $probeErrorType = $e->statusCode === 422 ? ($e->payload['error_type'] ?? null) : null;
+                if ($probeErrorType === 'probe_not_ready') {
+                    // Not landed yet — keep polling, like feature_not_available.
+                    $retryAfterMs = RateLimitHeaders::parseRetryAfterMs($e->responseHeaders['retry-after'] ?? null);
+                } elseif ($probeErrorType === 'probe_not_applicable') {
+                    // Terminal: this upload's type is never probed, so polling cannot
+                    // change the answer. Never-bounce: the caller creates anyway.
+                    return new ProbeWaitResult(landed: false, reason: 'not_applicable');
+                } elseif ($e->statusCode >= 500) {
                     ++$transientFailures;
                     if ($transientFailures > $maxProberRetries) {
                         return new ProbeWaitResult(landed: false, reason: 'prober_error');
@@ -2807,7 +2834,8 @@ class GislClient
 
     /**
      * createWorkflow(), recovering from a `422 probe_pending` (dql51via): waits
-     * for the named job's upload probe, then re-creates the SAME payload. Gives
+     * for the named job's upload probe, then re-creates the SAME payload (an
+     * upload whose probe is `not_applicable`, never probed, is skipped). Gives
      * up by rethrowing the original {@see GislProbePendingError} when the probe
      * does not land within `$probeTimeoutMs` (default 30 s), lands corrupt or
      * unsupported_codec, or three creates are refused. On a guest client
@@ -2880,6 +2908,9 @@ class GislClient
      *     (carries the typed probe response so the caller can read
      *     `probe_status`, `media_metadata`, etc.)
      *   - probe call itself threw → `{ fileId, error }` goes into `errors`
+     *     (every arm of the not-cached `422` included: `probe_not_ready`,
+     *     `probe_not_applicable`, transitional `feature_not_available`; this
+     *     does not poll — see {@see waitForProbe()})
      *
      * The PHP path is sequential (single-threaded) where the TS reference
      * is parallel via `Promise.allSettled`. This is a deliberate divergence

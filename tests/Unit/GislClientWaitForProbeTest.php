@@ -101,6 +101,22 @@ final class GislClientWaitForProbeTest extends TestCase
         return new Response(422, ['Content-Type' => 'application/json'] + $extraHeaders, $body);
     }
 
+    /**
+     * The probe 422's other two arms (contracts tRVvMOvy): a bare ErrorEnvelope + `error_type`.
+     *
+     * @param array<string, string> $extraHeaders
+     */
+    private function probe422(string $errorType, array $extraHeaders = []): ResponseInterface
+    {
+        $body = \json_encode([
+            'success' => false,
+            'error' => 'UNPROCESSABLE_ENTITY',
+            'message' => 'no probe result',
+            'error_type' => $errorType,
+        ], JSON_THROW_ON_ERROR);
+        return new Response(422, ['Content-Type' => 'application/json'] + $extraHeaders, $body);
+    }
+
     private function proberCrash(): ResponseInterface
     {
         $body = \json_encode(['success' => false, 'error' => 'please retry', 'error_type' => 'internal_error'], JSON_THROW_ON_ERROR);
@@ -229,5 +245,125 @@ final class GislClientWaitForProbeTest extends TestCase
             },
             cancellation: $cancellation,
         ));
+    }
+
+    // --- the probe 422 oneOf (8L4JJMx6, contracts tRVvMOvy) -------------------
+
+    public function test_probe_not_ready_keeps_polling_and_lands(): void
+    {
+        $client = $this->makeClient([
+            $this->probe422('probe_not_ready'),
+            $this->probe422('probe_not_ready'),
+            $this->probeOk(),
+        ]);
+        $attempts = [];
+        $result = $client->waitForProbe(self::FID, new ProbeWaitOptions(
+            timeoutMs: 5000,
+            onPoll: function (array $info) use (&$attempts): void {
+                $attempts[] = $info['attempt'];
+            },
+        ));
+        self::assertTrue($result->landed);
+        self::assertSame([1, 2, 3], $attempts);
+    }
+
+    public function test_probe_not_ready_honours_retry_after(): void
+    {
+        // Retry-After: 1 → the second poll waits ~1 s. The jitter backoff on
+        // attempt 1 is at most 250 ms, so >= 950 ms can only be the header.
+        $client = $this->makeClient([
+            $this->probe422('probe_not_ready', ['Retry-After' => '1']),
+            $this->probeOk(),
+        ]);
+        $start = \hrtime(true);
+        $result = $client->waitForProbe(self::FID, new ProbeWaitOptions(timeoutMs: 5000));
+        self::assertTrue($result->landed);
+        self::assertGreaterThanOrEqual(950, (\hrtime(true) - $start) / 1_000_000);
+    }
+
+    public function test_probe_not_ready_never_answering_gives_up_with_timeout(): void
+    {
+        $client = $this->makeClient(\array_fill(0, 50, $this->probe422('probe_not_ready')));
+        $result = $client->waitForProbe(self::FID, new ProbeWaitOptions(timeoutMs: 20));
+        self::assertFalse($result->landed);
+        self::assertSame('timeout', $result->reason);
+    }
+
+    public function test_probe_not_applicable_is_terminal_after_one_request(): void
+    {
+        // A 200 queued behind it proves no second poll is made.
+        $client = $this->makeClient([$this->probe422('probe_not_applicable'), $this->probeOk()]);
+        $attempts = [];
+        $result = $client->waitForProbe(self::FID, new ProbeWaitOptions(
+            timeoutMs: 5000,
+            onPoll: function (array $info) use (&$attempts): void {
+                $attempts[] = $info['attempt'];
+            },
+        ));
+        self::assertFalse($result->landed);
+        self::assertSame('not_applicable', $result->reason);
+        self::assertNull($result->probe);
+        self::assertSame([1], $attempts);
+    }
+
+    public function test_probe_not_applicable_after_not_ready_polls_ignores_a_stray_retry_after(): void
+    {
+        $client = $this->makeClient([
+            $this->probe422('probe_not_ready'),
+            $this->probe422('probe_not_applicable', ['Retry-After' => '3600']),
+        ]);
+        $start = \microtime(true);
+        $result = $client->waitForProbe(self::FID, new ProbeWaitOptions(timeoutMs: 5000));
+        self::assertSame('not_applicable', $result->reason);
+        self::assertLessThan(2.0, \microtime(true) - $start);
+    }
+
+    public function test_feature_not_available_transitional_retries_until_timeout_ms(): void
+    {
+        $attempts = 0;
+        $client = $this->makeClient(\array_fill(0, 200, $this->notLanded()));
+        $start = \microtime(true);
+        $result = $client->waitForProbe(self::FID, new ProbeWaitOptions(
+            // 1.5 s: the attempt-1 jitter backoff is at most 250 ms, so a second
+            // poll always fits (a 120 ms budget let one long jitter sleep consume it).
+            timeoutMs: 1500,
+            onPoll: function () use (&$attempts): void {
+                ++$attempts;
+            },
+        ));
+        self::assertFalse($result->landed);
+        self::assertSame('timeout', $result->reason);
+        // More than one poll: it RETRIED, it did not treat the arm as terminal.
+        self::assertGreaterThan(1, $attempts);
+        self::assertGreaterThanOrEqual(1.4, \microtime(true) - $start);
+    }
+
+    public function test_any_other_422_error_type_still_propagates(): void
+    {
+        $client = $this->makeClient([$this->probe422('something_else'), $this->probeOk()]);
+        $this->expectException(GislApiError::class);
+        $client->waitForProbe(self::FID, new ProbeWaitOptions(timeoutMs: 5000));
+    }
+
+    public function test_a_non_422_carrying_probe_not_applicable_is_not_the_terminal_arm(): void
+    {
+        $body = \json_encode(['success' => false, 'error' => 'BAD_REQUEST', 'error_type' => 'probe_not_applicable'], JSON_THROW_ON_ERROR);
+        $client = $this->makeClient([new Response(400, ['Content-Type' => 'application/json'], $body)]);
+        $this->expectException(GislApiError::class);
+        $client->waitForProbe(self::FID, new ProbeWaitOptions(timeoutMs: 5000));
+    }
+
+    public function test_probe_upload_surfaces_the_new_arms_as_a_base_api_error(): void
+    {
+        $client = $this->makeClient([$this->probe422('probe_not_applicable')]);
+        try {
+            $client->probeUpload(self::FID);
+            self::fail('expected a GislApiError');
+        } catch (GislApiError $e) {
+            self::assertSame(GislApiError::class, $e::class);
+            self::assertSame(422, $e->statusCode);
+            self::assertSame('probe_not_applicable', $e->payload['error_type'] ?? null);
+            self::assertFalse($e->retryable());
+        }
     }
 }

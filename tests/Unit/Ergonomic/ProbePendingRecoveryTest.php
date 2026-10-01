@@ -210,6 +210,162 @@ final class ProbePendingRecoveryTest extends TestCase
         }
     }
 
+    public function testANotApplicableUploadIsReCreatedAtOnceNotWaitedOn(): void
+    {
+        // 8L4JJMx6: the probe says this upload is never probed, so there is nothing
+        // to wait for — re-create now instead of giving up with the refusal.
+        $captured = [];
+        $client = self::makeClient(self::stubClient([
+            self::refusal(),
+            self::probeNotApplicable(),
+            self::jsonResponse(201, self::createOk()),
+        ], $captured));
+
+        $created = ProbePendingRecovery::create($client, self::payload());
+
+        self::assertSame('01936fb2-0000-7000-8000-0000000000d1', $created->getWorkflowId());
+        self::assertCount(3, $captured);
+        self::assertSame('/api/uploads/' . self::FID . '/probe', $captured[1]->getUri()->getPath());
+        self::assertSame('/api/workflows', $captured[2]->getUri()->getPath());
+    }
+
+    public function testANotApplicableUploadIsSkippedAndTheJobsOtherUploadIsStillAwaited(): void
+    {
+        // A watermark job: the logo image is never probed, the video is gated.
+        $payload = new WorkflowCreatePayload(jobs: [
+            new JobDefinitionPayload(operations: [], id: 'wm', inputs: [
+                ['source' => Sources::upload('logo_png')],
+                ['source' => Sources::upload('clip_mp4')],
+            ]),
+        ]);
+        $captured = [];
+        $client = self::makeClient(self::stubClient([
+            self::refusal('wm'),
+            self::probeNotApplicable(),
+            self::probe('ok'),
+            self::jsonResponse(201, self::createOk()),
+        ], $captured));
+
+        ProbePendingRecovery::create($client, $payload);
+
+        self::assertCount(4, $captured);
+        self::assertSame('/api/uploads/logo_png/probe', $captured[1]->getUri()->getPath());
+        self::assertSame('/api/uploads/clip_mp4/probe', $captured[2]->getUri()->getPath());
+        self::assertSame((string) $captured[0]->getBody(), (string) $captured[3]->getBody(), 'the SAME payload is re-created');
+    }
+
+    public function testANotApplicableUploadTheServerKeepsRefusingIsStillBoundedByTheCreateCap(): void
+    {
+        $captured = [];
+        $client = self::makeClient(self::stubClient([
+            self::refusal(),
+            self::probeNotApplicable(),
+            self::refusal(),
+            self::probeNotApplicable(),
+            self::refusal(),
+        ], $captured));
+
+        $this->expectException(GislProbePendingError::class);
+        try {
+            ProbePendingRecovery::create($client, self::payload());
+        } finally {
+            self::assertCount(2 * ProbePendingRecovery::MAX_CREATE_ATTEMPTS - 1, $captured);
+        }
+    }
+
+    public function testALateNotApplicableAnswerPastTheBudgetRethrowsTheRefusalAndDoesNotReCreate(): void
+    {
+        // codex 5dd8528c4a6d: the probe request itself outlives the budget; its
+        // not_applicable answer must not carry the recovery into a re-create.
+        $now = 1_000_000;
+        BuilderInternals::setClockForTesting(static function () use (&$now): int {
+            return $now;
+        });
+        $captured = [];
+        $client = self::makeClient(self::slowProbeClient([
+            self::refusal(),
+            self::probeNotApplicable(),
+            self::jsonResponse(201, self::createOk()),
+        ], $captured, $now, 10_000));
+        try {
+            ProbePendingRecovery::create($client, self::payload(), probeTimeoutMs: 5_000);
+            self::fail('expected the original refusal');
+        } catch (GislProbePendingError) {
+            self::assertCount(2, $captured, 'one create, one probe: no re-create');
+            self::assertSame('/api/workflows', $captured[0]->getUri()->getPath());
+        } finally {
+            BuilderInternals::setClockForTesting(null);
+        }
+    }
+
+    public function testALateNotApplicableAnswerPastTheDeadlineIsATimeout(): void
+    {
+        $now = 1_000_000;
+        BuilderInternals::setClockForTesting(static function () use (&$now): int {
+            return $now;
+        });
+        $captured = [];
+        $client = self::makeClient(self::slowProbeClient([
+            self::refusal(),
+            self::probeNotApplicable(),
+            self::jsonResponse(201, self::createOk()),
+        ], $captured, $now, 10_000));
+        try {
+            ProbePendingRecovery::create($client, self::payload(), probeTimeoutMs: 30_000, deadlineMs: $now + 8_000);
+            self::fail('expected a timeout');
+        } catch (GislTimeoutError $e) {
+            self::assertCount(2, $captured, 'one create, one probe: no re-create');
+            // Without the check in the not_applicable branch the post-loop deadline
+            // check still times out, but claims "Probe landed", which is false.
+            self::assertStringContainsString('while recovering from probe_pending', $e->getMessage());
+        } finally {
+            BuilderInternals::setClockForTesting(null);
+        }
+    }
+
+    /**
+     * Like stubClient(), but every probe request advances the test clock by
+     * `$probeTakesMs`: a probe answer that arrives late.
+     *
+     * @param list<ResponseInterface> $queue
+     * @param list<RequestInterface>  $captured
+     */
+    private static function slowProbeClient(array $queue, array &$captured, int &$now, int $probeTakesMs): ClientInterface
+    {
+        $captured = [];
+        return new class ($queue, $captured, $now, $probeTakesMs) implements ClientInterface {
+            /** @var list<ResponseInterface> */
+            private array $queue;
+            /** @var list<RequestInterface> */
+            private array $captured;
+            private int $now;
+
+            /**
+             * @param list<ResponseInterface> $queue
+             * @param list<RequestInterface>  $captured
+             */
+            public function __construct(array $queue, array &$captured, int &$now, private readonly int $probeTakesMs)
+            {
+                $this->queue = $queue;
+                $this->captured = &$captured;
+                $this->now = &$now;
+            }
+
+            public function sendRequest(RequestInterface $request): ResponseInterface
+            {
+                $this->captured[] = $request;
+                if (\str_ends_with($request->getUri()->getPath(), '/probe')) {
+                    $this->now += $this->probeTakesMs;
+                }
+                $next = \array_shift($this->queue);
+                if ($next === null) {
+                    throw new \RuntimeException('Stub PSR-18 client: response queue exhausted');
+                }
+                return $next;
+            }
+        };
+    }
+
     public function testRunWithProbeBeforeCreateFalseOptsOutOfRecovery(): void
     {
         $captured = [];
@@ -244,6 +400,16 @@ final class ProbePendingRecoveryTest extends TestCase
             'job_ref' => $jobRef,
         ]);
         return $retryAfter === null ? $response : $response->withHeader('Retry-After', $retryAfter);
+    }
+
+    private static function probeNotApplicable(): ResponseInterface
+    {
+        return self::jsonResponse(422, [
+            'success' => false,
+            'error' => 'UNPROCESSABLE_ENTITY',
+            'error_type' => 'probe_not_applicable',
+            'message' => 'This upload is never probed.',
+        ]);
     }
 
     private static function probe(string $probeStatus): ResponseInterface

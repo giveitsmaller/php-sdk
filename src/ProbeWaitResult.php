@@ -23,8 +23,12 @@ final class ProbeWaitResult
      *                                          200 (ANY `probe_status`). A landed probe lets the
      *                                          server admit the parallel video split.
      * @param UploadProbeResponse|null  $probe  The landed probe response — present iff `landed`.
-     * @param 'timeout'|'prober_error'|null $reason Why the wait gave up without landing —
-     *                                          present iff `!landed`.
+     * @param 'timeout'|'prober_error'|'not_applicable'|null $reason Why the wait gave up
+     *                                          without landing — present iff `!landed`.
+     *                                          `not_applicable` = the server answered
+     *                                          `422 probe_not_applicable` (the upload's
+     *                                          type is never probed, e.g. an image), so
+     *                                          the wait stopped after one request.
      */
     public function __construct(
         public readonly bool $landed,

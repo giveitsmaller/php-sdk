@@ -17,8 +17,9 @@ use Gisl\Sdk\WorkflowCreatePayload;
 /**
  * dql51via: recovery from a `422 probe_pending` on workflow create. Mirrors TS
  * `probe-pending.ts`. Per the contract's recovery rule it waits for the named
- * job's upload probe(s), then re-creates the SAME payload; a no-op when the
- * server never refuses.
+ * job's upload probe(s), then re-creates the SAME payload; an upload whose
+ * probe is `not_applicable` (never probed) is skipped, not waited on. A no-op
+ * when the server never refuses.
  *
  * Rethrows the ORIGINAL typed refusal when the probe does not land in time,
  * lands `corrupt` / `unsupported_codec` (the contract says do not retry), the
@@ -161,6 +162,14 @@ final class ProbePendingRecovery
                     timeoutMs: \min($budgetLeft, $deadlineLeft),
                     cancellation: $cancellation,
                 ));
+                // A never-probed upload (e.g. a watermark image beside the video) has
+                // no probe to wait for, so it cannot be what the gate is holding: move
+                // on to the job's other uploads, then re-create (8L4JJMx6). A slow
+                // answer must not carry the recovery past its budget (codex 5dd8528c4a6d).
+                if ($waited->reason === 'not_applicable') {
+                    self::budgetLeft(0, $budgetEnd, $deadlineMs, $original);
+                    continue;
+                }
                 // Typed as the generated enum model, but hydrated as its string value.
                 /** @var mixed $status */
                 $status = $waited->probe?->getProbeStatus();
