@@ -6,6 +6,8 @@ namespace Gisl\Sdk\Tests\Unit;
 
 use Gisl\Generated\OpenApi\Model\CapabilityProduces;
 use Gisl\Generated\OpenApi\Model\CreateBillingCheckoutSession422Response;
+use Gisl\Generated\OpenApi\Model\SseMultiOutputResultEntry;
+use Gisl\Generated\OpenApi\Model\SseOperationCompletionResult;
 use Gisl\Generated\OpenApi\Model\WorkflowSource;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -24,6 +26,7 @@ use PHPUnit\Framework\TestCase;
 final class GeneratedOneOfValidityTest extends TestCase
 {
     private const FILE_ID = '01936fb1-7bb3-7000-8000-000000000010';
+    private const URL = 'https://downloads.example.test/out.bin';
 
     /** @return iterable<string, array{object, bool}> */
     public static function values(): iterable
@@ -55,6 +58,33 @@ final class GeneratedOneOfValidityTest extends TestCase
         yield 'produces: same_as_input branch' => [new CapabilityProduces(['same_as_input' => true]), true];
         yield 'produces: fixed branch' => [new CapabilityProduces(['fixed' => 'image/png']), true];
         yield 'produces: empty completes no branch' => [new CapabilityProduces([]), false];
+
+        // SSE completion result (bvfC70E7): each branch is valid without the other branch's
+        // required fields, and the absent `outputs` is never counted (count(null) fatals on PHP 8).
+        yield 'sse completion: single branch' => [
+            new SseOperationCompletionResult(['result_kind' => 'single', 'download_url' => self::URL, 'size_bytes' => 10]),
+            true,
+        ];
+        yield 'sse completion: multi branch' => [
+            new SseOperationCompletionResult([
+                'result_kind' => 'multi',
+                'outputs' => [new SseMultiOutputResultEntry(['download_url' => self::URL, 'size_bytes' => 10])],
+                'total_output_size_bytes' => 10,
+            ]),
+            true,
+        ];
+        yield 'sse completion: single kind carrying only multi fields' => [
+            new SseOperationCompletionResult([
+                'result_kind' => 'single',
+                'outputs' => [new SseMultiOutputResultEntry(['download_url' => self::URL, 'size_bytes' => 10])],
+                'total_output_size_bytes' => 10,
+            ]),
+            false,
+        ];
+        yield 'sse completion: multi with an empty outputs list (minItems 1)' => [
+            new SseOperationCompletionResult(['result_kind' => 'multi', 'outputs' => [], 'total_output_size_bytes' => 0]),
+            false,
+        ];
     }
 
     #[DataProvider('values')]
