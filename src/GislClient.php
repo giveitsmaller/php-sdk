@@ -27,6 +27,7 @@ use Gisl\Generated\OpenApi\Model\LoginUser200ResponseData;
 use Gisl\Generated\OpenApi\Model\LoginUserRequest;
 use Gisl\Generated\OpenApi\Model\MetadataResponse;
 use Gisl\Generated\OpenApi\Model\MultipartInitiateResponse;
+use Gisl\Generated\OpenApi\Model\LivenessResponse;
 use Gisl\Generated\OpenApi\Model\OperationsSchemaResponse;
 use Gisl\Generated\OpenApi\Model\PresignedUrlPart;
 use Gisl\Generated\OpenApi\Model\RetryResponse;
@@ -2397,6 +2398,88 @@ class GislClient
     }
 
     /**
+     * Liveness of the API and the build it is running (QB5Lrcjo).
+     * `GET /healthz`, contract `security: []`.
+     *
+     * - **Unauthenticated, always.** No `Authorization`, session cookie or
+     *   workflow capability is sent, even from a client configured with an
+     *   `apiKey`, and even when one is passed through config `headers`.
+     * - Timeout: the HTTP client's own, as for every other call
+     *   (`GislClientConfig::$timeoutMs` is advisory and not enforced by the
+     *   SDK; configure the timeout on the PSR-18 client).
+     * - **Redirects are not followed** by the SDK's discovered client (Guzzle's
+     *   PSR-18 `sendRequest()` never follows; a discovered Symfony client is
+     *   switched to `max_redirects: 0`), so a 3xx throws {@see GislError}
+     *   naming it. An INJECTED client is the caller's configuration: if it
+     *   follows redirects, the SDK sees only the final response.
+     * - `getBuild()` is the release the running image was built as (e.g.
+     *   `1.17.0-rc.1`, `dev`, `unknown`); `null` when the API does not send it.
+     *   Opaque: compare for equality, do not parse.
+     *
+     * @throws GislResponseContractError a 2xx whose body is not JSON, or whose
+     *         `app` is not a boolean, or whose `build` is present but not a string.
+     * @throws GislApiError a non-2xx, through the shared error mapping.
+     * @throws GislError a 3xx.
+     * @throws GislNetworkError the transport failed (including its timeout).
+     *
+     * Mirrors `packages/typescript/src/client.ts::getHealth`.
+     */
+    public function getHealth(): LivenessResponse
+    {
+        $path = '/healthz';
+        $request = $this->buildRequest(method: 'GET', path: $path, unauthenticated: true);
+        $response = $this->sendRaw($request);
+        $statusCode = $response->getStatusCode();
+
+        if ($statusCode < 200 || $statusCode >= 300) {
+            // A 3xx is named there (385RWTsh); any other status takes the
+            // shared typed-error dispatch.
+            $this->unwrapEnvelope($response);
+            throw new GislError("Unexpected fall-through from getHealth error path (status {$statusCode}).");
+        }
+
+        // The probe is NOT enveloped: the body is the LivenessResponse itself.
+        try {
+            $decoded = \json_decode((string) $response->getBody(), associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new GislResponseContractError(
+                "Response from {$path} does not match the contract: body is not valid JSON ({$e->getMessage()}).",
+                $path,
+                null,
+                $e,
+            );
+        }
+        // hydrate() would coerce `"app": "yes"` to true and an absent `app` to
+        // null, so the shape is checked here first.
+        if (!\is_array($decoded) || ($decoded !== [] && \array_is_list($decoded))) {
+            throw new GislResponseContractError(
+                "Response from {$path} does not match the contract: expected a JSON object.",
+                $path,
+            );
+        }
+        if (!\array_key_exists('app', $decoded) || !\is_bool($decoded['app'])) {
+            throw new GislResponseContractError(
+                "Response from {$path} does not match the contract: `app` must be a boolean.",
+                $path,
+                'app',
+            );
+        }
+        if (\array_key_exists('build', $decoded) && !\is_string($decoded['build'])) {
+            throw new GislResponseContractError(
+                "Response from {$path} does not match the contract: `build`, when present, must be a string.",
+                $path,
+                'build',
+            );
+        }
+
+        $fields = ['app' => $decoded['app']];
+        if (\array_key_exists('build', $decoded)) {
+            $fields['build'] = $decoded['build'];
+        }
+        return $this->hydrate(LivenessResponse::class, $fields, $path);
+    }
+
+    /**
      * Who am I? The identity the configured credentials resolve to
      * (6zgxH2JI). `GET /api/auth/profile`; the envelope's `data.user` is
      * unwrapped to {@see AuthenticatedIdentity}.
@@ -2989,6 +3072,7 @@ class GislClient
         mixed $body = null,
         array $extraHeaders = [],
         ?string $baseUrlOverride = null,
+        bool $unauthenticated = false,
     ): RequestInterface {
         // `$baseUrlOverride` sends this ONE request to a host other than
         // `$this->config->baseUrl`. The only caller is streamEvents(), which
@@ -3005,7 +3089,7 @@ class GislClient
             // Derived from the package manifest (zDwyRcaD); it was the literal 0.1.0.
             ->withHeader('User-Agent', SdkVersion::userAgent());
 
-        if ($this->config->apiKey !== null) {
+        if ($this->config->apiKey !== null && !$unauthenticated) {
             $request = $request->withHeader('Authorization', "Bearer {$this->config->apiKey}");
         }
 
@@ -3013,7 +3097,7 @@ class GislClient
         // cookie, forward it on every subsequent request so the server's
         // session middleware can identify the caller. Mirrors the TS client's
         // `credentials: 'include'` fetch flag — same effect, different transport.
-        if ($this->config->useSessionCookie && $this->sessionCookie !== null) {
+        if ($this->config->useSessionCookie && $this->sessionCookie !== null && !$unauthenticated) {
             $request = $request->withHeader('Cookie', "gisl_session={$this->sessionCookie}");
         }
 
@@ -3034,6 +3118,18 @@ class GislClient
         // locale (same net effect: locale always wins).
         if ($this->config->locale !== null) {
             $request = $request->withHeader('Accept-Language', $this->config->locale);
+        }
+
+        // `$unauthenticated` (QB5Lrcjo, getHealth): the request carries NO
+        // credential, including one passed through config headers. Removed
+        // last, after every header source; PSR-7 withoutHeader() is
+        // case-insensitive. Mirrors UNAUTHENTICATED_STRIPPED_HEADERS in
+        // packages/typescript/src/client.ts.
+        if ($unauthenticated) {
+            $request = $request
+                ->withoutHeader('Authorization')
+                ->withoutHeader('Cookie')
+                ->withoutHeader(self::WORKFLOW_CAPABILITY_HEADER);
         }
 
         if ($body !== null) {

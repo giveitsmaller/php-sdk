@@ -58,6 +58,7 @@ final class Gisl
      *  - `streamEvents` -> `GET /api/workflows/{id}/events`
      *  - `getSchema` -> `GET /api/operations/schema`
      *  - `submitContact` -> `POST /api/contact`
+     *  - `getHealth` -> `GET /healthz` (`auth: anonymous`)
      *  - `maybeWaitForVideoProbe` -> nothing: a no-op on an anonymous client,
      *    because the probe endpoint is `required` and the wait is best-effort
      *
@@ -87,6 +88,7 @@ final class Gisl
         'streamEvents',
         'getSchema',
         'submitContact',
+        'getHealth',
         'maybeWaitForVideoProbe',
     ];
 

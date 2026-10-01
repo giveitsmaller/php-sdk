@@ -55,6 +55,7 @@ final class AnonymousAllowlistConformanceTest extends TestCase
         'streamEvents' => ['GET /api/workflows/{id}/events'],
         'getSchema' => ['GET /api/operations/schema'],
         'submitContact' => ['POST /api/contact'],
+        'getHealth' => ['GET /healthz'],
         'maybeWaitForVideoProbe' => [],
     ];
 
@@ -90,7 +91,6 @@ final class AnonymousAllowlistConformanceTest extends TestCase
 
     /** Non-`required` endpoints no allowlisted method reaches, and why. */
     private const ENDPOINT_EXCLUSIONS = [
-        'GET /healthz' => 'infrastructure probe; the SDK has no method for it',
         'GET /readyz' => 'infrastructure probe; the SDK has no method for it',
         'POST /api/auth/login' => 'policy exclusion: see EXCLUDED_METHODS login',
         'POST /api/auth/register' => 'account lifecycle; the SDK has no method for it',
