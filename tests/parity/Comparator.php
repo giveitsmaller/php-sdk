@@ -864,4 +864,79 @@ final class Comparator
         }
         return $issues;
     }
+
+    /**
+     * Exozpn36 — project a caught throwable into the language-neutral shape
+     * {@see compareThrownError} consumes. Mirrors the TS `projectThrownError`.
+     * Class by SHORT name when it lives in `Gisl\Sdk\Errors` (the two SDKs
+     * share class names); any other throwable reports its FQCN so it can never
+     * match. Payload fields are requested by WIRE name and read from the TYPED
+     * payload through the generated model's getter for that name, because that
+     * is what a consumer reads; a field the payload does not expose is absent.
+     *
+     * @param list<string> $wireFields
+     * @return array{className: string, hasKind: bool, kind: mixed, payloadFields: array<string, mixed>}
+     */
+    public static function projectThrownError(?\Throwable $thrown, array $wireFields): array
+    {
+        if ($thrown === null) {
+            return ['className' => 'null', 'hasKind' => false, 'kind' => null, 'payloadFields' => []];
+        }
+        $reflection = new \ReflectionClass($thrown);
+        $className = $reflection->getNamespaceName() === 'Gisl\Sdk\Errors'
+            ? $reflection->getShortName()
+            : $reflection->getName();
+
+        $payloadFields = [];
+        $typed = \property_exists($thrown, 'typedPayload') ? $thrown->typedPayload : null;
+        if (\is_object($typed) && \method_exists($typed, 'getters')) {
+            /** @var array<string, string> $getters */
+            $getters = $typed::getters();
+            foreach ($wireFields as $wire) {
+                if (isset($getters[$wire])) {
+                    $payloadFields[$wire] = $typed->{$getters[$wire]}();
+                }
+            }
+        }
+
+        $hasKind = \property_exists($thrown, 'kind');
+        return [
+            'className' => $className,
+            'hasKind' => $hasKind,
+            'kind' => $hasKind ? $thrown->kind : null,
+            'payloadFields' => $payloadFields,
+        ];
+    }
+
+    /**
+     * Exozpn36 — compare a projected throwable with the fixture's
+     * expected_error_class / expected_error_kind / expected_payload_fields.
+     * Each is optional and independent. Issue text mirrors the TS
+     * `compareThrownError` so a divergence reads the same in both runners.
+     *
+     * @param array{className: string, hasKind: bool, kind: mixed, payloadFields: array<string, mixed>} $actual
+     * @return list<string>
+     */
+    public static function compareThrownError(Fixture $fixture, array $actual): array
+    {
+        $issues = [];
+        if ($fixture->expectedErrorClass !== null && $fixture->expectedErrorClass !== $actual['className']) {
+            $issues[] = "expected_error_class: expected {$fixture->expectedErrorClass}, got {$actual['className']}";
+        }
+        if ($fixture->expectedErrorKind !== null && $fixture->expectedErrorKind !== $actual['kind']) {
+            $issues[] = $actual['hasKind']
+                ? 'expected_error_kind: expected ' . \json_encode($fixture->expectedErrorKind) . ', got ' . \json_encode($actual['kind'])
+                : 'expected_error_kind: expected ' . \json_encode($fixture->expectedErrorKind) . ", but {$actual['className']} carries no kind";
+        }
+        foreach ($fixture->expectedPayloadFields ?? [] as $field => $value) {
+            if (!\array_key_exists($field, $actual['payloadFields'])) {
+                $issues[] = "expected_payload_fields.{$field}: expected " . \json_encode($value)
+                    . ", but {$actual['className']}'s typed payload does not expose it";
+            } elseif ($actual['payloadFields'][$field] !== $value) {
+                $issues[] = "expected_payload_fields.{$field}: expected " . \json_encode($value)
+                    . ', got ' . \json_encode($actual['payloadFields'][$field]);
+            }
+        }
+        return $issues;
+    }
 }

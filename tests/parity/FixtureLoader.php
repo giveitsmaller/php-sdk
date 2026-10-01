@@ -478,6 +478,45 @@ final class FixtureLoader
             $expectedErrorMessage = $raw['expected_error_message'];
         }
 
+        // Exozpn36 — error-subclass parity fields. Same load-time discipline
+        // as expected_error_message: this loader tolerates unknown top-level
+        // keys, so a malformed value must fail here or it silently no-ops.
+        foreach (['expected_error_class', 'expected_error_kind', 'expected_payload_fields'] as $errorKey) {
+            if (\array_key_exists($errorKey, $raw) && !$expectsError) {
+                throw new \RuntimeException("[{$base}] {$errorKey} requires expects_error: true");
+            }
+        }
+        $expectedErrorClass = null;
+        if (\array_key_exists('expected_error_class', $raw)) {
+            $class = $raw['expected_error_class'];
+            if (!\is_string($class) || \preg_match('/^Gisl[A-Za-z0-9]*Error$/', $class) !== 1) {
+                throw new \RuntimeException(
+                    "[{$base}] expected_error_class must be an SDK error class name matching ^Gisl[A-Za-z0-9]*Error$",
+                );
+            }
+            $expectedErrorClass = $class;
+        }
+        $expectedErrorKind = null;
+        if (\array_key_exists('expected_error_kind', $raw)) {
+            if (!\is_string($raw['expected_error_kind'])) {
+                throw new \RuntimeException("[{$base}] expected_error_kind must be a string");
+            }
+            $expectedErrorKind = $raw['expected_error_kind'];
+        }
+        $expectedPayloadFields = null;
+        if (\array_key_exists('expected_payload_fields', $raw)) {
+            $fields = $raw['expected_payload_fields'];
+            if (!\is_array($fields) || $fields === [] || \array_is_list($fields)) {
+                throw new \RuntimeException("[{$base}] expected_payload_fields must be a non-empty map of wire field -> scalar");
+            }
+            foreach ($fields as $field => $value) {
+                if ($value !== null && !\is_scalar($value)) {
+                    throw new \RuntimeException("[{$base}] expected_payload_fields.{$field} must be a scalar (string|number|boolean|null)");
+                }
+            }
+            $expectedPayloadFields = $fields;
+        }
+
         // F4-A — schema-version discrimination + v2 assertion blocks.
         // PHP loader is naturally tolerant of unknown top-level keys; the
         // schema-version branch here is enforcement, not gatekeeping. v2
@@ -635,6 +674,9 @@ final class FixtureLoader
             webhook: $webhook,
             expectsError: $expectsError,
             expectedErrorMessage: $expectedErrorMessage,
+            expectedErrorClass: $expectedErrorClass,
+            expectedErrorKind: $expectedErrorKind,
+            expectedPayloadFields: $expectedPayloadFields,
             absolutePath: $file,
             schemaVersion: $schemaVersion,
             resolvedOptions: $resolvedOptions,

@@ -44,4 +44,30 @@ final class ParityConformanceTest extends TestCase
         self::assertNotSame([], $issues);
         self::assertMatchesRegularExpression('/expected_run_result\.workflowId/', \implode("\n", $issues));
     }
+
+    /** Exozpn36 — mirrors the TS conformance case of the same fixture. */
+    public function test_a_wrong_error_class_kind_and_payload_field_each_fail_naming_the_field(): void
+    {
+        $fixture = FixtureLoader::loadByPath(self::path('cf_error_subclass_mismatch'));
+        $stub = new StubPsr18Client($fixture->responses, $fixture->absolutePath);
+        $result = Invoke::run($fixture, $stub);
+        try {
+            $issues = Comparator::compareThrownError(
+                $fixture,
+                Comparator::projectThrownError(
+                    $result->thrown,
+                    \array_map('strval', \array_keys($fixture->expectedPayloadFields ?? [])),
+                ),
+            );
+        } finally {
+            $result->cleanup();
+        }
+
+        $joined = \implode("\n", $issues);
+        self::assertMatchesRegularExpression('/expected_error_class: expected GislApiError, got GislTierRestrictedError/', $joined);
+        self::assertMatchesRegularExpression('/expected_error_kind: expected "size_tier", but GislTierRestrictedError carries no kind/', $joined);
+        self::assertMatchesRegularExpression('/expected_payload_fields\.current_tier: expected "free", got "basic"/', $joined);
+        self::assertMatchesRegularExpression('/expected_payload_fields\.max_size_bytes: .*does not expose it/', $joined);
+        self::assertCount(4, $issues);
+    }
 }

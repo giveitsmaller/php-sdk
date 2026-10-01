@@ -409,10 +409,33 @@ final class ParityTest extends TestCase
             );
         }
 
+        // Exozpn36 — error-subclass parity: the exact class, its `kind`, and
+        // typed-payload fields. The message check above accepts ANY
+        // GislApiError, so a typed subclass degrading to the base class
+        // passed it. Mirrors parity.test.ts.
+        if (
+            $fixture->expectedErrorClass !== null
+            || $fixture->expectedErrorKind !== null
+            || $fixture->expectedPayloadFields !== null
+        ) {
+            $errorIssues = Comparator::compareThrownError(
+                $fixture,
+                Comparator::projectThrownError(
+                    $result->thrown,
+                    \array_map('strval', \array_keys($fixture->expectedPayloadFields ?? [])),
+                ),
+            );
+            $this->assertSame(
+                [],
+                $errorIssues,
+                "[{$fixture->name}] error-subclass parity failure:\n  - " . \implode("\n  - ", $errorIssues),
+            );
+        }
+
         if ($fixture->expectsError) {
-            // Error fixtures do not pin a return shape — the typed-error
-            // dispatch is asserted by the unit suite, parity only pins the
-            // outbound request shape on this path.
+            // Error fixtures do not pin a return shape. Typed-error dispatch
+            // is pinned above only where a fixture declares expected_error_*;
+            // elsewhere the unit suite owns it.
             return;
         }
 

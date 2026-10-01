@@ -112,6 +112,13 @@ final class Fixture
         // Vgg8yITh — cross-SDK error-message parity. Null unless the fixture
         // pins the expected thrown human message (only with expectsError).
         public readonly ?string $expectedErrorMessage = null,
+        // Exozpn36 — error-subclass parity. Each null unless the fixture pins
+        // it (only with expectsError). Class is the SHORT name, which both
+        // SDKs share; payload fields are keyed by WIRE (snake_case) name.
+        public readonly ?string $expectedErrorClass = null,
+        public readonly ?string $expectedErrorKind = null,
+        /** @var array<string, scalar|null>|null */
+        public readonly ?array $expectedPayloadFields = null,
         public readonly string $schemaVersion = self::SCHEMA_VERSION_V1,
         public readonly ?array $resolvedOptions = null,
         public readonly ?array $omittedFromWire = null,
