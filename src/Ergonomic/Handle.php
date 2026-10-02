@@ -105,7 +105,7 @@ final class Handle
         $deadlineMs = BuilderInternals::nowMs() + MaxWait::parse($maxWait ?? WorkflowConstants::DEFAULT_POLL_TIMEOUT_MS);
         $onProgressClosure = BuilderInternals::callableOrNull($onProgress, 'Handle::wait() $onProgress');
 
-        $finalStatus = BuilderInternals::awaitTerminal(
+        [$finalStatus, $transport] = BuilderInternals::awaitTerminal(
             client: $client,
             workflowId: $this->workflowId,
             deadlineMs: $deadlineMs,
@@ -139,7 +139,7 @@ final class Handle
             );
         }
 
-        return $this->project($finalStatus, \array_values($downloads->getDownloads() ?? []));
+        return $this->project($finalStatus, \array_values($downloads->getDownloads() ?? []), $transport);
     }
 
     /**
@@ -162,7 +162,9 @@ final class Handle
         }
         $downloads = $client->getWorkflowDownloads($this->workflowId);
 
-        return $this->project($status, \array_values($downloads->getDownloads() ?? []));
+        // No wait happened, so no transport is reported: `transport` describes
+        // how a WAIT observed the terminal status.
+        return $this->project($status, \array_values($downloads->getDownloads() ?? []), null);
     }
 
     /**
@@ -181,8 +183,11 @@ final class Handle
      *
      * @param list<JobDownload> $jobDownloads
      */
-    private function project(WorkflowStatusResponse $finalStatus, array $jobDownloads): RunResult
-    {
+    private function project(
+        WorkflowStatusResponse $finalStatus,
+        array $jobDownloads,
+        ?RunTransport $transport,
+    ): RunResult {
         $downloader = new StreamingDownloader();
         if (RunResult::isFanoutStatus($finalStatus)) {
             return RunResult::fromTerminalMultiJob(
@@ -191,6 +196,7 @@ final class Handle
                 jobDownloads: $jobDownloads,
                 keyByRef: [],
                 downloader: $downloader,
+                transport: $transport,
             );
         }
 
@@ -214,6 +220,7 @@ final class Handle
                 jobDownloads: $mergeDownloads,
                 key: null,
                 downloader: $downloader,
+                transport: $transport,
             );
         }
 
@@ -232,6 +239,7 @@ final class Handle
                 jobDownloads: $archiveDownloads,
                 key: null,
                 downloader: $downloader,
+                transport: $transport,
             );
         }
 
@@ -253,6 +261,7 @@ final class Handle
                 jobDownloads: $watermarkDownloads,
                 key: null,
                 downloader: $downloader,
+                transport: $transport,
             );
         }
 
@@ -274,6 +283,7 @@ final class Handle
                 jobDownloads: $soleOpDownloads,
                 key: $this->key,
                 downloader: $downloader,
+                transport: $transport,
             );
         }
 
@@ -283,6 +293,7 @@ final class Handle
             jobDownloads: $jobDownloads,
             key: $this->key,
             downloader: $downloader,
+            transport: $transport,
         );
     }
 

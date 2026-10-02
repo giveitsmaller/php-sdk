@@ -339,12 +339,71 @@ final class BuilderInternals
     }
 
     /**
+     * Prefix of the once-per-client warning raised when a run polls because no
+     * SSE stream host is declared (v0JhuD8V). An error handler can match on it;
+     * PHP's `trigger_error()` carries no code of its own.
+     */
+    public const STREAM_HOST_NOT_DECLARED_WARNING = 'GISL_STREAM_HOST_NOT_DECLARED';
+
+    /**
+     * Clients already warned that no stream host is declared. ONE warning per
+     * client, not per run: the cause is the client's configuration. A WeakMap so
+     * a discarded client takes its entry with it.
+     *
+     * @var \WeakMap<GislClient, true>|null
+     */
+    private static ?\WeakMap $streamHostWarnedClients = null;
+
+    /**
+     * Tell the caller, once per client, that runs are polling because nothing
+     * declared a stream host (v0JhuD8V). Without it the fallback is correct but
+     * invisible: a `baseUrl`-only client polls GET /status for the whole run and
+     * gets no processing progress, with no signal anywhere (measured on
+     * staging, sdk 0.38.0).
+     *
+     * `trigger_error(E_USER_WARNING)`: the client takes no PSR-3 logger, and the
+     * runtime's own warning channel is what an application's error handler
+     * already routes. ⚠️ A handler that converts warnings to exceptions
+     * (Laravel, Symfony debug) would otherwise turn this signal into a failed
+     * run whose workflow ALREADY EXISTS server-side. So a throw from the
+     * handler is caught here and the message goes to `error_log()` instead: a
+     * warning must never change a run's outcome.
+     */
+    public static function warnStreamHostNotDeclaredOnce(GislClient $client): void
+    {
+        self::$streamHostWarnedClients ??= new \WeakMap();
+        if (isset(self::$streamHostWarnedClients[$client])) {
+            return;
+        }
+        self::$streamHostWarnedClients[$client] = true;
+        $message = '[' . self::STREAM_HOST_NOT_DECLARED_WARNING . '] No SSE stream host is declared '
+            . 'for this client, so run()/wait() is polling GET /status instead of streaming '
+            . '/events, and onProgress receives no processing events. baseUrl does not move the '
+            . 'stream host. Pass an Environment (Staging / Prod) or a streamBaseUrl to '
+            . 'Gisl::create() (or set ' . \Gisl\Sdk\Credentials::GISL_STREAM_BASE_URL_ENV . ') '
+            . 'to stream; pass useSSE: false to poll deliberately without this warning.';
+        try {
+            \trigger_error($message, \E_USER_WARNING);
+        } catch (\Throwable) {
+            \error_log($message);
+        }
+    }
+
+    /**
      * Wait for `$workflowId` to reach a terminal status. SSE-first when
      * `$useSSE` is true with a clean fallback to poll on network failure
      * or clean stream-ended-without-terminal. Throws {@see GislTimeoutError}
      * if `$deadlineMs` elapses.
      *
+     * Returns the terminal status AND the transport that delivered it
+     * (v0JhuD8V): {@see RunTransport::Sse} only when the stream delivered the
+     * terminal event, {@see RunTransport::Polling} whenever a poll did —
+     * including after the stream opened and fell back. One final value, not a
+     * history. A run that polls because no stream host is declared also
+     * raises the once-per-client warning ({@see warnStreamHostNotDeclaredOnce()}).
+     *
      * @param \Closure(ProgressEvent): void|null $onProgress
+     * @return array{0: WorkflowStatusResponse, 1: RunTransport}
      */
     public static function awaitTerminal(
         GislClient $client,
@@ -354,10 +413,13 @@ final class BuilderInternals
         bool $useSSE,
         ?int $pollIntervalMs,
         ?Cancellation $cancellation = null,
-    ): WorkflowStatusResponse {
+    ): array {
         if ($useSSE) {
             try {
-                return self::consumeSseToTerminal($client, $workflowId, $deadlineMs, $onProgress, $cancellation);
+                return [
+                    self::consumeSseToTerminal($client, $workflowId, $deadlineMs, $onProgress, $cancellation),
+                    RunTransport::Sse,
+                ];
             } catch (GislTimeoutError $e) {
                 // Caller-deadline elapsed during SSE — propagate directly,
                 // do NOT fall back to poll (the deadline is already done).
@@ -385,6 +447,7 @@ final class BuilderInternals
                 // ⚠️ MUST sit BELOW the GislTimeoutError arm and above nothing
                 // that matters: it is a GislConfigError, so it would otherwise
                 // fall through to the propagate-everything-else rule below.
+                self::warnStreamHostNotDeclaredOnce($client);
             }
             // Anything else (GislApiError subclasses for 401/402/etc.,
             // caller `onProgress` exceptions, framework errors)
@@ -394,7 +457,10 @@ final class BuilderInternals
             // re-issue the same doomed request via poll (codex r2 high
             // 93a6f1be1fcd / round-2 reaffirmation).
         }
-        return self::pollToTerminal($client, $workflowId, $deadlineMs, $pollIntervalMs, $cancellation);
+        return [
+            self::pollToTerminal($client, $workflowId, $deadlineMs, $pollIntervalMs, $cancellation),
+            RunTransport::Polling,
+        ];
     }
 
     /**

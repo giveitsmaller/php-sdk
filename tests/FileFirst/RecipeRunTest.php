@@ -890,13 +890,27 @@ final class RecipeRunTest extends TestCase
             streamFactory: $this->factory,
         );
 
-        $result = $this->recipe($client, FileInput::uploadId('file_existing'))
-            ->compress()
-            ->run(pollIntervalMs: 0);
+        // v0JhuD8V: the poll is no longer silent — it raises the once-per-client
+        // warning (captured here so failOnWarning does not see it) and the
+        // result says how it was delivered. Both are covered in RunTransportTest.
+        $warnings = [];
+        \set_error_handler(static function (int $errno, string $errstr) use (&$warnings): bool {
+            $warnings[] = $errstr;
+            return true;
+        }, \E_USER_WARNING);
+        try {
+            $result = $this->recipe($client, FileInput::uploadId('file_existing'))
+                ->compress()
+                ->run(pollIntervalMs: 0);
+        } finally {
+            \restore_error_handler();
+        }
 
         self::assertSame('completed', $result->state);
         self::assertTrue($result->ok);
         self::assertCount(1, $result->artifacts);
+        self::assertSame(\Gisl\Sdk\Ergonomic\RunTransport::Polling, $result->transport);
+        self::assertCount(1, $warnings);
     }
 
     #[Test]

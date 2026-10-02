@@ -188,7 +188,7 @@ final class MergedRecipe
         );
         $workflowId = $created->getWorkflowId() ?? '';
 
-        $finalStatus = BuilderInternals::awaitTerminal(
+        [$finalStatus, $transport] = BuilderInternals::awaitTerminal(
             client: $client,
             workflowId: $workflowId,
             deadlineMs: $deadlineMs,
@@ -238,6 +238,7 @@ final class MergedRecipe
             jobDownloads: $mergeDownloads,
             key: null,
             downloader: new StreamingDownloader(),
+            transport: $transport,
         );
     }
 

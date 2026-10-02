@@ -423,7 +423,7 @@ final class OperationBuilder
 
         // 3. Wait to terminal status.
         $workflowId = $created->getWorkflowId() ?? '';
-        $finalStatus = BuilderInternals::awaitTerminal(
+        [$finalStatus, $transport] = BuilderInternals::awaitTerminal(
             client: $this->client,
             workflowId: $workflowId,
             deadlineMs: $deadlineMs,
@@ -466,6 +466,7 @@ final class OperationBuilder
             $downloads->getDownloads() ?? [],
             $resolved['wireOptions'],
             $resolved['resolvedOptions'],
+            $transport,
         );
     }
 
@@ -559,6 +560,7 @@ final class OperationBuilder
         ?array $jobDownloads,
         array $appliedOptions,
         ?ResolvedOptions $resolvedOptionsOverride = null,
+        ?RunTransport $transport = null,
     ): Result {
         $artifacts = [];
         foreach ($jobDownloads ?? [] as $job) {
@@ -621,6 +623,7 @@ final class OperationBuilder
                 presetVersion: PresetResolver::PRESET_VERSION,
                 sources: ResolvedOptionsSources::empty(),
             ),
+            transport: $transport,
         );
     }
 

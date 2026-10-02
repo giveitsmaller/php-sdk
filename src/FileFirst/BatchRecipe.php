@@ -131,7 +131,7 @@ final class BatchRecipe
 
         // 3. Wait to terminal status — SSE first, poll on a genuine SSE error.
         // `partially_failed` is a normal terminal state here.
-        $finalStatus = BuilderInternals::awaitTerminal(
+        [$finalStatus, $transport] = BuilderInternals::awaitTerminal(
             client: $this->client,
             workflowId: $workflowId,
             deadlineMs: $deadlineMs,
@@ -179,6 +179,7 @@ final class BatchRecipe
             jobDownloads: \array_values($downloads->getDownloads() ?? []),
             keyByRef: $keyByRef,
             downloader: new StreamingDownloader(),
+            transport: $transport,
         );
     }
 

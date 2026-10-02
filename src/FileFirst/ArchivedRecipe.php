@@ -95,7 +95,7 @@ final class ArchivedRecipe
         );
         $workflowId = $created->getWorkflowId() ?? '';
 
-        $finalStatus = BuilderInternals::awaitTerminal(
+        [$finalStatus, $transport] = BuilderInternals::awaitTerminal(
             client: $client,
             workflowId: $workflowId,
             deadlineMs: $deadlineMs,
@@ -142,6 +142,7 @@ final class ArchivedRecipe
             jobDownloads: $archiveDownloads,
             key: null,
             downloader: new StreamingDownloader(),
+            transport: $transport,
         );
     }
 

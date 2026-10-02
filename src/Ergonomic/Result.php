@@ -34,6 +34,14 @@ final class Result
         public readonly array $jobs,
         public readonly ?string $url,
         public readonly ResolvedOptions $resolvedOptions,
+        /**
+         * How the terminal status was actually observed (v0JhuD8V); see
+         * {@see RunTransport}. Always set by `run()` — a `mapEach()` combined
+         * result is `Sse` only when the parent and every child streamed to
+         * terminal. Nullable with a default only so the constructor stays
+         * backward compatible.
+         */
+        public readonly ?RunTransport $transport = null,
     ) {
     }
 
@@ -64,6 +72,10 @@ final class Result
             $out['url'] = $this->url;
         }
         $out['resolvedOptions'] = $this->resolvedOptions->toArray();
+        // Last, matching the TS Result's key order (v0JhuD8V).
+        if ($this->transport !== null) {
+            $out['transport'] = $this->transport->value;
+        }
         return $out;
     }
 }

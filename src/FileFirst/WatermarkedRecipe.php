@@ -238,7 +238,7 @@ final class WatermarkedRecipe
         );
         $workflowId = $created->getWorkflowId() ?? '';
 
-        $finalStatus = BuilderInternals::awaitTerminal(
+        [$finalStatus, $transport] = BuilderInternals::awaitTerminal(
             client: $client,
             workflowId: $workflowId,
             deadlineMs: $deadlineMs,
@@ -286,6 +286,7 @@ final class WatermarkedRecipe
             jobDownloads: $watermarkDownloads,
             key: null,
             downloader: new StreamingDownloader(),
+            transport: $transport,
         );
     }
 

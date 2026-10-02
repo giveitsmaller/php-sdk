@@ -5,6 +5,8 @@ case Gisl\Sdk\Environment::Prod = "prod"
 case Gisl\Sdk\Environment::Staging = "staging"
 case Gisl\Sdk\Ergonomic\ArchiveFormat::TarGz = "tar.gz"
 case Gisl\Sdk\Ergonomic\ArchiveFormat::Zip = "zip"
+case Gisl\Sdk\Ergonomic\RunTransport::Polling = "polling"
+case Gisl\Sdk\Ergonomic\RunTransport::Sse = "sse"
 case Gisl\Sdk\Generated\SdkSpec\Enums\AudioBitrate::_128 = 128
 case Gisl\Sdk\Generated\SdkSpec\Enums\AudioBitrate::_192 = 192
 case Gisl\Sdk\Generated\SdkSpec\Enums\AudioBitrate::_256 = 256
@@ -108,6 +110,7 @@ enum:int Gisl\Sdk\Generated\SdkSpec\Enums\AudioBitrate
 enum:int Gisl\Sdk\Generated\SdkSpec\Enums\AudioSampleRate
 enum:string Gisl\Sdk\Environment
 enum:string Gisl\Sdk\Ergonomic\ArchiveFormat
+enum:string Gisl\Sdk\Ergonomic\RunTransport
 enum:string Gisl\Sdk\Generated\SdkSpec\Enums\AudioCodec
 enum:string Gisl\Sdk\Generated\SdkSpec\Enums\ImageFormat
 enum:string Gisl\Sdk\Generated\SdkSpec\Enums\ImageMetadataPolicy
@@ -630,6 +633,7 @@ readonly property Gisl\Sdk\Ergonomic\Result::$createdAt : ?string
 readonly property Gisl\Sdk\Ergonomic\Result::$jobs : array
 readonly property Gisl\Sdk\Ergonomic\Result::$resolvedOptions : Gisl\Sdk\Ergonomic\ResolvedOptions
 readonly property Gisl\Sdk\Ergonomic\Result::$status : string
+readonly property Gisl\Sdk\Ergonomic\Result::$transport : ?Gisl\Sdk\Ergonomic\RunTransport
 readonly property Gisl\Sdk\Ergonomic\Result::$updatedAt : ?string
 readonly property Gisl\Sdk\Ergonomic\Result::$url : ?string
 readonly property Gisl\Sdk\Ergonomic\Result::$workflowId : string
@@ -640,6 +644,8 @@ readonly property Gisl\Sdk\Ergonomic\RunOptions::$pollIntervalMs : ?int
 readonly property Gisl\Sdk\Ergonomic\RunOptions::$probeBeforeCreate : ?bool
 readonly property Gisl\Sdk\Ergonomic\RunOptions::$probeTimeoutMs : ?int
 readonly property Gisl\Sdk\Ergonomic\RunOptions::$useSSE : bool
+readonly property Gisl\Sdk\Ergonomic\RunTransport::$name : string
+readonly property Gisl\Sdk\Ergonomic\RunTransport::$value : string
 readonly property Gisl\Sdk\Ergonomic\SseConnectRefused::$refusal : Gisl\Sdk\Errors\GislApiError
 readonly property Gisl\Sdk\Ergonomic\StatusSnapshot::$state : string
 readonly property Gisl\Sdk\Ergonomic\StatusSnapshot::$workflowId : string
@@ -727,6 +733,7 @@ readonly property Gisl\Sdk\FileFirst\RunResult::$ok : bool
 readonly property Gisl\Sdk\FileFirst\RunResult::$state : string
 readonly property Gisl\Sdk\FileFirst\RunResult::$succeeded : array
 readonly property Gisl\Sdk\FileFirst\RunResult::$targetSizeMissed : ?bool
+readonly property Gisl\Sdk\FileFirst\RunResult::$transport : ?Gisl\Sdk\Ergonomic\RunTransport
 readonly property Gisl\Sdk\FileFirst\RunResult::$url : ?string
 readonly property Gisl\Sdk\FileFirst\RunResult::$workflowId : string
 readonly property Gisl\Sdk\Generated\SdkSpec\Enums\AudioBitrate::$name : string

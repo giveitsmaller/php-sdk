@@ -79,6 +79,8 @@ final class MapEachBuilder
         $collectedArtifacts = [];
         $collectedJobs = $parentResult->jobs;
         $childStatuses = [$parentResult->status];
+        // One transport for N runs: Sse only if every run streamed to terminal.
+        $allStreamed = $parentResult->transport === RunTransport::Sse;
         $childWorkflowIds = [];
 
         $fn = $this->fn;
@@ -134,6 +136,7 @@ final class MapEachBuilder
                 $collectedJobs[] = $j;
             }
             $childStatuses[] = $childResult->status;
+            $allStreamed = $allStreamed && $childResult->transport === RunTransport::Sse;
             $childWorkflowIds[] = $childResult->workflowId;
         }
 
@@ -151,6 +154,7 @@ final class MapEachBuilder
             jobs: $collectedJobs,
             url: \count($collectedArtifacts) === 1 ? $collectedArtifacts[0]->url : null,
             resolvedOptions: $parentResult->resolvedOptions,
+            transport: $allStreamed ? RunTransport::Sse : RunTransport::Polling,
         );
     }
 

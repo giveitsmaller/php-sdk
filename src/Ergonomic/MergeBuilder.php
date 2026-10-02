@@ -143,7 +143,7 @@ final class MergeBuilder
 
         // 4. Wait to terminal status.
         $workflowId = $created->getWorkflowId() ?? '';
-        $finalStatus = BuilderInternals::awaitTerminal(
+        [$finalStatus, $transport] = BuilderInternals::awaitTerminal(
             client: $this->client,
             workflowId: $workflowId,
             deadlineMs: $deadlineMs,
@@ -193,6 +193,7 @@ final class MergeBuilder
             $finalStatus,
             $mergeDownloads,
             $this->opOptionsForResolved($plan->mediaKind),
+            transport: $transport,
         );
     }
 

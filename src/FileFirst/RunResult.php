@@ -7,6 +7,7 @@ namespace Gisl\Sdk\FileFirst;
 use Gisl\Generated\OpenApi\Model\JobDownload;
 use Gisl\Generated\OpenApi\Model\WorkflowStatusResponse;
 use Gisl\Sdk\Ergonomic\BuilderInternals;
+use Gisl\Sdk\Ergonomic\RunTransport;
 use Gisl\Sdk\Errors\GislItemFailedError;
 use Gisl\Sdk\Errors\GislNoSuchKeyError;
 use Gisl\Sdk\Errors\GislSinkError;
@@ -104,6 +105,14 @@ final class RunResult
      * @param list<ItemFailure> $failed    Per-input failures (empty on full success).
      * @param Downloader|null   $downloader Streams outputs to disk for the sinks;
      *                                      producers inject it, no-I/O contexts omit it.
+     * @param RunTransport|null $transport How the run's wait observed the
+     *                                     terminal status (v0JhuD8V): `Sse` when
+     *                                     the `/events` stream delivered it,
+     *                                     `Polling` when a status poll did
+     *                                     (including after a stream fell back).
+     *                                     Null when no wait happened —
+     *                                     `Handle::result()`, or a
+     *                                     directly-constructed result.
      */
     public function __construct(
         public readonly string $workflowId,
@@ -112,6 +121,7 @@ final class RunResult
         public readonly array $succeeded,
         public readonly array $failed,
         private readonly ?Downloader $downloader = null,
+        public readonly ?RunTransport $transport = null,
     ) {
         $this->url = \count($artifacts) === 1 ? $artifacts[0]->url : null;
         $this->ok = $failed === [];
@@ -158,6 +168,7 @@ final class RunResult
         array $jobDownloads,
         ?string $key,
         ?Downloader $downloader = null,
+        ?RunTransport $transport = null,
     ): self {
         // Flatten to the lean OutputFile[] (the four file-first fields only).
         $artifacts = [];
@@ -208,6 +219,7 @@ final class RunResult
             succeeded: $succeeded,
             failed: $failed,
             downloader: $downloader,
+            transport: $transport,
         );
     }
 
@@ -243,6 +255,7 @@ final class RunResult
         array $jobDownloads,
         array $keyByRef,
         ?Downloader $downloader = null,
+        ?RunTransport $transport = null,
     ): self {
         // Group downloads by job ref so a job's outputs are flattened AFTER the
         // per-job partition is decided (grouping is unrecoverable post-flatten).
@@ -305,6 +318,7 @@ final class RunResult
             succeeded: $succeeded,
             failed: $failed,
             downloader: $downloader,
+            transport: $transport,
         );
     }
 
@@ -604,7 +618,8 @@ final class RunResult
      *     url?: string,
      *     artifacts: list<array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool, measuredQuality?: float, qualityMetric?: string}>,
      *     succeeded: list<array{key: string|null, outputs: list<array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool, measuredQuality?: float, qualityMetric?: string}>}>,
-     *     failed: list<array{key: string|null, error: string, state: string, errorMessage?: string, errorCode?: string}>
+     *     failed: list<array{key: string|null, error: string, state: string, errorMessage?: string, errorCode?: string}>,
+     *     transport?: string
      * }
      */
     public function toArray(): array
@@ -639,7 +654,11 @@ final class RunResult
                 static fn (ItemFailure $f): array => $f->toArray(),
                 $this->failed,
             ),
-        ];
+        ] + (
+            // `transport` goes LAST and is omitted when null, matching the TS
+            // toJSON() (v0JhuD8V).
+            $this->transport === null ? [] : ['transport' => $this->transport->value]
+        );
     }
 
     private function requireDownloader(): Downloader

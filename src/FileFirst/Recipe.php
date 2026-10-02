@@ -603,7 +603,7 @@ final class Recipe
         $workflowId = $created->getWorkflowId() ?? '';
 
         // 3. Wait to terminal status — SSE first, poll on a genuine SSE error.
-        $finalStatus = BuilderInternals::awaitTerminal(
+        [$finalStatus, $transport] = BuilderInternals::awaitTerminal(
             client: $this->client,
             workflowId: $workflowId,
             deadlineMs: $deadlineMs,
@@ -663,6 +663,7 @@ final class Recipe
             jobDownloads: $jobDownloads,
             key: $this->key,
             downloader: new StreamingDownloader(),
+            transport: $transport,
         );
     }
 
