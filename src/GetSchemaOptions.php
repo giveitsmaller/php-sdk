@@ -12,11 +12,14 @@ namespace Gisl\Sdk;
  * options fetches the full schema with no conditional revalidation.
  *
  * `mimeType` and `operation` filter the returned schema server-side and
- * are forwarded as query parameters. `ifNoneMatch` and `ifModifiedSince`
- * drive HTTP conditional revalidation: pass the previously-received
- * `ETag` / `Last-Modified` to receive a 304 sentinel
- * ({@see GetSchemaNotModifiedResult}) when the cached copy is still
- * fresh.
+ * are forwarded as query parameters. `ifNoneMatch` drives HTTP conditional
+ * revalidation: pass the previously-received `ETag` to receive a 304
+ * sentinel ({@see GetSchemaNotModifiedResult}) when the cached copy is still
+ * fresh. `ifModifiedSince` is sent as `If-Modified-Since`, but the API does
+ * NOT honour it: the ETag is the endpoint's sole conditional validator and
+ * `Last-Modified` is informational only (contract
+ * `GET /api/operations/schema`), so passing only it always returns the full
+ * schema.
  */
 final class GetSchemaOptions
 {
