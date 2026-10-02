@@ -2817,14 +2817,22 @@ class GislClient
                 }
             }
 
-            $remainingMs = (int) (($deadlineNs - \hrtime(true)) / 1_000_000);
-            if ($remainingMs <= 0) {
+            // EgK0XJg7: the remainder is kept in ns and the sleep ROUNDED UP to
+            // whole microseconds. Flooring it to ms woke up to ~1 ms before the
+            // deadline, which passed both deadline checks and fired one extra
+            // probe at the edge.
+            // Microseconds, rounded UP, so the sleep is never shorter than what is
+            // left. Converted from ns as a float: hrtime(true) is a float on
+            // 32-bit builds and a ns budget overflows a 32-bit int there, while
+            // microseconds fit (codex e8c58a71a7ec, fa9e0c70e20d).
+            $remainingNs = $deadlineNs - \hrtime(true);
+            if ($remainingNs <= 0) {
                 return new ProbeWaitResult(landed: false, reason: 'timeout');
             }
             $backoffMs = $retryAfterMs ?? self::fullJitterMs($baseBackoffMs, $attempt - 1);
-            $sleepMs = \min($backoffMs, $remainingMs);
-            if ($sleepMs > 0) {
-                \usleep($sleepMs * 1000);
+            $sleepUs = (int) \min($backoffMs * 1000, \ceil($remainingNs / 1000));
+            if ($sleepUs > 0) {
+                \usleep($sleepUs);
             }
             if (\hrtime(true) >= $deadlineNs) {
                 return new ProbeWaitResult(landed: false, reason: 'timeout');

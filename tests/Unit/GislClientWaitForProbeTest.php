@@ -281,6 +281,32 @@ final class GislClientWaitForProbeTest extends TestCase
         self::assertGreaterThanOrEqual(950, (\hrtime(true) - $start) / 1_000_000);
     }
 
+    public function test_a_retry_after_that_runs_to_the_deadline_makes_no_further_probe_call(): void
+    {
+        // EgK0XJg7: the Retry-After (3600 s) is clamped to the remaining budget,
+        // so the wait ends exactly at the deadline and nothing may be sent after
+        // it. A 200 is queued second: an edge probe would LAND instead of timing
+        // out. The edge is sub-millisecond and set by how long the first probe
+        // took, so one run cannot hit it on demand; 30 short runs make the old
+        // ms-floored sleep fail near-certainly, and the fixed code never does.
+        for ($run = 1; $run <= 30; ++$run) {
+            $client = $this->makeClient([
+                $this->probe422('probe_not_ready', ['Retry-After' => '3600']),
+                $this->probeOk(),
+            ]);
+            $attempts = 0;
+            $result = $client->waitForProbe(self::FID, new ProbeWaitOptions(
+                timeoutMs: 5,
+                onPoll: function () use (&$attempts): void {
+                    ++$attempts;
+                },
+            ));
+            self::assertSame(1, $attempts, "run {$run}: a probe was sent at the deadline edge");
+            self::assertFalse($result->landed);
+            self::assertSame('timeout', $result->reason);
+        }
+    }
+
     public function test_probe_not_ready_never_answering_gives_up_with_timeout(): void
     {
         $client = $this->makeClient(\array_fill(0, 50, $this->probe422('probe_not_ready')));
