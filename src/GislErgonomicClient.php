@@ -207,7 +207,59 @@ class GislErgonomicClient extends GislClient
     }
 
     /**
-     * @param array<string, mixed> $options
+     * Single-op compress. `$options` carries a preset via `optimize`, per-call
+     * `presetOverrides`, and the explicit keys the input's media takes; they resolve
+     * through the preset resolver at `run()` / `submit()`, which refuses a key the
+     * media does not take (`unknown_field`) before any upload. Mirrors the TS
+     * `client.compress(input, options?: CompressOptions)`.
+     *
+     * @param array{
+     *   optimize?: \Gisl\Sdk\Generated\SdkSpec\Enums\OptimizeFor|'Size'|'Balanced'|'Quality',
+     *   presetOverrides?: \Gisl\Sdk\Preset\ImageCompressPresetOptions|\Gisl\Sdk\Preset\AudioCompressPresetOptions|\Gisl\Sdk\Preset\VideoCompressPresetOptions|\Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions|\Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions|\Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions|array<string, mixed>,
+     *   quality?: int,
+     *   metadata?: \Gisl\Sdk\Generated\SdkSpec\Enums\ImageMetadataPolicy|'strip'|'keep'|'all',
+     *   output_format?: \Gisl\Sdk\Generated\SdkSpec\Enums\ImageFormat|'original'|'webp',
+     *   outputFormat?: \Gisl\Sdk\Generated\SdkSpec\Enums\ImageFormat|'original'|'webp',
+     *   bitrate?: \Gisl\Sdk\Generated\SdkSpec\Enums\AudioBitrate|64|96|128|192|256|320,
+     *   channels?: int,
+     *   sample_rate?: \Gisl\Sdk\Generated\SdkSpec\Enums\AudioSampleRate|22050|44100|48000,
+     *   sampleRate?: \Gisl\Sdk\Generated\SdkSpec\Enums\AudioSampleRate|22050|44100|48000,
+     *   normalize?: bool,
+     *   trim_start?: int|float,
+     *   trim_end?: int|float,
+     *   codec?: \Gisl\Sdk\Generated\SdkSpec\Enums\VideoCodec|'h264'|'h265'|'vp9'|'av1',
+     *   encoding_mode?: 'crf'|'target_size',
+     *   crf?: int,
+     *   target_size_bytes?: int,
+     *   targetSize?: string|int,
+     *   preset?: \Gisl\Sdk\Generated\SdkSpec\Enums\VideoPreset|'ultrafast'|'superfast'|'veryfast'|'faster'|'fast'|'medium'|'slow'|'slower'|'veryslow',
+     *   width?: int,
+     *   height?: int,
+     *   fit?: \Gisl\Sdk\Generated\SdkSpec\Enums\VideoFit|'max'|'crop'|'scale'|'pad',
+     *   fps?: int,
+     *   faststart?: bool,
+     *   audio_codec?: \Gisl\Sdk\Generated\SdkSpec\Enums\AudioCodec|'aac'|'opus'|'vorbis'|'copy',
+     *   audioCodec?: \Gisl\Sdk\Generated\SdkSpec\Enums\AudioCodec|'aac'|'opus'|'vorbis'|'copy',
+     *   audio_bitrate?: \Gisl\Sdk\Generated\SdkSpec\Enums\AudioBitrate|64|96|128|192|256|320,
+     *   audioBitrate?: \Gisl\Sdk\Generated\SdkSpec\Enums\AudioBitrate|64|96|128|192|256|320,
+     *   strip_macros?: bool,
+     *   stripMacros?: bool,
+     *   strip_hidden_data?: bool,
+     *   stripHiddenData?: bool,
+     *   strip_unused_fonts?: bool,
+     *   stripUnusedFonts?: bool,
+     *   strip_metadata?: bool,
+     *   stripMetadata?: bool,
+     *   strip_unused_styles?: bool,
+     *   stripUnusedStyles?: bool,
+     *   font_subsetting?: bool,
+     *   fontSubsetting?: bool,
+     *   strip_unused_css?: bool,
+     *   stripUnusedCss?: bool,
+     * } $options Keys are all optional so the `= []` default type-checks. The key set is
+     *   what the compress preset resolver accepts, unioned across media; a key the input's
+     *   media does not take throws `GislConfigError` (`unknown_field`) before any upload.
+     *   Mirrors the TS `CompressOptions`; pinned by `CompressOptionsShapeTest`.
      */
     public function compress(string $input, array $options = []): OperationBuilder
     {
