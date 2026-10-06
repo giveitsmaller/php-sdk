@@ -719,6 +719,8 @@ readonly property Gisl\Sdk\FileFirst\ItemFailure::$key : ?string
 readonly property Gisl\Sdk\FileFirst\ItemResult::$key : ?string
 readonly property Gisl\Sdk\FileFirst\ItemResult::$outputs : array
 readonly property Gisl\Sdk\FileFirst\Manifest::$paths : array
+readonly property Gisl\Sdk\FileFirst\OutputFile::$alreadyOptimal : ?bool
+readonly property Gisl\Sdk\FileFirst\OutputFile::$alreadyOptimalKind : ?string
 readonly property Gisl\Sdk\FileFirst\OutputFile::$chosenQuality : ?int
 readonly property Gisl\Sdk\FileFirst\OutputFile::$filename : string
 readonly property Gisl\Sdk\FileFirst\OutputFile::$measuredQuality : ?float

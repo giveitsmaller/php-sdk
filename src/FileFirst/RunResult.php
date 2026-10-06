@@ -183,6 +183,8 @@ final class RunResult
                     targetSizeMet: $file->getTargetSizeMet(),
                     measuredQuality: $file->getMeasuredQuality(),
                     qualityMetric: $file->getQualityMetric(),
+                    alreadyOptimal: $file->getAlreadyOptimal(),
+                    alreadyOptimalKind: $file->getAlreadyOptimalKind(),
                 );
             }
         }
@@ -283,6 +285,8 @@ final class RunResult
                     targetSizeMet: $file->getTargetSizeMet(),
                     measuredQuality: $file->getMeasuredQuality(),
                     qualityMetric: $file->getQualityMetric(),
+                    alreadyOptimal: $file->getAlreadyOptimal(),
+                    alreadyOptimalKind: $file->getAlreadyOptimalKind(),
                 );
             }
             // The flat artifacts[] keeps every job's outputs in job order.
@@ -616,8 +620,8 @@ final class RunResult
      *     ok: bool,
      *     targetSizeMissed?: bool,
      *     url?: string,
-     *     artifacts: list<array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool, measuredQuality?: float, qualityMetric?: string}>,
-     *     succeeded: list<array{key: string|null, outputs: list<array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool, measuredQuality?: float, qualityMetric?: string}>}>,
+     *     artifacts: list<array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool, measuredQuality?: float, qualityMetric?: string, alreadyOptimal?: bool, alreadyOptimalKind?: string}>,
+     *     succeeded: list<array{key: string|null, outputs: list<array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool, measuredQuality?: float, qualityMetric?: string, alreadyOptimal?: bool, alreadyOptimalKind?: string}>}>,
      *     failed: list<array{key: string|null, error: string, state: string, errorMessage?: string, errorCode?: string}>,
      *     transport?: string
      * }

@@ -33,6 +33,18 @@ final class OutputFile
      * @param string|null $qualityMetric  The metric `$measuredQuality` was measured on
      *                                     (e.g. `ssimulacra2`). Null when no
      *                                     measurement was reported.
+     * @param bool|null   $alreadyOptimal  `true` when this file IS the original
+     *                                     input, returned unchanged because a
+     *                                     same-format `compress` could not make it
+     *                                     smaller. The run still succeeds: show it
+     *                                     as "already optimised". Null (omitted)
+     *                                     when the API did not report it; null and
+     *                                     `false` mean the same — an ordinary output.
+     * @param string|null $alreadyOptimalKind Only with `$alreadyOptimal` true: why
+     *                                     the original came back. `not_smaller` is
+     *                                     the only kind today; treat null or an
+     *                                     unrecognised value as a plain "already
+     *                                     optimised".
      */
     public function __construct(
         public readonly string $url,
@@ -43,6 +55,8 @@ final class OutputFile
         public readonly ?bool $targetSizeMet = null,
         public readonly ?float $measuredQuality = null,
         public readonly ?string $qualityMetric = null,
+        public readonly ?bool $alreadyOptimal = null,
+        public readonly ?string $alreadyOptimalKind = null,
     ) {
     }
 
@@ -50,10 +64,10 @@ final class OutputFile
      * Plain-array projection for tests + JSON-serialise paths. Field order
      * is fixed so the serialised shape matches the TS reference exactly
      * (cross-language shape assertion, FF1; harness parity fixture, FF2b).
-     * The target-size fields are OMITTED when null, mirroring TS's
+     * The optional projected fields are OMITTED when null, mirroring TS's
      * omit-when-undefined so non-target-size outputs stay byte-identical.
      *
-     * @return array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool, measuredQuality?: float, qualityMetric?: string}
+     * @return array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool, measuredQuality?: float, qualityMetric?: string, alreadyOptimal?: bool, alreadyOptimalKind?: string}
      */
     public function toArray(): array
     {
@@ -74,6 +88,12 @@ final class OutputFile
         }
         if ($this->qualityMetric !== null) {
             $out['qualityMetric'] = $this->qualityMetric;
+        }
+        if ($this->alreadyOptimal !== null) {
+            $out['alreadyOptimal'] = $this->alreadyOptimal;
+        }
+        if ($this->alreadyOptimalKind !== null) {
+            $out['alreadyOptimalKind'] = $this->alreadyOptimalKind;
         }
         return $out;
     }
