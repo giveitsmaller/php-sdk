@@ -326,6 +326,11 @@ final class GislAnonymousClient extends GislErgonomicClient
         throw self::requiresAuth(__FUNCTION__);
     }
 
+    public function getCheckoutSessionStatus(string $sessionId): never
+    {
+        throw self::requiresAuth(__FUNCTION__);
+    }
+
     public function getCreditsBalance(): never
     {
         throw self::requiresAuth(__FUNCTION__);

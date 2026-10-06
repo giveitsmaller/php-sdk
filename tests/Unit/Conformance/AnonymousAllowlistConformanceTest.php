@@ -71,6 +71,7 @@ final class AnonymousAllowlistConformanceTest extends TestCase
         'listWorkflows' => [['GET /api/workflows'], null],
         'workflows' => [['GET /api/workflows'], null],
         'createCheckoutSession' => [['POST /api/billing/checkout'], null],
+        'getCheckoutSessionStatus' => [['GET /api/billing/checkout/{sessionId}/status'], null],
         'getCreditsBalance' => [['GET /api/v2/credits/balance'], null],
         'getCreditsUsage' => [['GET /api/v2/credits/usage'], null],
         'getAccountLimits' => [['GET /api/v2/account/limits'], null],

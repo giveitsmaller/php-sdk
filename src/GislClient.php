@@ -15,6 +15,7 @@ use Gisl\Generated\OpenApi\Model\LongFormConcurrencyLimitResponse;
 use Gisl\Generated\OpenApi\Model\AccountLimits;
 use Gisl\Generated\OpenApi\Model\BillingCheckoutRequest;
 use Gisl\Generated\OpenApi\Model\BillingCheckoutSession;
+use Gisl\Generated\OpenApi\Model\CheckoutSessionStatusResponseData;
 use Gisl\Generated\OpenApi\Model\ContactRequest;
 use Gisl\Generated\OpenApi\Model\CreditsBalanceResponse;
 use Gisl\Generated\OpenApi\Model\CreditsUsageResponse;
@@ -2317,6 +2318,119 @@ class GislClient
         /** @var array<string, mixed> $data */
         $data = $this->sendAndUnwrap($request);
         return $this->hydrate(BillingCheckoutSession::class, $data, '/api/billing/checkout');
+    }
+
+    /**
+     * Has the purchase behind a checkout session the caller started been
+     * applied (NzdriXAK)? `GET /api/billing/checkout/{sessionId}/status`,
+     * **beta**; auth required. Pass `getSessionId()` from
+     * {@see createCheckoutSession()}.
+     *
+     * `getStatus()` is one of the three `STATUS_*` constants on the model:
+     * - `paid`: applied to the caller's account (a pack's credits granted; a
+     *   subscription linked - linked, not necessarily in good standing).
+     * - `pending`: recorded as the caller's, not applied yet. Not a failure;
+     *   poll again. No timing is contracted.
+     * - `unknown`: **a normal answer, not an error.** The server deliberately
+     *   does not distinguish "not yours" from "never existed" (or a session
+     *   created before the endpoint shipped), so a session id you did not
+     *   create reads `unknown`, never a 403 or 404.
+     *
+     * @throws GislError `$sessionId` is empty, before any request.
+     * @throws \Gisl\Sdk\Errors\GislFeatureRequiresAuthError on a
+     *         `Gisl::anonymous()` client, before any request.
+     * @throws GislResponseContractError any 2xx other than 200, a 200 that is not a JSON
+     *         `{ success: true, data }` envelope (empty or non-JSON body
+     *         included), or whose `data` lacks a string `session_id` (an
+     *         empty `data` included), or whose `status` is not `paid` /
+     *         `pending` / `unknown` (the contract closes that enum).
+     * @throws \Gisl\Sdk\Errors\GislApiError a non-2xx through the shared
+     *         mapping: 401 when unauthenticated, 404 for an id the router
+     *         cannot route.
+     *
+     * Mirrors `packages/typescript/src/client.ts::getCheckoutSessionStatus`.
+     */
+    public function getCheckoutSessionStatus(string $sessionId): CheckoutSessionStatusResponseData
+    {
+        if ($sessionId === '') {
+            throw new GislError('getCheckoutSessionStatus: sessionId must be a non-empty string.');
+        }
+        $path = '/api/billing/checkout/' . \rawurlencode($sessionId) . '/status';
+        $request = $this->buildRequest(method: 'GET', path: $path);
+        $response = $this->sendRaw($request);
+        $statusCode = $response->getStatusCode();
+
+        if ($statusCode < 200 || $statusCode >= 300) {
+            // Non-2xx (and a named 3xx): the shared typed-error dispatch.
+            $this->unwrapEnvelope($response);
+            throw new GislError(
+                "Unexpected fall-through from getCheckoutSessionStatus error path (status {$statusCode}).",
+            );
+        }
+        if ($statusCode !== 200) {
+            // The contract declares only 200 as success here (codex b7a99b89c985).
+            throw new GislResponseContractError(
+                "Response from {$path} does not match the contract: expected status 200, got {$statusCode}.",
+                $path,
+            );
+        }
+
+        // The contract allows only a JSON `{ success: true, data }` 200, so a 2xx
+        // the SDK cannot read as one is the response violating the contract, as
+        // in getHealth() - not the bare GislError sendAndUnwrap() raises.
+        try {
+            $decoded = \json_decode((string) $response->getBody(), associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new GislResponseContractError(
+                "Response from {$path} does not match the contract: body is not valid JSON ({$e->getMessage()}).",
+                $path,
+                null,
+                $e,
+            );
+        }
+        if (\is_array($decoded) && ($decoded['success'] ?? null) === false) {
+            // A failure envelope on a 2xx: the shared dispatch, as in TS.
+            $this->unwrapEnvelope($response);
+            throw new GislError(
+                "Unexpected fall-through from getCheckoutSessionStatus error path (status {$statusCode}).",
+            );
+        }
+        if (!\is_array($decoded) || ($decoded['success'] ?? null) !== true || !\array_key_exists('data', $decoded)) {
+            throw new GislResponseContractError(
+                "Response from {$path} does not match the contract: expected a `{ success: true, data }` envelope.",
+                $path,
+            );
+        }
+        $data = $decoded['data'];
+
+        // Checked before hydrate(): the generated deserialiser stores an enum
+        // value it does not know verbatim (drJpKvXS, right for OPEN enums) and
+        // skips an absent required field. This enum is closed, so an unknown
+        // value is a contract violation, not a new member. A scalar or a
+        // NON-EMPTY list is left to hydrate(), which rejects it; an EMPTY array
+        // is checked here, because json_decode() cannot tell `{}` from `[]` and
+        // hydrate() lets both through as a hollow model (codex 217e07fe004f).
+        if (\is_array($data) && ($data === [] || !\array_is_list($data))) {
+            if (!\is_string($data['session_id'] ?? null)) {
+                throw new GislResponseContractError(
+                    "Response from {$path} does not match the contract: `data.session_id` must be a string.",
+                    $path,
+                    'session_id',
+                );
+            }
+            $allowed = (new CheckoutSessionStatusResponseData())->getStatusAllowableValues();
+            $status = $data['status'] ?? null;
+            if (!\in_array($status, $allowed, true)) {
+                throw new GislResponseContractError(
+                    "Response from {$path} does not match the contract: `data.status` must be one of "
+                    . \implode(', ', $allowed) . '; got ' . \json_encode($status) . '.',
+                    $path,
+                    'status',
+                );
+            }
+        }
+
+        return $this->hydrate(CheckoutSessionStatusResponseData::class, $data, $path);
     }
 
     // ---------------------------------------------------------------------
