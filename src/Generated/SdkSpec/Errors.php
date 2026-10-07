@@ -519,7 +519,7 @@ to a single artifact OR use .mapEach() to fan out.
             'httpStatus' => 422,
             'retryable' => false,
             'sdkClass' => 'GislValidationError',
-            'description' => '422 — a job routed to a processing class that concatenates without normalising (today merge.video long_form_re_encode) has inputs that differ in stream layout or a listed attribute. Wire `INPUTS_NOT_CONCAT_UNIFORM`; ValidationErrorEnvelope, one details[] entry per difference. The caller must change the inputs; retrying does not help. `planned` until api\'s nmYdwHAH ships the create-time refusal (MjzzPCWt).',
+            'description' => '422 — a job routed to a processing class that declares input_uniformity has inputs it cannot concatenate: merge.video long_form_re_encode (inputs differ in stream layout or a listed attribute) or merge.video short_form_concat (some inputs have audio and others do not). Wire `INPUTS_NOT_CONCAT_UNIFORM`; ValidationErrorEnvelope, one details[] entry per difference. The caller must change the inputs; retrying does not help. `planned` until api\'s nmYdwHAH ships the create-time refusal (MjzzPCWt).',
             'metadataSchema' => [],
         ],
         'requires_reencode' => [
