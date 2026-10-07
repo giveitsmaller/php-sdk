@@ -314,16 +314,12 @@ class GislErgonomicClient extends GislClient
     }
 
     /**
-     * Convert to another format. The single-op builder has no positional format —
-     * the target rides the bag as the wire key `output_format` (REQUIRED). An
-     * unknown option key or a missing `output_format` is rejected pre-upload
-     * (ExVcchMz), not as a server 422.
-     *
-     * `output_format` is REQUIRED at runtime (enforced by the guard below); the
-     * shape keys are all marked optional only so the `= []` default type-checks.
+     * Convert to `$format` (e.g. 'webp', 'mp4', 'pdf'), the same shape as the
+     * file-first Recipe::convert($format, $options) (2IvqIS7B). `$format` lowers
+     * to the wire key `output_format`; `output_format` / `format` in the bag, an
+     * unknown key, or an empty `$format` are rejected pre-upload, not as a 422.
      *
      * @param array{
-     *   output_format?: string,
      *   quality?: int,
      *   background?: string,
      *   crf?: int,
@@ -344,9 +340,22 @@ class GislErgonomicClient extends GislClient
      *   dpi?: int,
      * } $options
      */
-    public function convert(string $input, array $options = []): OperationBuilder
+    public function convert(string $input, string $format, array $options = []): OperationBuilder
     {
-        OptionValidation::validateSingleOpConvertOptions($options);
+        // 2IvqIS7B — the target is the second POSITIONAL argument, as on the
+        // file-first Recipe::convert($format, $options); it lowers to the wire key
+        // output_format. The bag goes through the SAME guard as the file-first
+        // convert, so output_format / format in the bag are rejected.
+        if ($format === '') {
+            throw new GislConfigError(
+                "convert(\$input, \$format, \$options) requires the target format as its second argument; "
+                . "e.g. ->convert(\$input, 'webp').",
+                'missing_required_field',
+                ['output_format'],
+            );
+        }
+        OptionValidation::validateVerbOptions('convert', $options);
+        $options['output_format'] = $format;
 
         return new OperationBuilder($this, 'convert', $input, $options, $this->presetDefaults, $this->scopedPresetDefaults);
     }

@@ -409,33 +409,41 @@ final class OperationBuilderSubmitTest extends TestCase
         }
     }
 
-    public function test_single_op_convert_rejects_missing_output_format_pre_upload(): void
+    public function test_single_op_convert_rejects_an_empty_target_pre_upload(): void
     {
         $captured = [];
         $client = self::makeClient(self::stubClient([], $captured));
         $tempPath = self::writeTempFile('img', 'photo.png');
         try {
-            $client->convert($tempPath, ['quality' => 80]);
-            self::fail('convert with no output_format must throw pre-upload');
+            $client->convert($tempPath, '', ['quality' => 80]);
+            self::fail('convert with an empty target must throw pre-upload');
         } catch (GislConfigError $err) {
             self::assertSame('missing_required_field', $err->getReason());
+            self::assertSame(['output_format'], $err->getConflictingFields());
         } finally {
             self::assertSame([], $captured);
         }
     }
 
-    public function test_single_op_convert_rejects_format_alias_pre_upload(): void
+    /**
+     * 2IvqIS7B: the target is the positional $format; output_format / format in
+     * the bag are positional-owned and rejected, like the file-first convert.
+     */
+    public function test_single_op_convert_rejects_output_format_and_format_in_the_bag_pre_upload(): void
     {
-        $captured = [];
-        $client = self::makeClient(self::stubClient([], $captured));
-        $tempPath = self::writeTempFile('img', 'photo.png');
-        try {
-            $client->convert($tempPath, ['format' => 'webp']);
-            self::fail('convert with the `format` alias must throw pre-upload');
-        } catch (GislConfigError $err) {
-            self::assertSame('unknown_field', $err->getReason());
-        } finally {
-            self::assertSame([], $captured);
+        foreach (['output_format', 'format'] as $key) {
+            $captured = [];
+            $client = self::makeClient(self::stubClient([], $captured));
+            $tempPath = self::writeTempFile('img', 'photo.png');
+            try {
+                $client->convert($tempPath, 'webp', [$key => 'png']);
+                self::fail("convert with '{$key}' in the bag must throw pre-upload");
+            } catch (GislConfigError $err) {
+                self::assertSame('unknown_field', $err->getReason());
+                self::assertSame([$key], $err->getConflictingFields());
+            } finally {
+                self::assertSame([], $captured);
+            }
         }
     }
 

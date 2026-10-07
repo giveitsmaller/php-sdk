@@ -1026,7 +1026,12 @@ final class Invoke
         return match ($method) {
             'compress' => $client->compress($input, $opOptions),
             'thumbnail' => $client->thumbnail($input, $opOptions),
-            'convert' => $client->convert($input, $opOptions),
+            // 2IvqIS7B: the target is positional; fixtures carry it as the wire key.
+            'convert' => $client->convert(
+                $input,
+                \is_string($opOptions['output_format'] ?? null) ? $opOptions['output_format'] : '',
+                \array_diff_key($opOptions, ['output_format' => true]),
+            ),
             default => throw new \LogicException("Unreachable: unsupported ergonomic verb \"{$method}\""),
         };
     }

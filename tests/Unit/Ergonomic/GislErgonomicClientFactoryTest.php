@@ -45,7 +45,7 @@ final class GislErgonomicClientFactoryTest extends TestCase
     /**
      * Each verb paired with a VALID option bag (ExVcchMz — convert/thumbnail now
      * validate pre-upload, so the generic `['quality' => 80]` bag no longer works
-     * for thumbnail (needs width+height) or convert (needs output_format)).
+     * for thumbnail (needs width+height); convert takes a positional format and has its own test).
      *
      * @return array<string, array{0: string, 1: array<string, mixed>}>
      */
@@ -54,7 +54,6 @@ final class GislErgonomicClientFactoryTest extends TestCase
         return [
             'compress' => ['compress', ['quality' => 80]],
             'thumbnail' => ['thumbnail', ['width' => 320, 'height' => 240]],
-            'convert' => ['convert', ['output_format' => 'webp', 'quality' => 80]],
         ];
     }
 
@@ -105,6 +104,21 @@ final class GislErgonomicClientFactoryTest extends TestCase
         $this->assertSame($verb, $reflection->getProperty('opType')->getValue($builder));
         $this->assertSame('/tmp/some.bin', $reflection->getProperty('input')->getValue($builder));
         $this->assertSame($opts, $reflection->getProperty('opOptions')->getValue($builder));
+    }
+
+    /**
+     * 2IvqIS7B: convert's target is positional; it lands in the captured options
+     * as the wire key output_format, after the caller's bag.
+     */
+    public function test_convert_factory_captures_the_positional_format_as_output_format(): void
+    {
+        $builder = $this->makeClient()->convert('/tmp/some.bin', 'webp', ['quality' => 80]);
+        $reflection = new \ReflectionObject($builder);
+        $this->assertSame('convert', $reflection->getProperty('opType')->getValue($builder));
+        $this->assertSame(
+            ['quality' => 80, 'output_format' => 'webp'],
+            $reflection->getProperty('opOptions')->getValue($builder),
+        );
     }
 
     public function test_default_options_is_empty_array(): void

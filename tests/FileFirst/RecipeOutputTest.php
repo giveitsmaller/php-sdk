@@ -672,7 +672,7 @@ final class RecipeOutputTest extends TestCase
         } catch (GislConfigError $err) {
             self::assertSame('unknown_field', $err->reason);
             self::assertSame(['output_format'], $err->conflictingFields);
-            self::assertStringContainsString('first argument', $err->getMessage());
+            self::assertStringContainsString('as an argument', $err->getMessage());
         }
     }
 

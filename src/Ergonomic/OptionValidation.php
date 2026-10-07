@@ -147,7 +147,7 @@ final class OptionValidation
             if (array_key_exists($key, $options)) {
                 $arg = $verb === 'textWatermark' ? 'text' : 'output format';
                 throw new GislConfigError(
-                    sprintf("%s() sets the %s via its first argument; remove '%s' from the options bag.", $verb, $arg, $key),
+                    sprintf("%s() takes the %s as an argument; remove '%s' from the options bag.", $verb, $arg, $key),
                     'unknown_field',
                     [$key],
                 );
@@ -165,50 +165,6 @@ final class OptionValidation
                     [(string) $key],
                 );
             }
-        }
-    }
-
-    /**
-     * Validate the option bag for the SINGLE-OP builder `convert(input, options)`
-     * (ExVcchMz). DISTINCT from {@see validateVerbOptions()} with verb `convert`,
-     * which is for the file-first `Recipe::convert(format, options)` where
-     * `output_format` is set by the positional `$format` arg and is therefore
-     * positional-owned (rejected in the bag). The single-op builder has NO
-     * positional format — its target rides the bag as the wire key `output_format`
-     * — so this guard ALLOWS `output_format` (and only that; the SDK alias `format`
-     * is NOT accepted, since the single-op bag lowers verbatim to the wire) while
-     * still rejecting any other unknown key, AND requires `output_format` present
-     * (a convert with no target is a guaranteed server 422). Mirrors the TS
-     * `validateSingleOpConvertOptions`.
-     *
-     * @param array<string, mixed> $options
-     *
-     * @throws GislConfigError reason `unknown_field` for a key outside the convert
-     *                         contract set ∪ {output_format}; reason
-     *                         `missing_required_field` when `output_format` is absent/null.
-     */
-    public static function validateSingleOpConvertOptions(array $options): void
-    {
-        $allowed = self::allowedKeysFor('convert');
-        $allowed['output_format'] = true;
-        foreach (array_keys($options) as $key) {
-            if (!isset($allowed[$key])) {
-                $valid = array_keys($allowed);
-                sort($valid);
-                throw new GislConfigError(
-                    sprintf("convert: unknown option '%s'. Valid options: %s.", (string) $key, implode(', ', $valid)),
-                    'unknown_field',
-                    [(string) $key],
-                );
-            }
-        }
-        if (!array_key_exists('output_format', $options) || $options['output_format'] === null) {
-            throw new GislConfigError(
-                "convert requires 'output_format' (the target format) in the options bag; "
-                . "e.g. \$client->convert(\$input, ['output_format' => 'webp']).",
-                'missing_required_field',
-                ['output_format'],
-            );
         }
     }
 
