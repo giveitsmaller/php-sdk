@@ -754,20 +754,18 @@ final class MergeBuilder
         return $out;
     }
 
+    /**
+     * YOCz0i74 — merge shares compress's parser, so a size string means the
+     * same bytes on both verbs: BINARY units (1 KB = 1024, the 2026-05-28 pin)
+     * and TB. Merge used DECIMAL until 2026-10, which put '1MB' (1,000,000)
+     * under the contract's 1 MiB floor and made every other value ~4.9% small.
+     */
     private static function parseSizeString(string $s): int
     {
-        $trimmed = trim($s);
-        if (preg_match('/^(\d+(?:\.\d+)?)\s*(KB|MB|GB|B)?$/i', $trimmed, $m) !== 1) {
-            throw new GislConfigError("Invalid targetSize string '{$s}' — expected '<num>[B|KB|MB|GB]'.");
+        try {
+            return PresetResolver::parseTargetSize($s);
+        } catch (GislConfigError) {
+            throw new GislConfigError("Invalid targetSize string '{$s}' — expected '<num>[B|KB|MB|GB|TB]' (binary units).");
         }
-        $n = (float) $m[1];
-        $unit = strtoupper($m[2] ?? 'B');
-        return match ($unit) {
-            'B' => (int) round($n),
-            'KB' => (int) round($n * 1_000),
-            'MB' => (int) round($n * 1_000_000),
-            'GB' => (int) round($n * 1_000_000_000),
-            default => throw new GislConfigError("Unknown size unit '{$unit}'."),
-        };
     }
 }

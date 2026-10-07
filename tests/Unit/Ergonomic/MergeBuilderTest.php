@@ -11,6 +11,7 @@ use Gisl\Sdk\Ergonomic\Merge;
 use Gisl\Sdk\Ergonomic\MergeBuilder;
 use Gisl\Sdk\Ergonomic\MergeOptions;
 use Gisl\Sdk\Ergonomic\PathAsset;
+use Gisl\Sdk\Ergonomic\PresetResolver;
 use Gisl\Sdk\Ergonomic\Result;
 use Gisl\Sdk\Ergonomic\RunOptions;
 use Gisl\Sdk\Ergonomic\SubmitOptions;
@@ -778,8 +779,34 @@ final class MergeBuilderTest extends TestCase
 
         $body = self::decodeJson($captured[2]);
         $opts = $this->assertMergeShapeAndReturnMergeJob($body, 2)['operations'][0]['options'];
-        $this->assertSame(10_000_000, $opts['target_size_bytes']);
+        $this->assertSame(10_485_760, $opts['target_size_bytes']); // YOCz0i74: binary, 10 * 2^20
         $this->assertSame('target_size', $opts['encoding_mode']);
+    }
+
+    /**
+     * YOCz0i74 — merge and compress turn the SAME string into the SAME bytes
+     * (shared binary parser). Merge parsed decimal until 2026-10, so '1MB'
+     * fell under the 1 MiB contract floor. Asserted against
+     * PresetResolver::parseTargetSize, not a literal, so the verbs stay locked.
+     */
+    public function test_merge_target_size_strings_match_compress_bytes(): void
+    {
+        foreach (['1MB', '50MB', '1.5GB', '1TB', '2048', '512KB'] as $size) {
+            $captured = [];
+            $pathA = self::writeTempFile('a');
+            $pathB = self::writeTempFile('b');
+            $http = self::stubClient([
+                self::uploadResponse('01936fb1-7bb3-7000-8000-0000000000a1', 'a.mp4', 'video/mp4', 1),
+                self::uploadResponse('01936fb1-7bb3-7000-8000-0000000000b2', 'b.mp4', 'video/mp4', 1),
+                self::workflowCreatedResponse('01936fb2-0000-7000-8000-000000000a0a'),
+            ], $captured);
+            self::makeClient($http)
+                ->merge([$pathA, $pathB], new MergeOptions(mediaKind: 'video', targetSize: $size))
+                ->submit(new SubmitOptions(webhook: 'https://example.com/cb'));
+            $opts = $this->assertMergeShapeAndReturnMergeJob(self::decodeJson($captured[2]), 2)['operations'][0]['options'];
+            $this->assertSame(PresetResolver::parseTargetSize($size), $opts['target_size_bytes'], $size);
+        }
+        $this->assertSame(1_048_576, PresetResolver::parseTargetSize('1MB'));
     }
 
     public function test_bare_string_in_merge_auto_wraps_via_path_asset(): void

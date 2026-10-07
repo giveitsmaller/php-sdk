@@ -51,16 +51,9 @@ final class MergeOptions
          * Target output size. Lowered to wire `target_size_bytes`, and the SDK also
          * sets `encoding_mode: 'target_size'` alongside it.
          *
-         * UNITS ARE DECIMAL HERE (1 KB = 1000), UNLIKE compress. The compress
-         * `targetSize` parses the same strings as BINARY (1 KB = 1024), so '50MB' is
-         * 50,000,000 bytes on a merge and 52,428,800 on a compress. That divergence is
-         * NOT deliberate — it contradicts the pinned convention that every
-         * human-readable size string in this SDK is binary — and it has a sharp edge:
-         * the contract floor for `target_size_bytes` is 1 MiB (1,048,576), so '1MB'
-         * here resolves to 1,000,000 and is rejected as below the minimum. Prefer an
-         * explicit byte count until this is reconciled. Tracked by YOCz0i74; changing
-         * it moves bytes for existing callers, so it is a deliberate decision rather
-         * than a silent correction.
+         * Units are BINARY (1 KB = 1024; B/KB/MB/GB/TB), exactly as the compress
+         * targetSize — one shared parser, so '50MB' is 52,428,800 bytes on both and
+         * '1MB' is the contract floor (1 MiB). Merge parsed decimal before YOCz0i74.
          *
          * NOT AVAILABLE FOR LONG INPUTS. Merges whose summed input duration routes to
          * the long-form Fargate path reject both keys — that path is single-pass-CRF
