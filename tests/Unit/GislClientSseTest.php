@@ -7,6 +7,7 @@ namespace Gisl\Sdk\Tests\Unit;
 use Gisl\Sdk\Errors\GislAuthError;
 use Gisl\Sdk\GislClient;
 use Gisl\Sdk\GislClientConfig;
+use Gisl\Generated\OpenApi\Model\SseEventType;
 use Gisl\Sdk\GislSseEvent;
 use Gisl\Sdk\GislSseParseFailure;
 use GuzzleHttp\Psr7\HttpFactory;
@@ -161,9 +162,11 @@ final class GislClientSseTest extends TestCase
 
         self::assertCount(2, $events);
         self::assertInstanceOf(GislSseEvent::class, $events[0]);
-        self::assertSame('progress', $events[0]->event);
+        self::assertSame(GislSseEvent::UNKNOWN, $events[0]->event);
+        self::assertSame('progress', $events[0]->name);
         self::assertSame(['percent' => 50], $events[0]->data);
-        self::assertSame('complete', $events[1]->event);
+        self::assertSame(GislSseEvent::UNKNOWN, $events[1]->event);
+        self::assertSame('complete', $events[1]->name);
         self::assertSame(['output' => 'x'], $events[1]->data);
     }
 
@@ -212,7 +215,8 @@ final class GislClientSseTest extends TestCase
         $events = $this->collect($client->streamEvents(self::HARNESS_WORKFLOW_ID));
 
         self::assertCount(1, $events);
-        self::assertSame('x', $events[0]->event);
+        self::assertSame(GislSseEvent::UNKNOWN, $events[0]->event);
+        self::assertSame('x', $events[0]->name);
         self::assertSame(['k' => 'v'], $events[0]->data);
     }
 
@@ -283,10 +287,12 @@ final class GislClientSseTest extends TestCase
         $events = $this->collect($client->streamEvents(self::HARNESS_WORKFLOW_ID));
 
         self::assertCount(1, $events);
-        self::assertSame('progress', $events[0]->event);
+        self::assertSame(GislSseEvent::UNKNOWN, $events[0]->event);
+        self::assertSame('progress', $events[0]->name);
         self::assertSame(['percent' => 50], $events[0]->data);
 
-        // GislSseEvent has exactly two readonly props: `event` + `data`.
+        // GislSseEvent has exactly three readonly props: `event`, `data` and
+        // `name` (the raw frame name on the unknown arm, 5CJkDr8s).
         // Reflection asserts no `id` / `retry` got smuggled on as
         // dynamic properties (PHP 8.2+ deprecates those, but a future
         // refactor adding them as #[\AllowDynamicProperties] would
@@ -297,7 +303,7 @@ final class GislClientSseTest extends TestCase
             $reflection->getProperties(),
         );
         \sort($propNames);
-        self::assertSame(['data', 'event'], $propNames);
+        self::assertSame(['data', 'event', 'name'], $propNames);
     }
 
     public function testMalformedJsonFrameIsSkippedNotThrown(): void
@@ -313,7 +319,8 @@ final class GislClientSseTest extends TestCase
         $events = $this->collect($client->streamEvents(self::HARNESS_WORKFLOW_ID));
 
         self::assertCount(1, $events);
-        self::assertSame('good', $events[0]->event);
+        self::assertSame(GislSseEvent::UNKNOWN, $events[0]->event);
+        self::assertSame('good', $events[0]->name);
         self::assertSame(['ok' => true], $events[0]->data);
     }
 
@@ -341,8 +348,10 @@ final class GislClientSseTest extends TestCase
         );
 
         self::assertCount(2, $events);
-        self::assertSame('good1', $events[0]->event);
-        self::assertSame('good2', $events[1]->event);
+        self::assertSame(GislSseEvent::UNKNOWN, $events[0]->event);
+        self::assertSame('good1', $events[0]->name);
+        self::assertSame(GislSseEvent::UNKNOWN, $events[1]->event);
+        self::assertSame('good2', $events[1]->name);
 
         self::assertCount(1, $failures);
         self::assertInstanceOf(GislSseParseFailure::class, $failures[0]);
@@ -593,8 +602,10 @@ final class GislClientSseTest extends TestCase
         $readCallsOnBreak = $stream->readCalls;
 
         self::assertCount(2, $collected);
-        self::assertSame('e1', $collected[0]->event);
-        self::assertSame('e2', $collected[1]->event);
+        self::assertSame(GislSseEvent::UNKNOWN, $collected[0]->event);
+        self::assertSame('e1', $collected[0]->name);
+        self::assertSame(GislSseEvent::UNKNOWN, $collected[1]->event);
+        self::assertSame('e2', $collected[1]->name);
 
         // After the break the generator goes out of scope. We assert
         // the read count did NOT advance to consume frames 3-5: a
@@ -606,5 +617,73 @@ final class GislClientSseTest extends TestCase
             $readCallsOnBreak,
             "Generator should not pre-read frames 3-5 after caller breaks; saw {$readCallsOnBreak} reads.",
         );
+    }
+    // 5CJkDr8s — parity with TS iOcpCt6L: a non-contract name is the
+    // `unknown` event carrying the raw name; contract events have no name.
+
+    public function testUnrecognisedNameBecomesUnknownEventWithRawName(): void
+    {
+        $body = "event: operation.queued\ndata: {\"q\":3}\n\n";
+        $client = $this->makeClient($this->stubClient([$this->sseResponse($body)]));
+
+        $events = $this->collect($client->streamEvents(self::HARNESS_WORKFLOW_ID));
+
+        self::assertCount(1, $events);
+        self::assertSame('unknown', $events[0]->event);
+        self::assertSame('operation.queued', $events[0]->name);
+        self::assertSame(['q' => 3], $events[0]->data);
+    }
+
+    public function testNamelessFrameIsUnknownNamedMessage(): void
+    {
+        $body = "data: {\"hello\":\"world\"}\n\n";
+        $client = $this->makeClient($this->stubClient([$this->sseResponse($body)]));
+
+        $events = $this->collect($client->streamEvents(self::HARNESS_WORKFLOW_ID));
+
+        self::assertCount(1, $events);
+        self::assertSame('unknown', $events[0]->event);
+        self::assertSame('message', $events[0]->name);
+    }
+
+    public function testLiteralUnknownServerEventKeepsItsNameOnTheUnknownArm(): void
+    {
+        $body = "event: unknown\ndata: {\"b\":2}\n\n";
+        $client = $this->makeClient($this->stubClient([$this->sseResponse($body)]));
+
+        $events = $this->collect($client->streamEvents(self::HARNESS_WORKFLOW_ID));
+
+        self::assertCount(1, $events);
+        self::assertSame('unknown', $events[0]->event);
+        self::assertSame('unknown', $events[0]->name);
+    }
+
+    public function testEveryContractEventKeepsItsNameAndHasNullName(): void
+    {
+        $body = '';
+        foreach (GislSseEvent::NAMED_EVENTS as $i => $name) {
+            $body .= "event: {$name}\ndata: {\"i\":{$i}}\n\n";
+        }
+        $client = $this->makeClient($this->stubClient([$this->sseResponse($body)]));
+
+        $events = $this->collect($client->streamEvents(self::HARNESS_WORKFLOW_ID));
+
+        self::assertCount(8, $events);
+        foreach (GislSseEvent::NAMED_EVENTS as $i => $name) {
+            self::assertSame($name, $events[$i]->event);
+            self::assertNull($events[$i]->name);
+            self::assertSame(['i' => $i], $events[$i]->data);
+        }
+    }
+
+    public function testNamedEventsMatchTheGeneratedContractEnum(): void
+    {
+        // Drift tripwire: a contract that adds or removes an SSE event fails
+        // here until NAMED_EVENTS (and the TS twin in sse.ts) follow.
+        $contract = SseEventType::getAllowableEnumValues();
+        $named = GislSseEvent::NAMED_EVENTS;
+        \sort($contract);
+        \sort($named);
+        self::assertSame($contract, $named);
     }
 }

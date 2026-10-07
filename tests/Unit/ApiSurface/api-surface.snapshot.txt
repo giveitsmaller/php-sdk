@@ -103,6 +103,8 @@ const Gisl\Sdk\GislClientConfig::DEFAULT_MULTIPART_MAX_ATTEMPTS = 3
 const Gisl\Sdk\GislClientConfig::DEFAULT_MULTIPART_RETRY_BASE_MS = 500
 const Gisl\Sdk\GislClientConfig::DEFAULT_MULTIPART_THRESHOLD_BYTES = 10000000
 const Gisl\Sdk\GislClientConfig::DEFAULT_TIMEOUT_MS = 30000
+const Gisl\Sdk\GislSseEvent::NAMED_EVENTS = ["operation.progress","operation.completed","operation.failed","job.completed","job.failed","workflow.completed","workflow.failed","workflow.partially_failed"]
+const Gisl\Sdk\GislSseEvent::UNKNOWN = "unknown"
 const Gisl\Sdk\WorkflowConstants::DEFAULT_POLL_INTERVAL_MS = 2000
 const Gisl\Sdk\WorkflowConstants::DEFAULT_POLL_TIMEOUT_MS = 600000
 const Gisl\Sdk\WorkflowConstants::TERMINAL_STATUSES = ["completed","failed","partially_failed","cancelled","expired","paused_insufficient_credits"]
@@ -783,6 +785,7 @@ readonly property Gisl\Sdk\GislClientConfig::$timeoutMs : int
 readonly property Gisl\Sdk\GislClientConfig::$useSessionCookie : bool
 readonly property Gisl\Sdk\GislSseEvent::$data : mixed
 readonly property Gisl\Sdk\GislSseEvent::$event : string
+readonly property Gisl\Sdk\GislSseEvent::$name : ?string
 readonly property Gisl\Sdk\GislSseParseFailure::$error : string
 readonly property Gisl\Sdk\GislSseParseFailure::$event : string
 readonly property Gisl\Sdk\GislSseParseFailure::$raw : string

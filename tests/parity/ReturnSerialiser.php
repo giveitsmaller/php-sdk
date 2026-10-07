@@ -68,7 +68,10 @@ final class ReturnSerialiser
             ];
         }
         if ($value instanceof GislSseEvent) {
-            return ['event' => $value->event, 'data' => $value->data];
+            // `name` only on the unknown arm, as in TS (absent, not null, on a named event).
+            return $value->name === null
+                ? ['event' => $value->event, 'data' => $value->data]
+                : ['event' => $value->event, 'name' => $value->name, 'data' => $value->data];
         }
         // Ergonomic-layer wrappers (PHP P2 / 7QXkzoIi). Their `toArray()`
         // projections already emit camelCase keys with absent-optional keys

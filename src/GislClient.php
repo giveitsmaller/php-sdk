@@ -1909,9 +1909,13 @@ class GislClient
         }
 
         // Per SSE spec: an event with no `event:` field defaults to
-        // "message". Mirrors the TS reference at sse.ts:50.
+        // "message". A name outside the contract (that one included) becomes
+        // the `unknown` event carrying the raw name — same as TS sse.ts.
         $name = $eventType !== '' ? $eventType : 'message';
-        return new GislSseEvent(event: $name, data: $decoded);
+        if (\in_array($name, GislSseEvent::NAMED_EVENTS, true)) {
+            return new GislSseEvent(event: $name, data: $decoded);
+        }
+        return new GislSseEvent(event: GislSseEvent::UNKNOWN, data: $decoded, name: $name);
     }
 
     /**

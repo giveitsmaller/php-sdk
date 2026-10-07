@@ -797,7 +797,11 @@ final class Invoke
                 /** @var list<array<string, mixed>> $events */
                 $events = [];
                 foreach ($generator as $event) {
-                    $events[] = ['event' => $event->event, 'data' => $event->data];
+                    // `name` only on the unknown arm (5CJkDr8s): TS has no
+                    // `name` key on a contract event, so neither do we.
+                    $events[] = $event->name === null
+                        ? ['event' => $event->event, 'data' => $event->data]
+                        : ['event' => $event->event, 'name' => $event->name, 'data' => $event->data];
                 }
                 return $events;
 
