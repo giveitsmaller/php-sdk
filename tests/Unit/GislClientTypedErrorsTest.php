@@ -297,6 +297,64 @@ final class GislClientTypedErrorsTest extends TestCase
         }
     }
 
+    /**
+     * 82hI8dcQ — a tier this SDK does not know yet (a rename or a new tier,
+     * before a re-vendor) keeps the typed error and the raw value, at all
+     * three tier sites. PHP was always tolerant here; TS now matches. The
+     * sentinel is permanently unknown, so these cannot pass by accident after
+     * a re-vendor adds a tier.
+     *
+     * @return iterable<string, array{int, array<string, mixed>, class-string, string}>
+     */
+    public static function unknownTierProvider(): iterable
+    {
+        yield 'tier_restriction' => [403, [
+            'success' => false,
+            'error' => 'tier_restriction',
+            'error_type' => 'tier_restriction',
+            'restriction_kind' => 'mime_type',
+            'current_tier' => 'not_a_real_tier',
+            'required_tier' => 'pro',
+        ], GislTierRestrictedError::class, TierRestrictionResponse::class];
+        yield 'upload_size_exceeds_tier' => [422, [
+            'success' => false,
+            'error' => 'Upload exceeds the size cap for your tier',
+            'error_type' => 'upload_size_exceeds_tier',
+            'current_tier' => 'not_a_real_tier',
+            'max_size_bytes' => 1048576,
+            'required_tier' => 'pro',
+        ], GislUploadCapExceededError::class, UploadSizeExceedsTierResponse::class];
+        yield 'upload_duration_exceeds_tier' => [422, [
+            'success' => false,
+            'error' => 'Upload exceeds the duration cap for your tier',
+            'error_type' => 'upload_duration_exceeds_tier',
+            'current_tier' => 'not_a_real_tier',
+            'max_duration_seconds' => 300,
+            'required_tier' => 'pro',
+        ], GislUploadCapExceededError::class, UploadDurationExceedsTierResponse::class];
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     * @param class-string $errorClass
+     * @param class-string $payloadClass
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('unknownTierProvider')]
+    public function testUnknownTierKeepsTheTypedError(int $status, array $body, string $errorClass, string $payloadClass): void
+    {
+        $http = $this->stubClient([$this->jsonResponse($status, $body)]);
+        $client = $this->makeClient($http);
+
+        try {
+            $client->getWorkflowStatus(self::HARNESS_WORKFLOW_ID);
+            self::fail('Expected ' . $errorClass);
+        } catch (\Throwable $e) {
+            self::assertInstanceOf($errorClass, $e);
+            self::assertInstanceOf($payloadClass, $e->typedPayload);
+            self::assertSame('not_a_real_tier', $e->typedPayload->getCurrentTier());
+        }
+    }
+
     public function testFeatureTierRestrictedDispatch(): void
     {
         $captured = [];
