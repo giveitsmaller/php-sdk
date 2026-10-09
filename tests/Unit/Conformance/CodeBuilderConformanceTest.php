@@ -209,7 +209,11 @@ final class CodeBuilderConformanceTest extends TestCase
             /** @var array<string, array<string, mixed>> $options */
             $options = $mg['options'] ?? [];
             foreach ($options as $key => $opt) {
-                $availability = \is_string($opt['availability'] ?? null) ? $opt['availability'] : 'stable';
+                // No availability of its own -> inherit the media group's (a planned group's
+                // options derive coming_soon: compress.document_pdf, contracts v2.227.0).
+                $availability = \is_string($opt['availability'] ?? null)
+                    ? $opt['availability']
+                    : (\is_string($mg['availability'] ?? null) ? $mg['availability'] : 'stable');
                 $expected = self::EXPOSURE_BY_AVAILABILITY[$availability] ?? null;
                 self::assertNotNull($expected, "unknown availability '{$availability}' for compress option '{$key}'");
                 self::assertSame(
