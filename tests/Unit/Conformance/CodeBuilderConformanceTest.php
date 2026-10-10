@@ -60,13 +60,17 @@ final class CodeBuilderConformanceTest extends TestCase
 
     /**
      * DEFERRED_EXPOSURE: expose+contract compress options reachable by NO verb today.
-     * Drift-guarded below. EMPTY since f3JiTxkK: document `quality` (its only former
+     * Drift-guarded below. Empty from f3JiTxkK until oavTfC6C: document `quality` (its only former
      * entries) is now native in KNOWN_WIRE_FIELDS. A new entry here is a deliberate
      * deferral.
      *
      * @var array<string, list<string>>
      */
-    private const DEFERRED_EXPOSURE = [];
+    // oavTfC6C: compress.document_pdf went planned -> beta at contracts v2.228.0; the SDK has
+    // no document_pdf compress surface yet. Deliberate deferral until the card lands.
+    private const DEFERRED_EXPOSURE = [
+        'document_pdf' => ['quality', 'max_image_dimension'],
+    ];
 
     /**
      * PRE_EXPOSED: keys KNOWN_WIRE_FIELDS allows AHEAD of the contract (contract marks
