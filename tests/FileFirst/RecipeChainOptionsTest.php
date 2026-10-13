@@ -52,7 +52,7 @@ final class RecipeChainOptionsTest extends TestCase
     }
 
     /**
-     * @param 'image'|'audio'|'video'|'document_office'|'document_odf'|'document_epub' $media
+     * @param 'image'|'audio'|'video'|'document_office'|'document_odf'|'document_epub'|'document_pdf' $media
      * @param array<string, mixed> $explicit
      * @param array<string, mixed>|null $presetOverrides
      *
@@ -244,7 +244,7 @@ final class RecipeChainOptionsTest extends TestCase
     {
         // f3JiTxkK: `quality` is the one stable document compress option; it used
         // to be refused as unknown_field. Mirrors the TS file-first test.
-        foreach (['report.docx', 'sheet.ods', 'book.epub'] as $path) {
+        foreach (['report.docx', 'sheet.ods', 'book.epub', 'report.pdf'] as $path) {
             $ops = $this->operations($this->recipe($path)->compress(null, ['quality' => 40]));
             self::assertSame([['type' => 'compress', 'options' => ['quality' => 40]]], $ops, $path);
         }
@@ -416,22 +416,48 @@ final class RecipeChainOptionsTest extends TestCase
     }
 
     #[Test]
-    public function compress_on_pdf_fails_fast_pdf_compress_removed(): void
+    public function pdf_compress_lowers_explicit_quality_and_max_image_dimension_to_snake_case(): void
     {
-        // PDF is a DETECTABLE media (document_pdf) but no longer compressible
-        // (contracts v2.166.0 dropped PDF lossy compress). Unlike a truly
-        // media-unknown input, a PDF fails fast with a specific, actionable
-        // message even WITHOUT optimize — mirrors the TS builder fail-fast test.
-        $recipe = (new Recipe(FileInput::path('report.pdf')))->compress(null, ['crf' => 23]);
+        // oavTfC6C: compress.document_pdf is beta at contracts v2.228.0 and the SDK
+        // accepts it again. The camelCase alias lowers to the snake_case wire key;
+        // no optimize means no preset layer, so nothing else is added.
+        $ops = $this->operations(
+            $this->recipe('report.pdf')->compress(null, ['quality' => 40, 'maxImageDimension' => 900]),
+        );
+        self::assertSame(
+            [['type' => 'compress', 'options' => ['quality' => 40, 'max_image_dimension' => 900]]],
+            $ops,
+        );
+    }
+
+    #[Test]
+    public function pdf_compress_size_lowers_the_shipped_pdf_size_cell(): void
+    {
+        $ops = $this->operations($this->recipe('report.pdf')->compress(OptimizeFor::Size));
+        self::assertSame([['type' => 'compress', 'options' => ['quality' => 50, 'max_image_dimension' => 1200]]], $ops);
+        self::assertSame($this->expectedCompressWire('document_pdf', OptimizeFor::Size), $ops[0]['options']);
+    }
+
+    #[Test]
+    public function pdf_compress_quality_level_with_an_explicit_override_explicit_wins(): void
+    {
+        $ops = $this->operations(
+            $this->recipe('report.pdf')->compress(OptimizeFor::Quality, ['max_image_dimension' => 5000]),
+        );
+        self::assertSame([['type' => 'compress', 'options' => ['quality' => 85, 'max_image_dimension' => 5000]]], $ops);
+    }
+
+    #[Test]
+    public function pdf_compress_refuses_a_key_pdf_does_not_define(): void
+    {
+        // PDF compress used to fail fast as unsupported_media; it is a real media
+        // now, so a foreign key (here a video key) is an ordinary unknown_field.
+        $recipe = $this->recipe('report.pdf')->compress(null, ['crf' => 23]);
         try {
             $recipe->toWorkflowPayload(self::FILE_ID);
-            self::fail('compress() on a PDF must fail fast (PDF compression removed)');
+            self::fail('compress() on a PDF with a non-PDF key must throw');
         } catch (GislConfigError $err) {
-            self::assertSame('unsupported_media', $err->reason);
-            self::assertStringContainsString(
-                'PDF compression was removed at contracts v2.166.0',
-                $err->getMessage(),
-            );
+            self::assertSame('unknown_field', $err->reason);
         }
     }
 

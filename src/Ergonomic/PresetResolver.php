@@ -11,6 +11,7 @@ use Gisl\Sdk\Preset\AudioCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions;
+use Gisl\Sdk\Preset\DocumentPdfCompressPresetOptions;
 use Gisl\Sdk\Preset\ImageCompressPresetOptions;
 use Gisl\Sdk\Preset\VideoCompressPresetOptions;
 use Gisl\Sdk\PresetDefaults;
@@ -82,6 +83,7 @@ final class PresetResolver
         DocumentOfficeCompressPresetOptions::class => 'document_office',
         DocumentOdfCompressPresetOptions::class => 'document_odf',
         DocumentEpubCompressPresetOptions::class => 'document_epub',
+        DocumentPdfCompressPresetOptions::class => 'document_pdf',
     ];
 
     /**
@@ -108,6 +110,7 @@ final class PresetResolver
         'stripUnusedStyles' => 'strip_unused_styles',
         'fontSubsetting' => 'font_subsetting',
         'stripUnusedCss' => 'strip_unused_css',
+        'maxImageDimension' => 'max_image_dimension',
     ];
 
     /** Binary multipliers for the targetSize parser (1 KB = 1024). Verbatim from TS. */
@@ -132,6 +135,7 @@ final class PresetResolver
         'document_office' => ['quality', 'stripMacros', 'stripHiddenData', 'stripUnusedFonts'],
         'document_odf' => ['quality', 'stripMetadata', 'stripUnusedStyles'],
         'document_epub' => ['quality', 'fontSubsetting', 'stripUnusedCss'],
+        'document_pdf' => ['quality', 'maxImageDimension'],
     ];
 
     /**
@@ -196,6 +200,7 @@ final class PresetResolver
         'document_office' => ['quality', 'strip_macros', 'strip_hidden_data', 'strip_unused_fonts'],
         'document_odf' => ['quality', 'strip_metadata', 'strip_unused_styles'],
         'document_epub' => ['quality', 'font_subsetting', 'strip_unused_css'],
+        'document_pdf' => ['quality', 'max_image_dimension'],
     ];
 
     /**
@@ -224,6 +229,7 @@ final class PresetResolver
         'document_office' => ['strip_hidden_data', 'strip_macros', 'strip_unused_fonts'],
         'document_odf' => ['strip_metadata', 'strip_unused_styles'],
         'document_epub' => ['font_subsetting', 'strip_unused_css'],
+        'document_pdf' => [],
     ];
 
     private function __construct()
@@ -259,12 +265,6 @@ final class PresetResolver
         array $explicitOptions,
         ?bool $audioLossless = null,
     ): array {
-        if ($media === 'document_pdf') {
-            throw new GislConfigError(
-                'PDF compression was removed at contracts v2.166.0; convert() / transform() still accept PDF.',
-                reason: 'unsupported_media',
-            );
-        }
         if (!isset(self::MEDIA_FIELDS[$media])) {
             throw new GislConfigError(
                 "Preset resolution received an unknown compress media '{$media}'.",
@@ -501,6 +501,7 @@ final class PresetResolver
             'document_office' => DocumentOfficeCompressPresetOptions::shippedDefaultsFor($optimize),
             'document_odf' => DocumentOdfCompressPresetOptions::shippedDefaultsFor($optimize),
             'document_epub' => DocumentEpubCompressPresetOptions::shippedDefaultsFor($optimize),
+            'document_pdf' => DocumentPdfCompressPresetOptions::shippedDefaultsFor($optimize),
             default => throw new GislConfigError(
                 "Preset resolution received an unknown compress media '{$media}'.",
                 reason: 'unknown_media',

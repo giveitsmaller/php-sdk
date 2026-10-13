@@ -342,7 +342,7 @@ final class RecipeTest extends TestCase
     }
 
     /**
-     * @param 'image'|'audio'|'video'|'document_office'|'document_odf'|'document_epub' $media
+     * @param 'image'|'audio'|'video'|'document_office'|'document_odf'|'document_epub'|'document_pdf' $media
      * @return array<string, mixed>
      */
     private function expectedCompressWire(string $media, OptimizeFor $optimize): array

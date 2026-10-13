@@ -17,6 +17,7 @@ use Gisl\Sdk\Preset\AudioCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions;
+use Gisl\Sdk\Preset\DocumentPdfCompressPresetOptions;
 use Gisl\Sdk\Preset\ImageCompressPresetOptions;
 use Gisl\Sdk\Preset\VideoCompressPresetOptions;
 use Gisl\Sdk\PresetDefaults;
@@ -841,7 +842,7 @@ final class PresetResolverTest extends TestCase
     {
         // The compress resolver range-checks no option (image `quality: 101`
         // passes too); the contract's 1-100 bound is enforced by the api.
-        foreach (['image', 'document_office', 'document_odf', 'document_epub'] as $media) {
+        foreach (['image', 'document_office', 'document_odf', 'document_epub', 'document_pdf'] as $media) {
             $out = PresetResolver::resolveCompress($media, null, null, null, null, ['quality' => 101]);
             $this->assertSame(101, $out['wireOptions']['quality'], $media);
         }
@@ -909,6 +910,7 @@ final class PresetResolverTest extends TestCase
             ['document_office_compress', PresetDefaults::create()->officeCompress(OptimizeFor::Size, new DocumentOfficeCompressPresetOptions(quality: 20)), PresetDefaults::create()->officeCompress(OptimizeFor::Size, new DocumentOfficeCompressPresetOptions(stripMacros: true))],
             ['document_odf_compress', PresetDefaults::create()->odfCompress(OptimizeFor::Size, new DocumentOdfCompressPresetOptions(quality: 20)), PresetDefaults::create()->odfCompress(OptimizeFor::Size, new DocumentOdfCompressPresetOptions(stripMetadata: true))],
             ['document_epub_compress', PresetDefaults::create()->epubCompress(OptimizeFor::Size, new DocumentEpubCompressPresetOptions(quality: 20)), PresetDefaults::create()->epubCompress(OptimizeFor::Size, new DocumentEpubCompressPresetOptions(stripUnusedCss: true))],
+            ['document_pdf_compress', PresetDefaults::create()->pdfCompress(OptimizeFor::Size, new DocumentPdfCompressPresetOptions(quality: 20)), PresetDefaults::create()->pdfCompress(OptimizeFor::Size, new DocumentPdfCompressPresetOptions(maxImageDimension: 640))],
         ];
         foreach ($cases as [$key, $parent, $child]) {
             $cell = PresetDefaults::merge($parent, $child)->cellFor($key, OptimizeFor::Size);
@@ -916,5 +918,167 @@ final class PresetResolverTest extends TestCase
             $this->assertObjectHasProperty('quality', $cell, $key);
             $this->assertSame(20, $cell->quality, $key);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // PDF compress (oavTfC6C). compress.document_pdf went planned -> beta at
+    // contracts v2.228.0 with two options, `quality` and `max_image_dimension`,
+    // both acting on the images inside the PDF. Unlike the other document media
+    // its shipped cells are NOT planned-dropped, so an optimize level genuinely
+    // moves the wire. Mirrors the TS `resolveCompressOptions — document_pdf` block.
+    // -----------------------------------------------------------------------
+
+    /**
+     * @return array<string, array{OptimizeFor, int, int}>
+     */
+    public static function pdfLevels(): array
+    {
+        return [
+            'Size' => [OptimizeFor::Size, 50, 1200],
+            'Balanced' => [OptimizeFor::Balanced, 70, 1600],
+            'Quality' => [OptimizeFor::Quality, 85, 2400],
+        ];
+    }
+
+    #[DataProvider('pdfLevels')]
+    public function testPdfOptimizeLevelResolvesTheShippedCell(OptimizeFor $level, int $quality, int $maxImageDimension): void
+    {
+        $out = PresetResolver::resolveCompress('document_pdf', null, null, null, $level, []);
+        $this->assertSame(['quality' => $quality, 'max_image_dimension' => $maxImageDimension], $out['wireOptions']);
+        $sdkDefault = $out['resolvedOptions']->sources->sdkDefault;
+        \sort($sdkDefault);
+        $this->assertSame(['max_image_dimension', 'quality'], $sdkDefault);
+        $this->assertSame($level->value, $out['resolvedOptions']->preset);
+    }
+
+    public function testPdfNoOptimizeSendsOnlyTheExplicitKeys(): void
+    {
+        $out = PresetResolver::resolveCompress('document_pdf', null, null, null, null, ['quality' => 40]);
+        $this->assertSame(['quality' => 40], $out['wireOptions']);
+        $this->assertSame(['quality'], $out['resolvedOptions']->sources->explicit);
+    }
+
+    public function testPdfCamelMaxImageDimensionIsAliasedToSnakeWire(): void
+    {
+        $out = PresetResolver::resolveCompress('document_pdf', null, null, null, null, ['maxImageDimension' => 900]);
+        $this->assertSame(['max_image_dimension' => 900], $out['wireOptions']);
+        $this->assertArrayNotHasKey('maxImageDimension', $out['wireOptions']);
+        $this->assertSame(['max_image_dimension'], $out['resolvedOptions']->sources->explicit);
+    }
+
+    public function testPdfSnakeMaxImageDimensionPassesThroughVerbatim(): void
+    {
+        $out = PresetResolver::resolveCompress('document_pdf', null, null, null, null, ['max_image_dimension' => 700, 'quality' => 30]);
+        $this->assertEquals(['max_image_dimension' => 700, 'quality' => 30], $out['wireOptions']);
+    }
+
+    public function testPdfExplicitKeyOverridesTheOptimizeCellFieldByField(): void
+    {
+        $out = PresetResolver::resolveCompress('document_pdf', null, null, null, OptimizeFor::Quality, ['maxImageDimension' => 4000]);
+        $this->assertEquals(['quality' => 85, 'max_image_dimension' => 4000], $out['wireOptions']);
+        $this->assertSame(['max_image_dimension'], $out['resolvedOptions']->sources->explicit);
+        $this->assertSame(['quality'], $out['resolvedOptions']->sources->sdkDefault);
+    }
+
+    public function testPdfShapedArrayOverrideIsLayeredUnderTheExplicitKeys(): void
+    {
+        $out = PresetResolver::resolveCompress(
+            'document_pdf',
+            null,
+            null,
+            ['quality' => 35, 'maxImageDimension' => 1000],
+            OptimizeFor::Balanced,
+            ['quality' => 60],
+        );
+        $this->assertEquals(['quality' => 60, 'max_image_dimension' => 1000], $out['wireOptions']);
+        $this->assertSame(['max_image_dimension'], $out['resolvedOptions']->sources->callPresetOverride);
+        $this->assertSame(['quality'], $out['resolvedOptions']->sources->explicit);
+    }
+
+    public function testPdfDtoOverrideReachesTheWire(): void
+    {
+        $out = PresetResolver::resolveCompress(
+            'document_pdf',
+            null,
+            null,
+            new DocumentPdfCompressPresetOptions(maxImageDimension: 1000),
+            OptimizeFor::Balanced,
+            [],
+        );
+        $this->assertEquals(['quality' => 70, 'max_image_dimension' => 1000], $out['wireOptions']);
+    }
+
+    public function testPdfRefusesAKeyPdfCompressDoesNotDefine(): void
+    {
+        try {
+            PresetResolver::resolveCompress('document_pdf', null, null, null, null, ['quality' => 40, 'strip_macros' => true]);
+            $this->fail('expected GislConfigError');
+        } catch (GislConfigError $e) {
+            $this->assertSame('unknown_field', $e->reason);
+            $this->assertSame(['strip_macros'], $e->conflictingFields);
+        }
+    }
+
+    public function testMaxImageDimensionIsRefusedForAMediaThatDoesNotDefineIt(): void
+    {
+        try {
+            PresetResolver::resolveCompress('document_epub', null, null, null, null, ['maxImageDimension' => 900]);
+            $this->fail('expected GislConfigError');
+        } catch (GislConfigError $e) {
+            $this->assertSame('unknown_field', $e->reason);
+            $this->assertSame(['max_image_dimension'], $e->conflictingFields);
+        }
+    }
+
+    /**
+     * Pins MEDIA_FIELDS['document_pdf']: without `maxImageDimension` there the
+     * key belongs to no media and this degrades to a bare unknown_field.
+     */
+    public function testPdfShapedOverrideOnAnEpubOpNamesThePdfDto(): void
+    {
+        try {
+            PresetResolver::resolveCompress('document_epub', null, null, ['maxImageDimension' => 1200], null, []);
+            $this->fail('expected GislConfigError');
+        } catch (GislConfigError $e) {
+            $this->assertSame('type_mismatch', $e->reason);
+            $this->assertSame(['maxImageDimension'], $e->conflictingFields);
+            $this->assertStringContainsString('DocumentPdfCompressPresetOptions', (string) $e->suggestion);
+        }
+    }
+
+    public function testPdfDtoOnAnEpubOpIsRejectedByTheClassGuard(): void
+    {
+        try {
+            PresetResolver::resolveCompress('document_epub', null, null, new DocumentPdfCompressPresetOptions(quality: 40), null, []);
+            $this->fail('expected GislConfigError');
+        } catch (GislConfigError $e) {
+            $this->assertSame('type_mismatch', $e->reason);
+            $this->assertSame(['presetOverrides'], $e->conflictingFields);
+            $this->assertStringContainsString("media 'document_pdf'", $e->getMessage());
+        }
+    }
+
+    #[DataProvider('pdfLevels')]
+    public function testPdfClientDefaultOverridesThatCellAndTheRestSurvives(OptimizeFor $level, int $quality, int $maxImageDimension): void
+    {
+        $defaults = PresetDefaults::create()->pdfCompress($level, new DocumentPdfCompressPresetOptions(maxImageDimension: 512));
+        $out = PresetResolver::resolveCompress('document_pdf', $defaults, null, null, $level, []);
+        $this->assertEquals(['quality' => $quality, 'max_image_dimension' => 512], $out['wireOptions']);
+        $this->assertSame(['max_image_dimension'], $out['resolvedOptions']->sources->clientDefault);
+        $this->assertMatchesRegularExpression('/^sha256:[0-9a-f]{64}$/', (string) $out['resolvedOptions']->presetConfigHash);
+    }
+
+    public function testPdfClientDefaultAtAnotherLevelDoesNotApply(): void
+    {
+        $defaults = PresetDefaults::create()->pdfCompress(OptimizeFor::Quality, new DocumentPdfCompressPresetOptions(quality: 99));
+        $out = PresetResolver::resolveCompress('document_pdf', $defaults, null, null, OptimizeFor::Size, []);
+        $this->assertEquals(['quality' => 50, 'max_image_dimension' => 1200], $out['wireOptions']);
+    }
+
+    public function testExplicitQualityBeatsThePdfClientDefault(): void
+    {
+        $defaults = PresetDefaults::create()->pdfCompress(OptimizeFor::Size, new DocumentPdfCompressPresetOptions(quality: 35));
+        $out = PresetResolver::resolveCompress('document_pdf', $defaults, null, null, OptimizeFor::Size, ['quality' => 70]);
+        $this->assertEquals(['quality' => 70, 'max_image_dimension' => 1200], $out['wireOptions']);
     }
 }

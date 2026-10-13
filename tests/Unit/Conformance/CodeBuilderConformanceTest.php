@@ -60,17 +60,13 @@ final class CodeBuilderConformanceTest extends TestCase
 
     /**
      * DEFERRED_EXPOSURE: expose+contract compress options reachable by NO verb today.
-     * Drift-guarded below. Empty from f3JiTxkK until oavTfC6C: document `quality` (its only former
-     * entries) is now native in KNOWN_WIRE_FIELDS. A new entry here is a deliberate
-     * deferral.
+     * Drift-guarded below. Empty: every former entry (document `quality`, then PDF
+     * `quality` and `max_image_dimension`) is now native in KNOWN_WIRE_FIELDS. A new
+     * entry here is a deliberate deferral.
      *
      * @var array<string, list<string>>
      */
-    // oavTfC6C: compress.document_pdf went planned -> beta at contracts v2.228.0; the SDK has
-    // no document_pdf compress surface yet. Deliberate deferral until the card lands.
-    private const DEFERRED_EXPOSURE = [
-        'document_pdf' => ['quality', 'max_image_dimension'],
-    ];
+    private const DEFERRED_EXPOSURE = [];
 
     /**
      * PRE_EXPOSED: keys KNOWN_WIRE_FIELDS allows AHEAD of the contract (contract marks
@@ -214,7 +210,8 @@ final class CodeBuilderConformanceTest extends TestCase
             $options = $mg['options'] ?? [];
             foreach ($options as $key => $opt) {
                 // No availability of its own -> inherit the media group's (a planned group's
-                // options derive coming_soon: compress.document_pdf, contracts v2.227.0).
+                // options derive coming_soon; compress.document_pdf did until it went beta
+                // at contracts v2.228.0).
                 $availability = \is_string($opt['availability'] ?? null)
                     ? $opt['availability']
                     : (\is_string($mg['availability'] ?? null) ? $mg['availability'] : 'stable');
@@ -338,12 +335,15 @@ final class CodeBuilderConformanceTest extends TestCase
 
     public function test_deferred_keys_are_reachable_by_no_ergonomic_surface(): void
     {
-        // Positive control (f3JiTxkK): DEFERRED_EXPOSURE is empty, so the loop below
-        // is vacuous. Document `quality`, its former entry, IS reachable now — which
-        // is exactly what the loop's assertArrayNotHasKey would reject if re-deferred.
-        foreach (['document_office', 'document_odf', 'document_epub'] as $documentGroup) {
+        // Positive control (f3JiTxkK, oavTfC6C): DEFERRED_EXPOSURE is empty, so the loop
+        // below is vacuous. Its former entries (document `quality`, then PDF `quality` +
+        // `max_image_dimension`) ARE reachable now, which is exactly what the loop's
+        // assertArrayNotHasKey would reject if they were re-deferred.
+        foreach (['document_office', 'document_odf', 'document_epub', 'document_pdf'] as $documentGroup) {
             self::assertArrayHasKey('quality', self::mediaReachableKeys($documentGroup));
         }
+        self::assertArrayHasKey('max_image_dimension', self::mediaReachableKeys('document_pdf'));
+        self::assertSame([], self::DEFERRED_EXPOSURE);
         foreach (self::DEFERRED_EXPOSURE as $media => $keys) {
             $group = null;
             foreach (\array_keys(self::compressGroups()) as $g) {

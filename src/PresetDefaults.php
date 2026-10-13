@@ -9,6 +9,7 @@ use Gisl\Sdk\Preset\AudioCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions;
+use Gisl\Sdk\Preset\DocumentPdfCompressPresetOptions;
 use Gisl\Sdk\Preset\ImageCompressPresetOptions;
 use Gisl\Sdk\Preset\VideoCompressPresetOptions;
 
@@ -29,7 +30,7 @@ use Gisl\Sdk\Preset\VideoCompressPresetOptions;
  * overrides. This card ships only the typed slot + builder semantics; the
  * merge logic and `Gisl::create()` wiring land with the resolver (P6).
  *
- * @phpstan-type PresetCellDelta ImageCompressPresetOptions|AudioCompressPresetOptions|VideoCompressPresetOptions|DocumentOfficeCompressPresetOptions|DocumentOdfCompressPresetOptions|DocumentEpubCompressPresetOptions
+ * @phpstan-type PresetCellDelta ImageCompressPresetOptions|AudioCompressPresetOptions|VideoCompressPresetOptions|DocumentOfficeCompressPresetOptions|DocumentOdfCompressPresetOptions|DocumentEpubCompressPresetOptions|DocumentPdfCompressPresetOptions
  */
 final class PresetDefaults
 {
@@ -77,6 +78,11 @@ final class PresetDefaults
         return $this->with('document_epub_compress', $level, $input ?? new DocumentEpubCompressPresetOptions());
     }
 
+    public function pdfCompress(OptimizeFor $level, ?DocumentPdfCompressPresetOptions $input = null): self
+    {
+        return $this->with('document_pdf_compress', $level, $input ?? new DocumentPdfCompressPresetOptions());
+    }
+
     /**
      * Return the registered USER delta for (mediaOpKey, level), or null if
      * no delta was registered. Does NOT return shipped defaults — those
@@ -87,7 +93,7 @@ final class PresetDefaults
      *
      * @return PresetCellDelta|null
      */
-    public function cellFor(string $mediaOpKey, OptimizeFor $level): ImageCompressPresetOptions|AudioCompressPresetOptions|VideoCompressPresetOptions|DocumentOfficeCompressPresetOptions|DocumentOdfCompressPresetOptions|DocumentEpubCompressPresetOptions|null
+    public function cellFor(string $mediaOpKey, OptimizeFor $level): ImageCompressPresetOptions|AudioCompressPresetOptions|VideoCompressPresetOptions|DocumentOfficeCompressPresetOptions|DocumentOdfCompressPresetOptions|DocumentEpubCompressPresetOptions|DocumentPdfCompressPresetOptions|null
     {
         return $this->cells[self::key($mediaOpKey, $level)] ?? null;
     }
@@ -178,6 +184,11 @@ final class PresetDefaults
                     fontSubsetting: $child->fontSubsetting ?? $parent->fontSubsetting,
                     stripUnusedCss: $child->stripUnusedCss ?? $parent->stripUnusedCss,
                     quality: $child->quality ?? $parent->quality,
+                ),
+            $parent instanceof DocumentPdfCompressPresetOptions && $child instanceof DocumentPdfCompressPresetOptions
+                => new DocumentPdfCompressPresetOptions(
+                    quality: $child->quality ?? $parent->quality,
+                    maxImageDimension: $child->maxImageDimension ?? $parent->maxImageDimension,
                 ),
             default => throw new \LogicException(
                 'Preset cell merge received mismatched or unknown leaf types: '

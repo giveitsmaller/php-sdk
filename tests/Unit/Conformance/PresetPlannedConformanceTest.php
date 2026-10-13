@@ -235,6 +235,21 @@ final class PresetPlannedConformanceTest extends TestCase
         }
     }
 
+    public function test_document_pdf_preset_is_not_a_noop(): void
+    {
+        // oavTfC6C, the counterpart of the known consequence above: PDF's cells carry
+        // only non-planned keys, so every level survives the drop and the levels differ.
+        $wires = [];
+        foreach ([OptimizeFor::Size, OptimizeFor::Balanced, OptimizeFor::Quality] as $level) {
+            $wire = PresetResolver::resolveCompress('document_pdf', null, null, null, $level, [])['wireOptions'];
+            $keys = \array_keys($wire);
+            \sort($keys);
+            self::assertSame(['max_image_dimension', 'quality'], $keys, "document_pdf/{$level->value}");
+            $wires[] = \json_encode($wire);
+        }
+        self::assertCount(3, \array_unique($wires), 'every PDF optimize level must resolve to a distinct payload');
+    }
+
     // --- 2b. planned per-VALUE gating on the resolved preset media -----------
 
     /**

@@ -71,7 +71,7 @@ final class FilesRecipe
      *
      * @param array{
      *   optimize?: \Gisl\Sdk\Generated\SdkSpec\Enums\OptimizeFor|'Size'|'Balanced'|'Quality',
-     *   presetOverrides?: \Gisl\Sdk\Preset\ImageCompressPresetOptions|\Gisl\Sdk\Preset\AudioCompressPresetOptions|\Gisl\Sdk\Preset\VideoCompressPresetOptions|\Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions|\Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions|\Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions|array<string, mixed>,
+     *   presetOverrides?: \Gisl\Sdk\Preset\ImageCompressPresetOptions|\Gisl\Sdk\Preset\AudioCompressPresetOptions|\Gisl\Sdk\Preset\VideoCompressPresetOptions|\Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions|\Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions|\Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions|\Gisl\Sdk\Preset\DocumentPdfCompressPresetOptions|array<string, mixed>,
      *   quality?: int,
      *   metadata?: \Gisl\Sdk\Generated\SdkSpec\Enums\ImageMetadataPolicy|'strip'|'keep'|'all',
      *   output_format?: \Gisl\Sdk\Generated\SdkSpec\Enums\ImageFormat|'original'|'webp',
@@ -112,6 +112,8 @@ final class FilesRecipe
      *   fontSubsetting?: bool,
      *   strip_unused_css?: bool,
      *   stripUnusedCss?: bool,
+     *   max_image_dimension?: int,
+     *   maxImageDimension?: int,
      * } $options Keys are all optional so the `= []` default type-checks. The key set is
      *   what the compress preset resolver accepts, unioned across media; a key the input's
      *   media does not take throws `GislConfigError` (`unknown_field`) before any upload.

@@ -226,6 +226,7 @@ final class Gisl\Sdk\Preset\AudioCompressPresetOptions
 final class Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions
 final class Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions
 final class Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions
+final class Gisl\Sdk\Preset\DocumentPdfCompressPresetOptions
 final class Gisl\Sdk\Preset\ImageCompressPresetOptions
 final class Gisl\Sdk\Preset\PresetCellTranslator
 final class Gisl\Sdk\Preset\VideoCompressPresetOptions
@@ -530,11 +531,13 @@ method Gisl\Sdk\PresetDefaults::epubCompress()
 method Gisl\Sdk\PresetDefaults::imageCompress()
 method Gisl\Sdk\PresetDefaults::odfCompress()
 method Gisl\Sdk\PresetDefaults::officeCompress()
+method Gisl\Sdk\PresetDefaults::pdfCompress()
 method Gisl\Sdk\PresetDefaults::videoCompress()
 method Gisl\Sdk\Preset\AudioCompressPresetOptions::__construct()
 method Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions::__construct()
 method Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions::__construct()
 method Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions::__construct()
+method Gisl\Sdk\Preset\DocumentPdfCompressPresetOptions::__construct()
 method Gisl\Sdk\Preset\ImageCompressPresetOptions::__construct()
 method Gisl\Sdk\Preset\VideoCompressPresetOptions::__construct()
 method Gisl\Sdk\ProbeWaitOptions::__construct()
@@ -819,6 +822,8 @@ readonly property Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions::$quality 
 readonly property Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions::$stripHiddenData : ?bool
 readonly property Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions::$stripMacros : ?bool
 readonly property Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions::$stripUnusedFonts : ?bool
+readonly property Gisl\Sdk\Preset\DocumentPdfCompressPresetOptions::$maxImageDimension : ?int
+readonly property Gisl\Sdk\Preset\DocumentPdfCompressPresetOptions::$quality : ?int
 readonly property Gisl\Sdk\Preset\ImageCompressPresetOptions::$metadata : ?Gisl\Sdk\Generated\SdkSpec\Enums\ImageMetadataPolicy
 readonly property Gisl\Sdk\Preset\ImageCompressPresetOptions::$outputFormat : ?Gisl\Sdk\Generated\SdkSpec\Enums\ImageFormat
 readonly property Gisl\Sdk\Preset\ImageCompressPresetOptions::$quality : ?int
@@ -909,6 +914,7 @@ static method Gisl\Sdk\Preset\AudioCompressPresetOptions::shippedDefaultsFor()
 static method Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions::shippedDefaultsFor()
 static method Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions::shippedDefaultsFor()
 static method Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions::shippedDefaultsFor()
+static method Gisl\Sdk\Preset\DocumentPdfCompressPresetOptions::shippedDefaultsFor()
 static method Gisl\Sdk\Preset\ImageCompressPresetOptions::shippedDefaultsFor()
 static method Gisl\Sdk\Preset\PresetCellTranslator::bool()
 static method Gisl\Sdk\Preset\PresetCellTranslator::caseByName()

@@ -9,6 +9,7 @@ use Gisl\Sdk\Preset\AudioCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions;
+use Gisl\Sdk\Preset\DocumentPdfCompressPresetOptions;
 use Gisl\Sdk\Generated\SdkSpec\Enums\ImageFormat;
 use Gisl\Sdk\Preset\ImageCompressPresetOptions;
 use Gisl\Sdk\Preset\VideoCompressPresetOptions;
@@ -137,11 +138,11 @@ final class PresetDefaultsTest extends TestCase
     }
 
     /**
-     * Every one of the 6 mergeCell arms is exercised: parent sets field A,
+     * Every one of the 7 mergeCell arms is exercised: parent sets field A,
      * child sets a different field B on an overlapping (cell, level); the merged
      * cell must carry child's B AND parent's A (field-wise child-wins/parent-fills).
      */
-    public function testMergeCoversAllSixLeafTypes(): void
+    public function testMergeCoversAllSevenLeafTypes(): void
     {
         $level = OptimizeFor::Size;
 
@@ -151,7 +152,8 @@ final class PresetDefaultsTest extends TestCase
             ->videoCompress($level, new VideoCompressPresetOptions(fps: 24))
             ->officeCompress($level, new DocumentOfficeCompressPresetOptions(stripMacros: true))
             ->odfCompress($level, new DocumentOdfCompressPresetOptions(stripMetadata: true))
-            ->epubCompress($level, new DocumentEpubCompressPresetOptions(fontSubsetting: true));
+            ->epubCompress($level, new DocumentEpubCompressPresetOptions(fontSubsetting: true))
+            ->pdfCompress($level, new DocumentPdfCompressPresetOptions(quality: 40));
 
         $child = PresetDefaults::create()
             ->imageCompress($level, new ImageCompressPresetOptions(quality: 92))
@@ -159,7 +161,8 @@ final class PresetDefaultsTest extends TestCase
             ->videoCompress($level, new VideoCompressPresetOptions(crf: 18))
             ->officeCompress($level, new DocumentOfficeCompressPresetOptions(stripHiddenData: true))
             ->odfCompress($level, new DocumentOdfCompressPresetOptions(stripUnusedStyles: true))
-            ->epubCompress($level, new DocumentEpubCompressPresetOptions(stripUnusedCss: true));
+            ->epubCompress($level, new DocumentEpubCompressPresetOptions(stripUnusedCss: true))
+            ->pdfCompress($level, new DocumentPdfCompressPresetOptions(maxImageDimension: 2000));
 
         $m = PresetDefaults::merge($parent, $child);
 
@@ -192,5 +195,52 @@ final class PresetDefaultsTest extends TestCase
         $this->assertInstanceOf(DocumentEpubCompressPresetOptions::class, $epub);
         $this->assertTrue($epub->stripUnusedCss);      // child
         $this->assertTrue($epub->fontSubsetting);      // parent
+
+        $pdf = $m->cellFor('document_pdf_compress', $level);
+        $this->assertInstanceOf(DocumentPdfCompressPresetOptions::class, $pdf);
+        $this->assertSame(2000, $pdf->maxImageDimension); // child
+        $this->assertSame(40, $pdf->quality);              // parent
+    }
+
+    public function testPdfCompressRegistersATypedCellAtItsLevelOnly(): void
+    {
+        $base = PresetDefaults::create();
+        $defaults = $base->pdfCompress(
+            OptimizeFor::Balanced,
+            new DocumentPdfCompressPresetOptions(quality: 55, maxImageDimension: 1024),
+        );
+
+        $this->assertNotSame($base, $defaults);
+        $this->assertNull($base->cellFor('document_pdf_compress', OptimizeFor::Balanced));
+
+        $cell = $defaults->cellFor('document_pdf_compress', OptimizeFor::Balanced);
+        $this->assertInstanceOf(DocumentPdfCompressPresetOptions::class, $cell);
+        $this->assertSame(55, $cell->quality);
+        $this->assertSame(1024, $cell->maxImageDimension);
+        $this->assertNull($defaults->cellFor('document_pdf_compress', OptimizeFor::Size));
+    }
+
+    public function testMergePdfCellChildWinsOnTheSameFieldParentFillsGaps(): void
+    {
+        // Both layers set quality, so a precedence flip in the PDF merge arm
+        // turns this red; only the parent sets maxImageDimension.
+        $parent = PresetDefaults::create()
+            ->pdfCompress(OptimizeFor::Size, new DocumentPdfCompressPresetOptions(quality: 40, maxImageDimension: 900));
+        $child = PresetDefaults::create()
+            ->pdfCompress(OptimizeFor::Size, new DocumentPdfCompressPresetOptions(quality: 60));
+
+        $cell = PresetDefaults::merge($parent, $child)->cellFor('document_pdf_compress', OptimizeFor::Size);
+
+        $this->assertInstanceOf(DocumentPdfCompressPresetOptions::class, $cell);
+        $this->assertSame(60, $cell->quality);            // child wins
+        $this->assertSame(900, $cell->maxImageDimension); // parent fills gap
+    }
+
+    public function testPdfCompressWithNoInputRegistersAnEmptyDelta(): void
+    {
+        $cell = PresetDefaults::create()->pdfCompress(OptimizeFor::Size)->cellFor('document_pdf_compress', OptimizeFor::Size);
+        $this->assertInstanceOf(DocumentPdfCompressPresetOptions::class, $cell);
+        $this->assertNull($cell->quality);
+        $this->assertNull($cell->maxImageDimension);
     }
 }

@@ -15,6 +15,7 @@ use Gisl\Sdk\Preset\AudioCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentEpubCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentOdfCompressPresetOptions;
 use Gisl\Sdk\Preset\DocumentOfficeCompressPresetOptions;
+use Gisl\Sdk\Preset\DocumentPdfCompressPresetOptions;
 use Gisl\Sdk\Preset\ImageCompressPresetOptions;
 use Gisl\Sdk\Preset\PresetCellTranslator;
 use Gisl\Sdk\Preset\VideoCompressPresetOptions;
@@ -28,6 +29,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(DocumentOfficeCompressPresetOptions::class)]
 #[CoversClass(DocumentOdfCompressPresetOptions::class)]
 #[CoversClass(DocumentEpubCompressPresetOptions::class)]
+#[CoversClass(DocumentPdfCompressPresetOptions::class)]
 final class PresetCompressOptionsTest extends TestCase
 {
     // -----------------------------------------------------------------
@@ -174,6 +176,43 @@ final class PresetCompressOptionsTest extends TestCase
         $dto = DocumentEpubCompressPresetOptions::shippedDefaultsFor(OptimizeFor::Size);
         $this->assertTrue($dto->fontSubsetting);
         $this->assertTrue($dto->stripUnusedCss);
+    }
+
+    public function testPdfShippedDefaultsPerLevel(): void
+    {
+        // oavTfC6C: unlike the other document media, every PDF cell carries
+        // concrete non-planned values — the level genuinely moves the wire.
+        $size = DocumentPdfCompressPresetOptions::shippedDefaultsFor(OptimizeFor::Size);
+        $this->assertSame(50, $size->quality);
+        $this->assertSame(1200, $size->maxImageDimension);
+
+        $balanced = DocumentPdfCompressPresetOptions::shippedDefaultsFor(OptimizeFor::Balanced);
+        $this->assertSame(70, $balanced->quality);
+        $this->assertSame(1600, $balanced->maxImageDimension);
+
+        $quality = DocumentPdfCompressPresetOptions::shippedDefaultsFor(OptimizeFor::Quality);
+        $this->assertSame(85, $quality->quality);
+        $this->assertSame(2400, $quality->maxImageDimension);
+    }
+
+    public function testPdfShippedDefaultsAreDerivedFromGeneratedLookup(): void
+    {
+        foreach (OptimizeFor::cases() as $level) {
+            $cell = Presets::shippedDefaultsFor('document_pdf_compress', $level);
+            $dto = DocumentPdfCompressPresetOptions::shippedDefaultsFor($level);
+            $cellKeys = \array_keys($cell);
+            \sort($cellKeys);
+            $this->assertSame(['maxImageDimension', 'quality'], $cellKeys, $level->name);
+            $this->assertSame($cell['quality'], $dto->quality, $level->name);
+            $this->assertSame($cell['maxImageDimension'], $dto->maxImageDimension, $level->name);
+        }
+    }
+
+    public function testPdfDtoIsSparseByDefault(): void
+    {
+        $dto = new DocumentPdfCompressPresetOptions(maxImageDimension: 640);
+        $this->assertSame(640, $dto->maxImageDimension);
+        $this->assertNull($dto->quality);
     }
 
     /**
