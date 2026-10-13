@@ -72,6 +72,20 @@ final class Presets
                 'preset' => 'Slow',
             ],
         ],
+        'document_pdf_compress' => [
+            'Size' => [
+                'quality' => 50,
+                'maxImageDimension' => 1200,
+            ],
+            'Balanced' => [
+                'quality' => 70,
+                'maxImageDimension' => 1600,
+            ],
+            'Quality' => [
+                'quality' => 85,
+                'maxImageDimension' => 2400,
+            ],
+        ],
         'document_office_compress' => [
             'Size' => [
                 'stripMacros' => true,
