@@ -29,12 +29,24 @@ final class ProbeWaitOptions
      *                                       `is_callable` (mirrors {@see \Gisl\Sdk\WaitOptions}) —
      *                                       so `[$obj, 'method']` / invokable objects work too.
      * @param Cancellation|null $cancellation Cooperative token — cancel it to abort the
-     *                                       wait (between polls) with a {@see \Gisl\Sdk\Errors\GislAbortError}.
+     *                                       wait (between polls, or within 1 s of a sleep)
+     *                                       with a {@see \Gisl\Sdk\Errors\GislAbortError}.
+     * @param bool              $patient      Poll for a LONG wait without exhausting the
+     *                                       per-user probe rate limit (default false).
+     *                                       Polls start at least max(Retry-After, a backoff
+     *                                       of 3 s doubling per poll up to 30 s) apart, and
+     *                                       a `429` from the probe endpoint is waited out
+     *                                       (its Retry-After, else that backoff, clamped to
+     *                                       `timeoutMs`) instead of thrown. The spacing is
+     *                                       per call: each call restarts its schedule.
+     *                                       {@see \Gisl\Sdk\GislClient::createWorkflowAwaitingProbe()}
+     *                                       passes true for its signed-in recovery.
      */
     public function __construct(
         public readonly ?int $timeoutMs = null,
         public readonly mixed $onPoll = null,
         public readonly ?Cancellation $cancellation = null,
+        public readonly bool $patient = false,
     ) {
     }
 }

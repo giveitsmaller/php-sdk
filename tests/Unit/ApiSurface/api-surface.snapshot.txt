@@ -249,6 +249,7 @@ internal Gisl\Sdk\Ergonomic\ProbePendingRecovery
 internal Gisl\Sdk\Ergonomic\SequencePlan
 internal Gisl\Sdk\FileFirst\MultiInputUpload
 internal Gisl\Sdk\Http\CurlMultiPartUploader
+internal Gisl\Sdk\Http\Sleeper
 internal Gisl\Sdk\SdkVersion
 method Gisl\Sdk\Cancellation::cancel()
 method Gisl\Sdk\Cancellation::isCancelled()
@@ -842,6 +843,7 @@ readonly property Gisl\Sdk\Preset\VideoCompressPresetOptions::$targetSize : stri
 readonly property Gisl\Sdk\Preset\VideoCompressPresetOptions::$width : ?int
 readonly property Gisl\Sdk\ProbeWaitOptions::$cancellation : ?Gisl\Sdk\Cancellation
 readonly property Gisl\Sdk\ProbeWaitOptions::$onPoll : mixed
+readonly property Gisl\Sdk\ProbeWaitOptions::$patient : bool
 readonly property Gisl\Sdk\ProbeWaitOptions::$timeoutMs : ?int
 readonly property Gisl\Sdk\ProbeWaitResult::$landed : bool
 readonly property Gisl\Sdk\ProbeWaitResult::$probe : ?Gisl\Generated\OpenApi\Model\UploadProbeResponse

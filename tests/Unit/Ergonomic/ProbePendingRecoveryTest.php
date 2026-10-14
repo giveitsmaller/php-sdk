@@ -4,18 +4,28 @@ declare(strict_types=1);
 
 namespace Gisl\Sdk\Tests\Unit\Ergonomic;
 
+use Gisl\Generated\OpenApi\Model\LongFormConcurrencyLimitResponse;
+use Gisl\Generated\OpenApi\Model\ProbePendingResponse;
+use Gisl\Generated\OpenApi\Model\UploadProbeResponse;
+use Gisl\Generated\OpenApi\Model\WorkflowCreateResponse;
 use Gisl\Sdk\Cancellation;
 use Gisl\Sdk\Ergonomic\BuilderInternals;
 use Gisl\Sdk\Ergonomic\ProbePendingRecovery;
 use Gisl\Sdk\Ergonomic\RunOptions;
 use Gisl\Sdk\Errors\GislAbortError;
+use Gisl\Sdk\Errors\GislApiError;
+use Gisl\Sdk\Errors\GislLongFormConcurrencyError;
 use Gisl\Sdk\Errors\GislProbePendingError;
 use Gisl\Sdk\Errors\GislTimeoutError;
 use Gisl\Sdk\Gisl;
 use Gisl\Sdk\GislAnonymousClient;
+use Gisl\Sdk\GislClient;
 use Gisl\Sdk\GislClientConfig;
 use Gisl\Sdk\GislErgonomicClient;
+use Gisl\Sdk\Http\Sleeper;
 use Gisl\Sdk\JobDefinitionPayload;
+use Gisl\Sdk\ProbeWaitOptions;
+use Gisl\Sdk\ProbeWaitResult;
 use Gisl\Sdk\Sources;
 use Gisl\Sdk\WorkflowCreatePayload;
 use GuzzleHttp\Psr7\HttpFactory;
@@ -30,13 +40,85 @@ use Psr\Http\Message\ResponseInterface;
 /**
  * dql51via: a `422 probe_pending` on create is recovered per the contract -
  * wait for the named job's upload probe, then re-create the SAME payload.
- * Mirrors TS tests/unit/probe-pending.test.ts. Driven through the PUBLIC
- * entry point, run(), so a caller writes no loop.
+ * Mirrors TS tests/unit/probe-pending.test.ts.
+ *
+ * TIME (4v7Vwvcw): every test that waits runs on ONE fake clock, `$nowNs`. The
+ * recovery reads it through BuilderInternals::nowMs() and sleeps through the
+ * BuilderInternals per-slice primitive; the real waitForProbe reads it through
+ * Http\Sleeper. Only the primitives are swapped, so the production slicing,
+ * clamps and cancellation checks run. Recovery-LOGIC tests use a GislClient
+ * test double whose createWorkflow / waitForProbe are scripted
+ * ({@see scripted()}); end-to-end cases use the real client over stubbed
+ * PSR-18, so the real patient waitForProbe runs.
  */
 #[CoversClass(ProbePendingRecovery::class)]
 final class ProbePendingRecoveryTest extends TestCase
 {
     private const FID = '01936fb1-7bb3-7000-8000-000000000010';
+
+    /** The test-side mirror of the SDK's (private) boundary margin. */
+    private const BOUNDARY_MARGIN_MS = 2_000;
+
+    /** Starts at 1_000_000 ms: an epoch-like ms value whose ns still fits an int. */
+    private const CLOCK_START_NS = 1_000_000 * 1_000_000;
+
+    private int $nowNs = self::CLOCK_START_NS;
+
+    /** @var (\Closure(): void)|null runs after every fake sleep slice */
+    private ?\Closure $onSlice = null;
+
+    /** @var list<int> the clock (ms) at every scripted / recorded create */
+    private array $createdAt = [];
+
+    /** @var list<array{0: string, 1: ?ProbeWaitOptions}> every scripted waitForProbe call */
+    private array $waitCalls = [];
+
+    /** @var list<array{0: string, 1: int}> every recorded HTTP request: "METHOD path", clock ms */
+    private array $requests = [];
+
+    protected function setUp(): void
+    {
+        $this->useFakeClock();
+    }
+
+    protected function tearDown(): void
+    {
+        BuilderInternals::setClockForTesting(null);
+        BuilderInternals::setSleepForTesting(null);
+        Sleeper::setForTesting(null, null);
+    }
+
+    /** Binds the BuilderInternals clock, its sleep AND Sleeper to the one `$nowNs`. */
+    private function useFakeClock(): void
+    {
+        $this->nowNs = self::CLOCK_START_NS;
+        $sleep = function (int $us): void {
+            $this->nowNs += $us * 1_000;
+            if ($this->onSlice !== null) {
+                ($this->onSlice)();
+            }
+        };
+        BuilderInternals::setClockForTesting(fn (): int => $this->nowMs());
+        BuilderInternals::setSleepForTesting($sleep);
+        Sleeper::setForTesting(fn (): int => $this->nowNs, $sleep);
+    }
+
+    private function nowMs(): int
+    {
+        return \intdiv($this->nowNs, 1_000_000);
+    }
+
+    private function advanceMs(int $ms): void
+    {
+        $this->nowNs += $ms * 1_000_000;
+    }
+
+    /** @return list<int> the create clocks relative to the first */
+    private function relativeCreates(): array
+    {
+        $first = $this->createdAt[0] ?? 0;
+        return \array_map(static fn (int $t): int => $t - $first, $this->createdAt);
+    }
 
     public function testUploadFileIdsForJobMatchesIdsAndServerTokens(): void
     {
@@ -57,6 +139,11 @@ final class ProbePendingRecoveryTest extends TestCase
         self::assertSame([], ProbePendingRecovery::uploadFileIdsForJob($payload, 'nope'));
         self::assertSame([], ProbePendingRecovery::uploadFileIdsForJob($payload, null));
     }
+
+    // -----------------------------------------------------------------------
+    // End to end: the real client over stubbed PSR-18, through run() where the
+    // public entry point is the point.
+    // -----------------------------------------------------------------------
 
     /** @return iterable<string, array{string}> */
     public static function retryableStatuses(): iterable
@@ -130,23 +217,21 @@ final class ProbePendingRecoveryTest extends TestCase
         }
     }
 
-    public function testCreatesAreBoundedEvenIfTheServerKeepsRefusing(): void
+    public function testCreatesTheServerKeepsRefusingAreBoundedByTheBudgetAndPaced(): void
     {
-        $captured = [];
-        $client = self::makeClient(self::stubClient([
-            self::jsonResponse(200, self::uploadOk()),
-            self::refusal(),
-            self::probe('ok'),
-            self::refusal(),
-            self::probe('ok'),
-            self::refusal(),
-        ], $captured));
+        // Hal5c41E / 4v7Vwvcw: no create-count cap. The probe lands at once every
+        // time, so the pacing is the only gap: 1 s doubling from each create's
+        // start, until the next start would cross the 60 s budget.
+        $client = self::makeClient($this->recordingHttp(static fn (RequestInterface $r): ResponseInterface => \str_ends_with($r->getUri()->getPath(), '/probe')
+            ? self::probe('ok')
+            : self::refusal('op', null, 'refusal')));
 
-        $this->expectException(GislProbePendingError::class);
         try {
-            $client->compress(self::writeTempFile('bytes'))->run(new RunOptions(maxWait: '5m', useSSE: false));
-        } finally {
-            self::assertCount(1 + 2 * ProbePendingRecovery::MAX_CREATE_ATTEMPTS - 1, $captured);
+            ProbePendingRecovery::create($client, self::payload(), probeTimeoutMs: 60_000);
+            self::fail('expected the refusal');
+        } catch (GislProbePendingError) {
+            self::assertSame([0, 1_000, 3_000, 7_000, 15_000, 31_000], $this->relativeCreates());
+            self::assertSame(31_000, $this->nowMs() - 1_000_000, 'no sleep past the last create');
         }
     }
 
@@ -167,17 +252,18 @@ final class ProbePendingRecoveryTest extends TestCase
 
     public function testTheRefusalsRetryAfterIsHonouredBeforePolling(): void
     {
-        $captured = [];
-        $client = self::makeClient(self::stubClient([
-            self::refusal('op', '1'),
-            self::probe('ok'),
-            self::jsonResponse(201, self::createOk()),
-        ], $captured));
+        $queue = [self::refusal('op', '2'), self::probe('ok'), self::jsonResponse(201, self::createOk())];
+        $client = self::makeClient($this->recordingHttp(static function () use (&$queue): ResponseInterface {
+            return \array_shift($queue) ?? throw new \RuntimeException('queue exhausted');
+        }));
 
-        $started = \hrtime(true);
         ProbePendingRecovery::create($client, self::payload());
-        self::assertGreaterThanOrEqual(950, (\hrtime(true) - $started) / 1_000_000);
-        self::assertCount(3, $captured);
+
+        self::assertSame([
+            ['POST /api/workflows', 0],
+            ['POST /api/uploads/' . self::FID . '/probe', 2_000],
+            ['POST /api/workflows', 2_000],
+        ], $this->relativeRequests());
     }
 
     public function testARetryAfterPastTheDeadlineIsATimeoutNow(): void
@@ -185,12 +271,11 @@ final class ProbePendingRecoveryTest extends TestCase
         $captured = [];
         $client = self::makeClient(self::stubClient([self::refusal('op', '120')], $captured));
 
-        $started = \hrtime(true);
         try {
             ProbePendingRecovery::create($client, self::payload(), deadlineMs: BuilderInternals::nowMs() + 5_000);
             self::fail('expected a timeout');
         } catch (GislTimeoutError) {
-            self::assertLessThan(1_000, (\hrtime(true) - $started) / 1_000_000);
+            self::assertSame(1_000_000, $this->nowMs(), 'no wait at all');
             self::assertCount(1, $captured);
         }
     }
@@ -200,33 +285,33 @@ final class ProbePendingRecoveryTest extends TestCase
         $captured = [];
         $client = self::makeClient(self::stubClient([self::refusal('op', '120')], $captured));
 
-        $started = \hrtime(true);
         try {
             ProbePendingRecovery::create($client, self::payload(), probeTimeoutMs: 1_000);
             self::fail('expected the refusal');
         } catch (GislProbePendingError) {
-            self::assertLessThan(1_000, (\hrtime(true) - $started) / 1_000_000);
+            self::assertSame(1_000_000, $this->nowMs(), 'no wait at all');
             self::assertCount(1, $captured);
         }
     }
 
-    public function testANotApplicableUploadIsReCreatedAtOnceNotWaitedOn(): void
+    public function testANotApplicableUploadIsReCreatedWithoutAProbeWait(): void
     {
         // 8L4JJMx6: the probe says this upload is never probed, so there is nothing
-        // to wait for — re-create now instead of giving up with the refusal.
-        $captured = [];
-        $client = self::makeClient(self::stubClient([
-            self::refusal(),
-            self::probeNotApplicable(),
-            self::jsonResponse(201, self::createOk()),
-        ], $captured));
+        // to wait for — re-create instead of giving up with the refusal. The only
+        // gap is the 1 s create pacing (4v7Vwvcw).
+        $queue = [self::refusal(), self::probeNotApplicable(), self::jsonResponse(201, self::createOk())];
+        $client = self::makeClient($this->recordingHttp(static function () use (&$queue): ResponseInterface {
+            return \array_shift($queue) ?? throw new \RuntimeException('queue exhausted');
+        }));
 
         $created = ProbePendingRecovery::create($client, self::payload());
 
         self::assertSame('01936fb2-0000-7000-8000-0000000000d1', $created->getWorkflowId());
-        self::assertCount(3, $captured);
-        self::assertSame('/api/uploads/' . self::FID . '/probe', $captured[1]->getUri()->getPath());
-        self::assertSame('/api/workflows', $captured[2]->getUri()->getPath());
+        self::assertSame([
+            ['POST /api/workflows', 0],
+            ['POST /api/uploads/' . self::FID . '/probe', 0],
+            ['POST /api/workflows', 1_000],
+        ], $this->relativeRequests());
     }
 
     public function testANotApplicableUploadIsSkippedAndTheJobsOtherUploadIsStillAwaited(): void
@@ -254,116 +339,52 @@ final class ProbePendingRecoveryTest extends TestCase
         self::assertSame((string) $captured[0]->getBody(), (string) $captured[3]->getBody(), 'the SAME payload is re-created');
     }
 
-    public function testANotApplicableUploadTheServerKeepsRefusingIsStillBoundedByTheCreateCap(): void
+    public function testANotApplicableUploadTheServerKeepsRefusingIsBoundedByTheBudgetNotACreateCount(): void
     {
-        $captured = [];
-        $client = self::makeClient(self::stubClient([
-            self::refusal(),
-            self::probeNotApplicable(),
-            self::refusal(),
-            self::probeNotApplicable(),
-            self::refusal(),
-        ], $captured));
+        $client = self::makeClient($this->recordingHttp(static fn (RequestInterface $r): ResponseInterface => \str_ends_with($r->getUri()->getPath(), '/probe')
+            ? self::probeNotApplicable()
+            : self::refusal('op', null, 'refusal')));
 
-        $this->expectException(GislProbePendingError::class);
         try {
             ProbePendingRecovery::create($client, self::payload());
-        } finally {
-            self::assertCount(2 * ProbePendingRecovery::MAX_CREATE_ATTEMPTS - 1, $captured);
+            self::fail('expected the refusal');
+        } catch (GislProbePendingError $e) {
+            self::assertSame('refusal', $e->getMessage());
         }
+        $creates = $this->relativeCreates();
+        self::assertGreaterThan(3, \count($creates));
+        self::assertLessThanOrEqual(50, \count($creates));
+        self::assertLessThanOrEqual(ProbePendingRecovery::PROBE_WAIT_BOUND_MS, \max($creates));
+        self::assertGreaterThan(ProbePendingRecovery::PROBE_WAIT_BOUND_MS - 30_000, \max($creates));
     }
 
     public function testALateNotApplicableAnswerPastTheBudgetRethrowsTheRefusalAndDoesNotReCreate(): void
     {
         // codex 5dd8528c4a6d: the probe request itself outlives the budget; its
         // not_applicable answer must not carry the recovery into a re-create.
-        $now = 1_000_000;
-        BuilderInternals::setClockForTesting(static function () use (&$now): int {
-            return $now;
-        });
-        $captured = [];
-        $client = self::makeClient(self::slowProbeClient([
-            self::refusal(),
-            self::probeNotApplicable(),
-            self::jsonResponse(201, self::createOk()),
-        ], $captured, $now, 10_000));
+        $queue = [self::refusal(), self::probeNotApplicable(), self::jsonResponse(201, self::createOk())];
+        $client = self::makeClient($this->slowProbeHttp($queue, 10_000));
         try {
             ProbePendingRecovery::create($client, self::payload(), probeTimeoutMs: 5_000);
             self::fail('expected the original refusal');
         } catch (GislProbePendingError) {
-            self::assertCount(2, $captured, 'one create, one probe: no re-create');
-            self::assertSame('/api/workflows', $captured[0]->getUri()->getPath());
-        } finally {
-            BuilderInternals::setClockForTesting(null);
+            self::assertSame(['POST /api/workflows', 'POST /api/uploads/' . self::FID . '/probe'], \array_column($this->requests, 0), 'no re-create');
         }
     }
 
     public function testALateNotApplicableAnswerPastTheDeadlineIsATimeout(): void
     {
-        $now = 1_000_000;
-        BuilderInternals::setClockForTesting(static function () use (&$now): int {
-            return $now;
-        });
-        $captured = [];
-        $client = self::makeClient(self::slowProbeClient([
-            self::refusal(),
-            self::probeNotApplicable(),
-            self::jsonResponse(201, self::createOk()),
-        ], $captured, $now, 10_000));
+        $queue = [self::refusal(), self::probeNotApplicable(), self::jsonResponse(201, self::createOk())];
+        $client = self::makeClient($this->slowProbeHttp($queue, 10_000));
         try {
-            ProbePendingRecovery::create($client, self::payload(), probeTimeoutMs: 30_000, deadlineMs: $now + 8_000);
+            ProbePendingRecovery::create($client, self::payload(), probeTimeoutMs: 30_000, deadlineMs: $this->nowMs() + 8_000);
             self::fail('expected a timeout');
         } catch (GislTimeoutError $e) {
-            self::assertCount(2, $captured, 'one create, one probe: no re-create');
+            self::assertCount(2, $this->requests, 'one create, one probe: no re-create');
             // Without the check in the not_applicable branch the post-loop deadline
             // check still times out, but claims "Probe landed", which is false.
             self::assertStringContainsString('while recovering from probe_pending', $e->getMessage());
-        } finally {
-            BuilderInternals::setClockForTesting(null);
         }
-    }
-
-    /**
-     * Like stubClient(), but every probe request advances the test clock by
-     * `$probeTakesMs`: a probe answer that arrives late.
-     *
-     * @param list<ResponseInterface> $queue
-     * @param list<RequestInterface>  $captured
-     */
-    private static function slowProbeClient(array $queue, array &$captured, int &$now, int $probeTakesMs): ClientInterface
-    {
-        $captured = [];
-        return new class ($queue, $captured, $now, $probeTakesMs) implements ClientInterface {
-            /** @var list<ResponseInterface> */
-            private array $queue;
-            /** @var list<RequestInterface> */
-            private array $captured;
-            private int $now;
-
-            /**
-             * @param list<ResponseInterface> $queue
-             * @param list<RequestInterface>  $captured
-             */
-            public function __construct(array $queue, array &$captured, int &$now, private readonly int $probeTakesMs)
-            {
-                $this->queue = $queue;
-                $this->captured = &$captured;
-                $this->now = &$now;
-            }
-
-            public function sendRequest(RequestInterface $request): ResponseInterface
-            {
-                $this->captured[] = $request;
-                if (\str_ends_with($request->getUri()->getPath(), '/probe')) {
-                    $this->now += $this->probeTakesMs;
-                }
-                $next = \array_shift($this->queue);
-                if ($next === null) {
-                    throw new \RuntimeException('Stub PSR-18 client: response queue exhausted');
-                }
-                return $next;
-            }
-        };
     }
 
     public function testRunWithProbeBeforeCreateFalseOptsOutOfRecovery(): void
@@ -381,6 +402,861 @@ final class ProbePendingRecoveryTest extends TestCase
         } finally {
             self::assertCount(2, $captured);
         }
+    }
+
+    public function testAProbe429MidRecoveryOnAMultiFileJobIsWaitedOutNotFatal(): void
+    {
+        // Two uploads in one job: the second's probe hits the shared per-user
+        // probe bucket. Through the REAL waitForProbe, patient polling waits it out.
+        $payload = new WorkflowCreatePayload(jobs: [
+            new JobDefinitionPayload(operations: [], id: 'wm', inputs: [
+                ['source' => Sources::upload('clip_a')],
+                ['source' => Sources::upload('clip_b')],
+            ]),
+        ]);
+        $queue = [
+            self::refusal('wm'),
+            self::probe('ok'),
+            self::jsonResponse(429, ['success' => false, 'error' => 'TOO_MANY_REQUESTS', 'message' => 'Too many requests'])
+                ->withHeader('Retry-After', '15'),
+            self::probe('ok'),
+            self::jsonResponse(201, self::createOk()),
+        ];
+        $client = self::makeClient($this->recordingHttp(static function () use (&$queue): ResponseInterface {
+            return \array_shift($queue) ?? throw new \RuntimeException('queue exhausted');
+        }));
+
+        ProbePendingRecovery::create($client, $payload);
+
+        self::assertSame([
+            ['POST /api/workflows', 0],
+            ['POST /api/uploads/clip_a/probe', 0],
+            ['POST /api/uploads/clip_b/probe', 0],
+            ['POST /api/uploads/clip_b/probe', 15_000],
+            ['POST /api/workflows', 15_000],
+        ], $this->relativeRequests());
+    }
+
+    // -----------------------------------------------------------------------
+    // Hal5c41E / 4v7Vwvcw, signed in: the 900 s budget, paced creates, the
+    // waited-out create 429 and one precise boundary create. Scripted client.
+    // -----------------------------------------------------------------------
+
+    public function testTheDefaultBudgetIsTheBoundAndThePollIsPatient(): void
+    {
+        $original = self::probePending();
+        $client = $this->scripted(static fn () => throw $original, self::gaveUp('prober_error'));
+        try {
+            ProbePendingRecovery::create($client, self::payload());
+            self::fail('expected the refusal');
+        } catch (GislProbePendingError $e) {
+            self::assertSame($original, $e);
+        }
+        self::assertSame(900_000, ProbePendingRecovery::PROBE_WAIT_BOUND_MS);
+        self::assertSame(30_000, ProbePendingRecovery::GUEST_BACKOFF_MAX_MS);
+        $options = $this->waitCalls[0][1];
+        self::assertNotNull($options);
+        self::assertSame(ProbePendingRecovery::PROBE_WAIT_BOUND_MS, $options->timeoutMs);
+        self::assertTrue($options->patient);
+    }
+
+    public function testARecoveryLongerThan30sSucceedsByDefault(): void
+    {
+        $calls = 0;
+        $client = $this->scripted(
+            static function () use (&$calls): WorkflowCreateResponse {
+                if (++$calls === 1) {
+                    throw self::probePending();
+                }
+                return self::created();
+            },
+            function (): ProbeWaitResult {
+                $this->advanceMs(120_000);
+                return self::landed('ok');
+            },
+        );
+
+        self::assertSame('wf', ProbePendingRecovery::create($client, self::payload())->getWorkflowId());
+        self::assertSame([0, 120_000], $this->relativeCreates());
+    }
+
+    public function testAnExplicitShortTimeoutIsHonouredWithExactlyOneCreate(): void
+    {
+        $original = self::probePending();
+        $client = $this->scripted(static fn () => throw $original, $this->neverLands());
+        try {
+            ProbePendingRecovery::create($client, self::payload(), probeTimeoutMs: 5_000);
+            self::fail('expected the refusal');
+        } catch (GislProbePendingError $e) {
+            self::assertSame($original, $e);
+        }
+        self::assertCount(1, $this->createdAt);
+        self::assertSame(5_000, $this->waitCalls[0][1]?->timeoutMs);
+    }
+
+    public function testAProbeThatDoesNotLandByTheDeadlineIsATimeoutNotTheRefusal(): void
+    {
+        $client = $this->scripted(static fn () => throw self::probePending(), $this->neverLands());
+        try {
+            ProbePendingRecovery::create($client, self::payload(), deadlineMs: $this->nowMs() + 20_000);
+            self::fail('expected a timeout');
+        } catch (GislTimeoutError) {
+            self::assertCount(1, $this->createdAt);
+            self::assertSame(20_000, $this->waitCalls[0][1]?->timeoutMs);
+        }
+    }
+
+    public function testAProbeThatLandsOnlyAfterTheDeadlineIsATimeoutNotTheRefusal(): void
+    {
+        // The probe lands, but its answer arrives past the run deadline: the
+        // re-create must not start, and the caller hears maxWait, not probe_pending.
+        $client = $this->scripted(static fn () => throw self::probePending(), function (): ProbeWaitResult {
+            $this->advanceMs(25_000);
+            return self::landed('ok');
+        });
+        try {
+            ProbePendingRecovery::create($client, self::payload(), deadlineMs: $this->nowMs() + 20_000);
+            self::fail('expected a timeout');
+        } catch (GislTimeoutError $e) {
+            self::assertStringContainsString('Probe landed but maxWait elapsed', $e->getMessage());
+            self::assertCount(1, $this->createdAt);
+        }
+    }
+
+    public function testAPacedReCreateWhoseSleepOverranTheDeadlineIsATimeoutNotTheRefusal(): void
+    {
+        // The paced gap (1 s) fits before the deadline, but the sleep wakes 10 s
+        // late, past it: the late-timer guard must time out without creating.
+        $lateBy = 10_000;
+        $this->onSlice = function () use (&$lateBy): void {
+            $this->advanceMs($lateBy);
+            $lateBy = 0;
+        };
+        $client = $this->scripted(static fn () => throw self::probePending());
+        try {
+            ProbePendingRecovery::create($client, self::payload(), deadlineMs: $this->nowMs() + 5_000);
+            self::fail('expected a timeout');
+        } catch (GislTimeoutError $e) {
+            self::assertStringContainsString('while recovering from probe_pending', $e->getMessage());
+            self::assertCount(1, $this->createdAt);
+            self::assertSame(11_000, $this->nowMs() - 1_000_000, 'one 1 s slice, woken 10 s late');
+        }
+    }
+
+    public function testTheBoundaryCreateIsMadeOnceTheMarginPastTheDefaultBudgetAndTheStrictServerAcceptsIt(): void
+    {
+        $client = $this->scripted($this->boundServer(), $this->neverLands());
+
+        self::assertSame('wf', ProbePendingRecovery::create($client, self::payload())->getWorkflowId());
+        // budgetEnd = first refusal + bound; the boundary create starts the margin past it.
+        self::assertSame([0, ProbePendingRecovery::PROBE_WAIT_BOUND_MS + self::BOUNDARY_MARGIN_MS], $this->relativeCreates());
+    }
+
+    public function testTheServerModelIsStrictACreateAtTheBoundIsStillRefused(): void
+    {
+        // Positive control on boundServer(): at 900.999 s waitedSeconds is 900, not > 900.
+        $server = $this->boundServer();
+        $create = function () use ($server): WorkflowCreateResponse {
+            $this->createdAt[] = $this->nowMs();
+            return $server();
+        };
+        try {
+            $create();
+            self::fail('the first create must be refused');
+        } catch (GislProbePendingError) {
+        }
+        $this->advanceMs(ProbePendingRecovery::PROBE_WAIT_BOUND_MS + 999);
+        try {
+            $create();
+            self::fail('a create at the bound must still be refused');
+        } catch (GislProbePendingError) {
+        }
+        $this->advanceMs(1);
+        self::assertSame('wf', $create()->getWorkflowId());
+    }
+
+    public function testADeadlineBeforeTheBoundaryMarginIsATimeoutWithNoBoundaryCreate(): void
+    {
+        $client = $this->scripted($this->boundServer(), $this->neverLands());
+        try {
+            ProbePendingRecovery::create($client, self::payload(), deadlineMs: $this->nowMs() + ProbePendingRecovery::PROBE_WAIT_BOUND_MS + 1_000);
+            self::fail('expected a timeout');
+        } catch (GislTimeoutError) {
+            self::assertCount(1, $this->createdAt);
+        }
+    }
+
+    public function testARefusedBoundaryCreateIsTheLastAndTheFirstRefusalComesBack(): void
+    {
+        $original = self::probePending();
+        $calls = 0;
+        $client = $this->scripted(static function () use (&$calls, $original): never {
+            throw ++$calls === 1 ? $original : self::probePending();
+        }, $this->neverLands());
+        try {
+            ProbePendingRecovery::create($client, self::payload());
+            self::fail('expected the refusal');
+        } catch (GislProbePendingError $e) {
+            self::assertSame($original, $e);
+        }
+        self::assertCount(2, $this->createdAt);
+        self::assertCount(1, $this->waitCalls);
+    }
+
+    public function testNoBoundaryCreateAfterALateProbeAnswerPastTheTimerSlack(): void
+    {
+        // 2 s past the budget: beyond the 1 s timer slack but INSIDE paceCreate's
+        // own margin + slack (3 s), so only the boundary's slack check refuses it.
+        $original = self::probePending();
+        $client = $this->scripted(static fn () => throw $original, $this->neverLands(overshootMs: 2_000));
+        $this->expectExceptionObject($original);
+        try {
+            ProbePendingRecovery::create($client, self::payload());
+        } finally {
+            self::assertCount(1, $this->createdAt);
+        }
+    }
+
+    public function testNoBoundaryCreateWhenTheBudgetIsShorterThanTheBound(): void
+    {
+        $original = self::probePending();
+        $client = $this->scripted(static fn () => throw $original, $this->neverLands());
+        $this->expectExceptionObject($original);
+        try {
+            ProbePendingRecovery::create($client, self::payload(), probeTimeoutMs: ProbePendingRecovery::PROBE_WAIT_BOUND_MS - 1);
+        } finally {
+            self::assertCount(1, $this->createdAt);
+        }
+    }
+
+    /** @return iterable<string, array{int}> */
+    public static function explicitBudgetsAtOrPastTheBound(): iterable
+    {
+        yield '900 000 ms' => [900_000];
+        yield '1 200 000 ms' => [1_200_000];
+    }
+
+    /** @return iterable<string, array{int}> */
+    public static function explicitBudgetsShortOfTheBoundaryCreate(): iterable
+    {
+        yield '900 000 ms' => [900_000];
+        yield '901 000 ms (bound + 1 s, short of the 2 s margin)' => [901_000];
+    }
+
+    #[DataProvider('explicitBudgetsShortOfTheBoundaryCreate')]
+    public function testStrictCapSignedInNoBoundaryCreateWhenItWouldLandPastAnExplicitBudget(int $budgetMs): void
+    {
+        // codex DISCUSS on #562: an explicit budget is a strict cap.
+        $original = self::probePending();
+        $client = $this->scripted(static fn () => throw $original, $this->neverLands());
+        try {
+            ProbePendingRecovery::create($client, self::payload(), probeTimeoutMs: $budgetMs);
+            self::fail('expected the refusal');
+        } catch (GislProbePendingError $e) {
+            self::assertSame($original, $e);
+        }
+        self::assertSame([0], $this->relativeCreates());
+        self::assertLessThanOrEqual($budgetMs, $this->nowMs() - 1_000_000);
+    }
+
+    public function testAnExplicitBudgetPastTheBoundaryMakesOneCreateWhenTheGateOpensWhichTheStrictServerAccepts(): void
+    {
+        // codex on #563: the gate opens 900 s after the upload, so a create at
+        // ~902 s is accepted and is inside a 1 200 000 ms cap. The probe wait stops
+        // there instead of running the whole 20 minutes.
+        $client = $this->scripted($this->boundServer(), $this->neverLands());
+
+        self::assertSame('wf', ProbePendingRecovery::create($client, self::payload(), probeTimeoutMs: 1_200_000)->getWorkflowId());
+        self::assertSame([0, ProbePendingRecovery::PROBE_WAIT_BOUND_MS + self::BOUNDARY_MARGIN_MS], $this->relativeCreates());
+        self::assertSame(ProbePendingRecovery::PROBE_WAIT_BOUND_MS, $this->waitCalls[0][1]?->timeoutMs);
+        self::assertSame(ProbePendingRecovery::PROBE_WAIT_BOUND_MS + self::BOUNDARY_MARGIN_MS, $this->nowMs() - 1_000_000);
+    }
+
+    public function testAnExplicitBudgetsRefusedBoundaryCreateIsTheLastAndTheFirstRefusalComesBack(): void
+    {
+        $original = self::probePending();
+        $calls = 0;
+        $client = $this->scripted(static function () use (&$calls, $original): never {
+            throw ++$calls === 1 ? $original : self::probePending();
+        }, $this->neverLands());
+        try {
+            ProbePendingRecovery::create($client, self::payload(), probeTimeoutMs: 1_200_000);
+            self::fail('expected the refusal');
+        } catch (GislProbePendingError $e) {
+            self::assertSame($original, $e);
+        }
+        self::assertSame([0, ProbePendingRecovery::PROBE_WAIT_BOUND_MS + self::BOUNDARY_MARGIN_MS], $this->relativeCreates());
+    }
+
+    #[DataProvider('explicitBudgetsAtOrPastTheBound')]
+    public function testStrictCapSignedInEveryPacedCreateStartsByTheExplicitBudgetEnd(int $budgetMs): void
+    {
+        // The probe lands at once every time, so the creates run to the budget.
+        $original = self::probePending();
+        $client = $this->scripted(static fn () => throw $original);
+        try {
+            ProbePendingRecovery::create($client, self::payload(), probeTimeoutMs: $budgetMs);
+            self::fail('expected the refusal');
+        } catch (GislProbePendingError $e) {
+            self::assertSame($original, $e);
+        }
+        $creates = $this->relativeCreates();
+        self::assertGreaterThan(3, \count($creates));
+        self::assertLessThanOrEqual($budgetMs, \max($creates));
+    }
+
+    #[DataProvider('explicitBudgetsAtOrPastTheBound')]
+    public function testStrictCapAGuestsLastCreateLandsAtTheExplicitBudgetEndNotPastIt(int $budgetMs): void
+    {
+        $guest = self::makeGuest($this->recordingHttp(static fn (): ResponseInterface => self::refusal('op', null, 'refusal')));
+        try {
+            ProbePendingRecovery::create($guest, self::payload(), probeTimeoutMs: $budgetMs);
+            self::fail('expected the refusal');
+        } catch (GislProbePendingError) {
+        }
+        $creates = $this->relativeCreates();
+        self::assertLessThanOrEqual($budgetMs, \max($creates));
+        self::assertSame($budgetMs, $creates[\count($creates) - 1], 'the final create is AT the budget end, margin 0');
+    }
+
+    public function testNoBoundaryCreateWhenTheProbeWaitGaveUpForAnotherReason(): void
+    {
+        $original = self::probePending();
+        $client = $this->scripted(static fn () => throw $original, $this->neverLands(reason: 'prober_error'));
+        $this->expectExceptionObject($original);
+        try {
+            ProbePendingRecovery::create($client, self::payload());
+        } finally {
+            self::assertCount(1, $this->createdAt);
+        }
+    }
+
+    public function testNoBoundaryCreateWhenTheProbeWaitTimedOutBeforeTheBudgetEnded(): void
+    {
+        $original = self::probePending();
+        $client = $this->scripted(static fn () => throw $original, self::gaveUp('timeout'));
+        $this->expectExceptionObject($original);
+        try {
+            ProbePendingRecovery::create($client, self::payload());
+        } finally {
+            self::assertCount(1, $this->createdAt);
+        }
+    }
+
+    public function testNoBoundaryCreateWhenTheDeadlineNotTheBudgetEndedTheWait(): void
+    {
+        $client = $this->scripted(static fn () => throw self::probePending(), $this->neverLands());
+        try {
+            ProbePendingRecovery::create($client, self::payload(), deadlineMs: $this->nowMs() + ProbePendingRecovery::PROBE_WAIT_BOUND_MS);
+            self::fail('expected a timeout');
+        } catch (GislTimeoutError) {
+            self::assertCount(1, $this->createdAt);
+        }
+    }
+
+    public function testA429OnTheBoundaryCreateIsNotWaitedOutPastTheBudget(): void
+    {
+        $original = self::probePending();
+        $calls = 0;
+        $client = $this->scripted(static function () use (&$calls, $original): never {
+            throw ++$calls === 1 ? $original : self::tooManyRequests('60');
+        }, $this->neverLands());
+        $this->expectExceptionObject($original);
+        try {
+            ProbePendingRecovery::create($client, self::payload());
+        } finally {
+            self::assertCount(2, $this->createdAt);
+        }
+    }
+
+    public function testCreatesArePacedInsideTheFreeWorkflowCreateLimits(): void
+    {
+        // The probe lands at once every time, so the pacing is the only gap.
+        $original = self::probePending();
+        $client = $this->scripted(static fn () => throw $original);
+        $this->expectExceptionObject($original);
+        try {
+            ProbePendingRecovery::create($client, self::payload());
+        } finally {
+            $t = $this->relativeCreates();
+            foreach ($t as $from) {
+                $inWindow = \array_filter($t, static fn (int $x): bool => $x >= $from && $x < $from + 60_000);
+                self::assertLessThanOrEqual(10, \count($inWindow), "window from {$from} ms");
+            }
+            self::assertLessThanOrEqual(50, \count($t));
+            // No count cap: it kept going, and the budget is what ended it.
+            self::assertGreaterThan(3, \count($t));
+            self::assertLessThanOrEqual(ProbePendingRecovery::PROBE_WAIT_BOUND_MS, $t[\count($t) - 1]);
+            self::assertGreaterThan(ProbePendingRecovery::PROBE_WAIT_BOUND_MS - 30_000, $t[\count($t) - 1]);
+            // Doubling from 1 s, capped at 30 s, from each create's start.
+            self::assertSame([0, 1_000, 3_000, 7_000, 15_000, 31_000, 61_000, 91_000], \array_slice($t, 0, 8));
+        }
+    }
+
+    public function testTheRefusalsRetryAfterPacesTheNextCreateWhenLongerThanTheBackoff(): void
+    {
+        $calls = 0;
+        $client = $this->scripted(static function () use (&$calls): WorkflowCreateResponse {
+            if (++$calls === 1) {
+                throw self::probePending('op', '5');
+            }
+            return self::created();
+        });
+        ProbePendingRecovery::create($client, self::payload());
+        self::assertSame([0, 5_000], $this->relativeCreates());
+    }
+
+    public function testACreate429TooManyRequestsMidRecoveryIsWaitedOutForItsRetryAfter(): void
+    {
+        $calls = 0;
+        $client = $this->scripted(static function () use (&$calls): WorkflowCreateResponse {
+            ++$calls;
+            if ($calls === 1) {
+                throw self::probePending();
+            }
+            if ($calls === 2) {
+                throw self::tooManyRequests('20');
+            }
+            return self::created();
+        });
+        ProbePendingRecovery::create($client, self::payload());
+        self::assertSame([0, 1_000, 21_000], $this->relativeCreates());
+        self::assertCount(1, $this->waitCalls);
+    }
+
+    public function testACreate429TooManyRequestsWithNoRetryAfterIsWaitedOutWithTheCreateBackoff(): void
+    {
+        $calls = 0;
+        $client = $this->scripted(static function () use (&$calls): WorkflowCreateResponse {
+            ++$calls;
+            if ($calls === 1) {
+                throw self::probePending();
+            }
+            if ($calls === 2) {
+                throw self::tooManyRequests();
+            }
+            return self::created();
+        });
+        ProbePendingRecovery::create($client, self::payload());
+        self::assertSame([0, 1_000, 3_000], $this->relativeCreates());
+    }
+
+    public function testACreate429WhoseRetryAfterOutlastsTheBudgetRethrowsTheFirstRefusalAtOnce(): void
+    {
+        $original = self::probePending();
+        $calls = 0;
+        $client = $this->scripted(static function () use (&$calls, $original): never {
+            throw ++$calls === 1 ? $original : self::tooManyRequests('600');
+        });
+        $this->expectExceptionObject($original);
+        try {
+            ProbePendingRecovery::create($client, self::payload(), probeTimeoutMs: 60_000);
+        } finally {
+            self::assertCount(2, $this->createdAt);
+            self::assertSame(1_000, $this->nowMs() - 1_000_000, 'no wait after the 429');
+        }
+    }
+
+    public function testACreate429WhoseRetryAfterOutlastsTheDeadlineIsATimeout(): void
+    {
+        $calls = 0;
+        $client = $this->scripted(static function () use (&$calls): never {
+            throw ++$calls === 1 ? self::probePending() : self::tooManyRequests('600');
+        });
+        try {
+            ProbePendingRecovery::create($client, self::payload(), deadlineMs: $this->nowMs() + 60_000);
+            self::fail('expected a timeout');
+        } catch (GislTimeoutError) {
+            self::assertCount(2, $this->createdAt);
+        }
+    }
+
+    public function testDuplicateInProgressIsRethrownAtOnce(): void
+    {
+        $duplicate = self::tooManyRequests('1', 'DUPLICATE_IN_PROGRESS');
+        $calls = 0;
+        $client = $this->scripted(static function () use (&$calls, $duplicate): never {
+            throw ++$calls === 1 ? self::probePending() : $duplicate;
+        });
+        $this->expectExceptionObject($duplicate);
+        try {
+            ProbePendingRecovery::create($client, self::payload());
+        } finally {
+            self::assertCount(2, $this->createdAt);
+        }
+    }
+
+    public function testTheLongFormConcurrency429IsRethrownAtOnceEvenCarryingTooManyRequests(): void
+    {
+        // The code is TOO_MANY_REQUESTS so only the CLASS check can exclude it.
+        $longForm = new GislLongFormConcurrencyError(
+            'long-form limit',
+            429,
+            'TOO_MANY_REQUESTS',
+            new LongFormConcurrencyLimitResponse(['error' => 'LONG_FORM_CONCURRENCY_LIMIT_EXCEEDED']),
+            responseHeaders: ['retry-after' => '1'],
+        );
+        $calls = 0;
+        $client = $this->scripted(static function () use (&$calls, $longForm): never {
+            throw ++$calls === 1 ? self::probePending() : $longForm;
+        });
+        $this->expectExceptionObject($longForm);
+        try {
+            ProbePendingRecovery::create($client, self::payload());
+        } finally {
+            self::assertCount(2, $this->createdAt);
+        }
+    }
+
+    public function testA429OnTheFirstCreateBeforeAnyProbePendingIsRethrown(): void
+    {
+        $limited = self::tooManyRequests('5');
+        $client = $this->scripted(static fn () => throw $limited);
+        $this->expectExceptionObject($limited);
+        try {
+            ProbePendingRecovery::create($client, self::payload());
+        } finally {
+            self::assertCount(1, $this->createdAt);
+            self::assertSame(1_000_000, $this->nowMs(), 'no wait');
+        }
+    }
+
+    public function testACancelDuringALongRetryAfterIsHonouredWithinOneSlice(): void
+    {
+        $token = new Cancellation();
+        $slices = 0;
+        $this->onSlice = static function () use (&$slices, $token): void {
+            if (++$slices === 3) {
+                $token->cancel();
+            }
+        };
+        $client = $this->scripted(static fn () => throw self::probePending('op', '600'));
+        try {
+            ProbePendingRecovery::create($client, self::payload(), cancellation: $token);
+            self::fail('expected GislAbortError');
+        } catch (GislAbortError) {
+            self::assertSame(3, $slices);
+            self::assertSame(3_000, $this->nowMs() - 1_000_000, 'noticed before a 4th 1 s slice');
+            self::assertCount(1, $this->createdAt);
+            self::assertSame([], $this->waitCalls);
+        }
+    }
+
+    public function testACancelDuringACreateBackoffIsHonouredWithinOneSlice(): void
+    {
+        // Refusal, probe lands, paced re-create refused 429 with a 600 s Retry-After,
+        // then a cancel during that wait: no third create.
+        $token = new Cancellation();
+        $slices = 0;
+        $this->onSlice = static function () use (&$slices, $token): void {
+            if (++$slices === 5) {
+                $token->cancel();
+            }
+        };
+        $calls = 0;
+        $client = $this->scripted(static function () use (&$calls): never {
+            throw ++$calls === 1 ? self::probePending() : self::tooManyRequests('600');
+        });
+        try {
+            ProbePendingRecovery::create($client, self::payload(), cancellation: $token);
+            self::fail('expected GislAbortError');
+        } catch (GislAbortError) {
+            // 1 slice of create pacing, then 4 of the 429 wait.
+            self::assertSame(5_000, $this->nowMs() - 1_000_000);
+            self::assertCount(2, $this->createdAt);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 5dJrOdVC — anonymous-policy 2.1.0: the probe endpoint is sign-in only, so
+    // a GUEST refused with probe_pending retries the CREATE after Retry-After
+    // (or a doubling backoff) and never calls the probe. Mirrors the TS
+    // "createWorkflowAwaitingProbe on a guest client" block. The real
+    // (final) anonymous client over stubbed PSR-18, on the fake clock.
+    // -----------------------------------------------------------------------
+
+    public function testAGuestRunReCreatesWithoutPollingTheProbe(): void
+    {
+        $captured = [];
+        $guest = self::makeGuest(self::stubClient([
+            self::jsonResponse(200, self::uploadOk()),
+            self::refusal('op', '1'),
+            self::jsonResponse(201, self::guestCreateOk()),
+            self::jsonResponse(200, self::statusCompleted()),
+            self::jsonResponse(200, self::downloadsOk()),
+        ], $captured));
+
+        $result = $guest->compress(self::writeTempFile('bytes'))
+            ->run(new RunOptions(maxWait: '5m', useSSE: false, pollIntervalMs: 100));
+
+        self::assertSame('completed', $result->status);
+        $paths = \array_map(static fn (RequestInterface $r): string => $r->getMethod() . ' ' . $r->getUri()->getPath(), $captured);
+        self::assertSame('POST /api/workflows', $paths[1]);
+        self::assertSame('POST /api/workflows', $paths[2], 'the guest re-creates; it does not poll the probe');
+        self::assertSame([], \array_values(\array_filter($paths, static fn (string $p): bool => \str_ends_with($p, '/probe'))));
+        self::assertSame((string) $captured[1]->getBody(), (string) $captured[2]->getBody(), 'the SAME payload is re-created');
+    }
+
+    public function testAGuestKeepsReCreatingPastThreeRefusalsUntilTheBudgetThenRethrowsTheFirst(): void
+    {
+        // fNSQUeDS: no count cap for a guest (refusals do not count against its
+        // create limit); the budget ends it. Retry-After 1 s, budget 3.5 s.
+        $calls = 0;
+        $guest = self::makeGuest($this->recordingHttp(static function () use (&$calls): ResponseInterface {
+            return self::refusal('op', '1', ++$calls === 1 ? 'first refusal' : 'later refusal');
+        }));
+
+        try {
+            ProbePendingRecovery::create($guest, self::payload(), probeTimeoutMs: 3_500);
+            self::fail('expected GislProbePendingError');
+        } catch (GislProbePendingError $e) {
+            // The FIRST refusal comes back, not the last (codex d63a045d884c).
+            self::assertSame('first refusal', $e->getMessage());
+        }
+        // More than three creates: no count cap. The last lands AT the 3.5 s budget.
+        self::assertSame([0, 1_000, 2_000, 3_000, 3_500], $this->relativeCreates());
+        self::assertSame(['POST /api/workflows'], \array_values(\array_unique(\array_column($this->requests, 0))));
+    }
+
+    public function testAGuestMakesOneLastCreateAtTheBudgetBoundary(): void
+    {
+        // Budget 1.5 s, no Retry-After: create, wait 1 s, create, the next 2 s wait
+        // would cross the budget, so wait the 0.5 s left and create once more.
+        $queue = [self::refusal('op'), self::refusal('op'), self::jsonResponse(201, self::guestCreateOk())];
+        $guest = self::makeGuest($this->recordingHttp(static function () use (&$queue): ResponseInterface {
+            return \array_shift($queue) ?? throw new \RuntimeException('queue exhausted');
+        }));
+
+        ProbePendingRecovery::create($guest, self::payload(), probeTimeoutMs: 1_500);
+
+        self::assertSame([0, 1_000, 1_500], $this->relativeCreates());
+    }
+
+    public function testAGuestMakesOneLastCreateJustPastTheDefaultBudgetWhichTheStrictServerAccepts(): void
+    {
+        // Headerless refusals until the server's `waitedSeconds > 900` (codex 781cae520a36, Hal5c41E).
+        $guest = self::makeGuest($this->recordingHttp(function (): ResponseInterface {
+            $waitedSeconds = \intdiv($this->nowMs() - $this->createdAt[0], 1_000);
+            return $waitedSeconds > ProbePendingRecovery::PROBE_WAIT_BOUND_MS / 1_000
+                ? self::jsonResponse(201, self::guestCreateOk())
+                : self::refusal('op');
+        }));
+
+        ProbePendingRecovery::create($guest, self::payload());
+
+        $creates = $this->relativeCreates();
+        $last = $creates[\count($creates) - 1];
+        self::assertGreaterThanOrEqual(ProbePendingRecovery::PROBE_WAIT_BOUND_MS + self::BOUNDARY_MARGIN_MS, $last);
+        self::assertLessThanOrEqual(ProbePendingRecovery::PROBE_WAIT_BOUND_MS + self::BOUNDARY_MARGIN_MS + 1_000, $last);
+    }
+
+    public function testAGuestDeadlineBeforeTheBoundaryMarginIsATimeoutWithNoBoundaryCreate(): void
+    {
+        $guest = self::makeGuest($this->recordingHttp(static fn (): ResponseInterface => self::refusal('op')));
+        try {
+            ProbePendingRecovery::create($guest, self::payload(), deadlineMs: $this->nowMs() + ProbePendingRecovery::PROBE_WAIT_BOUND_MS + 1_000);
+            self::fail('expected a timeout');
+        } catch (GislTimeoutError) {
+            self::assertLessThan(ProbePendingRecovery::PROBE_WAIT_BOUND_MS, \max($this->relativeCreates()));
+        }
+    }
+
+    public function testAGuestCreate429TooManyRequestsMidRecoveryIsRethrownNotWaitedOut(): void
+    {
+        $queue = [
+            self::refusal('op'),
+            self::jsonResponse(429, ['success' => false, 'error' => 'TOO_MANY_REQUESTS', 'message' => 'Too many requests'])
+                ->withHeader('Retry-After', '5'),
+        ];
+        $guest = self::makeGuest($this->recordingHttp(static function () use (&$queue): ResponseInterface {
+            return \array_shift($queue) ?? throw new \RuntimeException('queue exhausted');
+        }));
+        try {
+            ProbePendingRecovery::create($guest, self::payload());
+            self::fail('expected the 429');
+        } catch (GislApiError $e) {
+            self::assertNotInstanceOf(GislProbePendingError::class, $e);
+            self::assertSame(429, $e->statusCode);
+            self::assertSame([0, 1_000], $this->relativeCreates());
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+
+    /**
+     * A GislClient whose createWorkflow and waitForProbe are scripted (the TS
+     * `doubles()`), recording every create's clock and every wait's options.
+     * Without `$wait` every probe lands `ok` at once.
+     *
+     * @param \Closure(): WorkflowCreateResponse                                $create
+     * @param (\Closure(string, ?ProbeWaitOptions): ProbeWaitResult)|null      $wait
+     */
+    private function scripted(\Closure $create, ?\Closure $wait = null): GislClient
+    {
+        $this->createdAt = [];
+        $this->waitCalls = [];
+        $recordCreate = function () use ($create): WorkflowCreateResponse {
+            $this->createdAt[] = $this->nowMs();
+            return $create();
+        };
+        $recordWait = function (string $fileId, ?ProbeWaitOptions $options) use ($wait): ProbeWaitResult {
+            $this->waitCalls[] = [$fileId, $options];
+            return $wait === null ? self::landed('ok') : $wait($fileId, $options);
+        };
+
+        return new class ($recordCreate, $recordWait) extends GislClient {
+            public function __construct(private readonly \Closure $create, private readonly \Closure $wait)
+            {
+                $factory = new HttpFactory();
+                parent::__construct(
+                    new GislClientConfig(baseUrl: 'https://api.test.example.com', apiKey: 'test-api-key'),
+                    new class () implements ClientInterface {
+                        public function sendRequest(RequestInterface $request): ResponseInterface
+                        {
+                            throw new \LogicException('the scripted client sends no HTTP');
+                        }
+                    },
+                    $factory,
+                    $factory,
+                );
+            }
+
+            public function createWorkflow(WorkflowCreatePayload $payload): WorkflowCreateResponse
+            {
+                return ($this->create)();
+            }
+
+            public function waitForProbe(string $fileId, ?ProbeWaitOptions $options = null): ProbeWaitResult
+            {
+                return ($this->wait)($fileId, $options);
+            }
+        };
+    }
+
+    /**
+     * A probe wait that takes its whole `timeoutMs` (plus `$overshootMs`) on the
+     * fake clock and does not land.
+     *
+     * @return \Closure(string, ?ProbeWaitOptions): ProbeWaitResult
+     */
+    private function neverLands(string $reason = 'timeout', int $overshootMs = 0): \Closure
+    {
+        return function (string $fileId, ?ProbeWaitOptions $options) use ($reason, $overshootMs): ProbeWaitResult {
+            $this->advanceMs(($options?->timeoutMs ?? 0) + $overshootMs);
+            return new ProbeWaitResult(landed: false, reason: $reason);
+        };
+    }
+
+    /** @return \Closure(): ProbeWaitResult a probe wait that gives up at once */
+    private static function gaveUp(string $reason): \Closure
+    {
+        return static fn (): ProbeWaitResult => new ProbeWaitResult(landed: false, reason: $reason);
+    }
+
+    /**
+     * The API's probe gate (compression_api CreateWorkflowCommandHandler.php:3095-3096):
+     * it stops refusing only when `waitedSeconds > 900`, STRICT, in whole seconds
+     * from the upload. The upload is taken to be the first create's instant, the
+     * worst case (an upload and first refusal in the same second).
+     *
+     * @return \Closure(): WorkflowCreateResponse
+     */
+    private function boundServer(): \Closure
+    {
+        return function (): WorkflowCreateResponse {
+            $waitedSeconds = \intdiv($this->nowMs() - $this->createdAt[0], 1_000);
+            if ($waitedSeconds > ProbePendingRecovery::PROBE_WAIT_BOUND_MS / 1_000) {
+                return self::created();
+            }
+            throw self::probePending();
+        };
+    }
+
+    /**
+     * A PSR-18 stub answering from `$respond`, recording every request with the
+     * fake clock; a `POST /api/workflows` is also recorded as a create.
+     *
+     * @param \Closure(RequestInterface): ResponseInterface $respond
+     */
+    private function recordingHttp(\Closure $respond): ClientInterface
+    {
+        $this->requests = [];
+        $this->createdAt = [];
+        $record = function (RequestInterface $request) use ($respond): ResponseInterface {
+            $line = $request->getMethod() . ' ' . $request->getUri()->getPath();
+            $this->requests[] = [$line, $this->nowMs()];
+            if ($line === 'POST /api/workflows') {
+                $this->createdAt[] = $this->nowMs();
+            }
+            return $respond($request);
+        };
+        return new class ($record) implements ClientInterface {
+            public function __construct(private readonly \Closure $record)
+            {
+            }
+
+            public function sendRequest(RequestInterface $request): ResponseInterface
+            {
+                return ($this->record)($request);
+            }
+        };
+    }
+
+    /**
+     * Like recordingHttp() over a queue, but every probe request advances the
+     * fake clock by `$probeTakesMs`: a probe answer that arrives late.
+     *
+     * @param list<ResponseInterface> $queue
+     */
+    private function slowProbeHttp(array $queue, int $probeTakesMs): ClientInterface
+    {
+        return $this->recordingHttp(function (RequestInterface $request) use (&$queue, $probeTakesMs): ResponseInterface {
+            if (\str_ends_with($request->getUri()->getPath(), '/probe')) {
+                $this->advanceMs($probeTakesMs);
+            }
+            return \array_shift($queue) ?? throw new \RuntimeException('Stub PSR-18 client: response queue exhausted');
+        });
+    }
+
+    /** @return list<array{0: string, 1: int}> the recorded requests, clock relative to the first */
+    private function relativeRequests(): array
+    {
+        $first = $this->requests[0][1] ?? 0;
+        return \array_map(static fn (array $r): array => [$r[0], $r[1] - $first], $this->requests);
+    }
+
+    private static function probePending(string $jobRef = 'op', ?string $retryAfter = null): GislProbePendingError
+    {
+        return new GislProbePendingError(
+            'probe pending',
+            422,
+            'UNPROCESSABLE_ENTITY',
+            new ProbePendingResponse(['job_ref' => $jobRef]),
+            responseHeaders: $retryAfter === null ? [] : ['retry-after' => $retryAfter],
+        );
+    }
+
+    /** A plain rate-limit 429 on create: a base GislApiError carrying TOO_MANY_REQUESTS. */
+    private static function tooManyRequests(?string $retryAfter = null, string $errorCode = 'TOO_MANY_REQUESTS'): GislApiError
+    {
+        return new GislApiError(
+            'Too many requests',
+            429,
+            $errorCode,
+            responseHeaders: $retryAfter === null ? [] : ['retry-after' => $retryAfter],
+        );
+    }
+
+    private static function created(): WorkflowCreateResponse
+    {
+        return new WorkflowCreateResponse(['workflow_id' => 'wf']);
+    }
+
+    private static function landed(string $probeStatus): ProbeWaitResult
+    {
+        return new ProbeWaitResult(landed: true, probe: new UploadProbeResponse(['probe_status' => $probeStatus]));
     }
 
     private static function payload(): WorkflowCreatePayload
@@ -592,83 +1468,6 @@ final class ProbePendingRecoveryTest extends TestCase
             ['Content-Type' => 'application/json'],
             \json_encode($body, JSON_THROW_ON_ERROR),
         );
-    }
-
-    // -----------------------------------------------------------------------
-    // 5dJrOdVC — anonymous-policy 2.1.0: the probe endpoint is sign-in only, so
-    // a GUEST refused with probe_pending retries the CREATE after Retry-After
-    // (or a doubling backoff) and never calls the probe. Mirrors the TS
-    // "createWorkflowAwaitingProbe on a guest client" block.
-    // -----------------------------------------------------------------------
-
-    public function testAGuestRunReCreatesWithoutPollingTheProbe(): void
-    {
-        $captured = [];
-        $guest = self::makeGuest(self::stubClient([
-            self::jsonResponse(200, self::uploadOk()),
-            self::refusal('op', '1'),
-            self::jsonResponse(201, self::guestCreateOk()),
-            self::jsonResponse(200, self::statusCompleted()),
-            self::jsonResponse(200, self::downloadsOk()),
-        ], $captured));
-
-        $result = $guest->compress(self::writeTempFile('bytes'))
-            ->run(new RunOptions(maxWait: '5m', useSSE: false, pollIntervalMs: 100));
-
-        self::assertSame('completed', $result->status);
-        $paths = \array_map(static fn (RequestInterface $r): string => $r->getMethod() . ' ' . $r->getUri()->getPath(), $captured);
-        self::assertSame('POST /api/workflows', $paths[1]);
-        self::assertSame('POST /api/workflows', $paths[2], 'the guest re-creates; it does not poll the probe');
-        self::assertSame([], \array_values(\array_filter($paths, static fn (string $p): bool => \str_ends_with($p, '/probe'))));
-        self::assertSame((string) $captured[1]->getBody(), (string) $captured[2]->getBody(), 'the SAME payload is re-created');
-    }
-
-    public function testAGuestKeepsReCreatingPastThreeRefusalsUntilTheBudgetThenRethrowsTheFirst(): void
-    {
-        // fNSQUeDS: no count cap for a guest (refusals do not count against its
-        // create limit); the budget ends it. Retry-After 1 s, budget 3.5 s.
-        $captured = [];
-        $guest = self::makeGuest(self::stubClient([
-            self::refusal('op', '1', 'first refusal'),
-            self::refusal('op', '1'),
-            self::refusal('op', '1'),
-            self::refusal('op', '1'),
-            self::refusal('op', '1'),
-        ], $captured));
-
-        try {
-            ProbePendingRecovery::create($guest, self::payload(), probeTimeoutMs: 3_500);
-            self::fail('expected GislProbePendingError');
-        } catch (GislProbePendingError $e) {
-            // The FIRST refusal comes back, not the last (codex d63a045d884c).
-            self::assertSame('first refusal', $e->getMessage());
-        }
-        self::assertGreaterThan(ProbePendingRecovery::MAX_CREATE_ATTEMPTS, \count($captured));
-        foreach ($captured as $request) {
-            self::assertSame('/api/workflows', $request->getUri()->getPath());
-        }
-    }
-
-    public function testAGuestMakesOneLastCreateAtTheBudgetBoundary(): void
-    {
-        // Budget 1.5 s, no Retry-After: create, wait 1 s, create, the next 2 s wait
-        // would cross the budget, so wait the 0.5 s left and create once more.
-        $captured = [];
-        $guest = self::makeGuest(self::stubClient([
-            self::refusal('op'),
-            self::refusal('op'),
-            self::jsonResponse(201, self::guestCreateOk()),
-        ], $captured));
-
-        ProbePendingRecovery::create($guest, self::payload(), probeTimeoutMs: 1_500);
-
-        self::assertCount(3, $captured);
-    }
-
-    public function testAGuestsDefaultBudgetIsThePolicyProbeWaitBound(): void
-    {
-        self::assertSame(900_000, ProbePendingRecovery::GUEST_PROBE_WAIT_BOUND_MS);
-        self::assertSame(30_000, ProbePendingRecovery::GUEST_BACKOFF_MAX_MS);
     }
 
     private static function makeGuest(ClientInterface $http): GislAnonymousClient

@@ -81,6 +81,44 @@ final class BuilderInternals
     private static ?\Closure $clockForTesting = null;
 
     /**
+     * Sleep `$ms` in slices of at most 1 s, checking `$cancellation` before
+     * every slice, so a long wait (a Retry-After, a create backoff) is
+     * abandoned within one slice of a cancel. The probe_pending recovery's
+     * sleep (4v7Vwvcw). It reads no clock: it sleeps `$ms` in slices. A test
+     * that swaps the clock {@see nowMs()} reads should also swap the per-slice
+     * primitive ({@see setSleepForTesting()}) to advance that clock.
+     *
+     * @throws GislAbortError
+     */
+    public static function sleepMs(int $ms, ?Cancellation $cancellation, string $context): void
+    {
+        for ($leftMs = $ms; $leftMs > 0; $leftMs -= 1_000) {
+            self::throwIfCancelled($cancellation, $context);
+            $sliceUs = \min(1_000, $leftMs) * 1_000;
+            if (self::$usleepForTesting !== null) {
+                (self::$usleepForTesting)($sliceUs);
+            } else {
+                \usleep($sliceUs);
+            }
+        }
+    }
+
+    /**
+     * Swap the per-slice `usleep` {@see sleepMs()} calls (a test advances its own
+     * clock instead of sleeping). Only the primitive: the slicing and the
+     * cancellation check stay production code. Pass null to restore `usleep`.
+     *
+     * @param (\Closure(int): void)|null $usleep Receives microseconds.
+     */
+    public static function setSleepForTesting(?\Closure $usleep): void
+    {
+        self::$usleepForTesting = $usleep;
+    }
+
+    /** @var (\Closure(int): void)|null */
+    private static ?\Closure $usleepForTesting = null;
+
+    /**
      * bTNCSX1x — honour a 429 from the status_poll bucket (status + downloads)
      * inside a WAIT path instead of letting it kill the run. Mirrors TS
      * `_retryOn429`: wait Retry-After (or a jittered backoff when absent),

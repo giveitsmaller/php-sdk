@@ -64,6 +64,7 @@ use Gisl\Sdk\Errors\GislMultipartPartCountError;
 use Gisl\Sdk\Errors\GislMultipartPartError;
 use Gisl\Sdk\Http\MultipartPartUploader;
 use Gisl\Sdk\Http\RateLimitHeaders;
+use Gisl\Sdk\Http\Sleeper;
 use Gisl\Sdk\Http\UploadSource;
 use Gisl\Sdk\Errors\GislMultipartSessionAuthRequiredError;
 use Gisl\Sdk\Errors\GislUnsupportedFileTypeError;
@@ -2808,6 +2809,16 @@ class GislClient
     }
 
     /**
+     * Patient {@see waitForProbe()} (4v7Vwvcw, mirrors TS Hal5c41E): polls start
+     * at least max(Retry-After, min(3 s * 2^(n-1), 30 s)) apart. The API's probe
+     * bucket allows 10/min and 100/h on Free (TieredRateLimiterService.php, an
+     * API implementation fact, not contract); this cadence makes 5 polls in the
+     * first minute and about 33 in 900 s.
+     */
+    private const PATIENT_PROBE_BACKOFF_BASE_MS = 3_000;
+    private const PATIENT_PROBE_BACKOFF_MAX_MS = 30_000;
+
+    /**
      * Bounded poll of {@see probeUpload()} until the probe lands — the helper
      * frontends call between upload-complete and workflow-create so the server
      * sees the video's codec + duration and admits the ~3× parallel split.
@@ -2828,7 +2839,15 @@ class GislClient
      *   fan-out gate decide split-vs-single from the landed metadata; the SDK
      *   does not interpret it.
      * - `5xx` (prober crash) → retry a couple of times, then give up.
+     * - `429` → propagates by default; with `patient: true` it is waited out
+     *   (its Retry-After, else the patient backoff, clamped to `timeoutMs`).
      * - timeout → give up.
+     *
+     * `patient: true` is for a LONG wait (4v7Vwvcw): polls start at least
+     * max(Retry-After, 3 s doubling per poll up to 30 s) apart instead of the
+     * 250 ms jitter backoff, so a 900 s wait stays inside the per-user probe
+     * rate limit. The spacing is per call; parallel calls share the server's
+     * bucket, and the overflow is absorbed by the 429 wait-out above.
      *
      * **Never bounces:** on give-up (timeout / repeated 5xx / transport / not
      * applicable) it returns `landed: false` with a `reason` rather than throwing, so the
@@ -2843,8 +2862,9 @@ class GislClient
      * probe request is bounded only by the injected HTTP client's own timeout
      * (e.g. Guzzle's `timeout`/`connect_timeout`) — set that to keep one slow
      * probe from running past the wait budget. Cancellation is likewise
-     * cooperative + between-polls (SDK convention): a cancelled token throws
-     * {@see GislAbortError} at the next loop top.
+     * cooperative (SDK convention): a cancelled token throws
+     * {@see GislAbortError} at the next loop top, or within 1 s of a sleep
+     * between polls, which is taken in slices of at most 1 s.
      *
      * Mirrors `packages/typescript/src/client.ts::waitForProbe`.
      */
@@ -2859,7 +2879,11 @@ class GislClient
         $cancellation = $opts->cancellation;
         $onPoll = $opts->onPoll;
 
-        $startNs = \hrtime(true);
+        $patient = $opts->patient;
+
+        // Every time read goes through Sleeper, in both modes, so a test that
+        // swaps its primitives drives this loop on a fake clock (4v7Vwvcw).
+        $startNs = Sleeper::nowNs();
         $deadlineNs = $startNs + ($timeoutMs * 1_000_000);
         $baseBackoffMs = 250;
         $maxProberRetries = 2;
@@ -2875,12 +2899,13 @@ class GislClient
             // Pre-request deadline check (mirrors the TS `remainingBeforeAttempt
             // <= 0` guard): a timeoutMs<=0 must give up BEFORE issuing any probe
             // HTTP call, so a 0-budget wait fires zero requests.
-            if (\hrtime(true) >= $deadlineNs) {
+            if (Sleeper::nowNs() >= $deadlineNs) {
                 return new ProbeWaitResult(landed: false, reason: 'timeout');
             }
             ++$attempt;
+            $attemptStartedNs = Sleeper::nowNs();
             if (\is_callable($onPoll)) {
-                $elapsedMs = (int) ((\hrtime(true) - $startNs) / 1_000_000);
+                $elapsedMs = (int) (($attemptStartedNs - $startNs) / 1_000_000);
                 $onPoll(['attempt' => $attempt, 'elapsedMs' => $elapsedMs]);
             }
 
@@ -2918,6 +2943,11 @@ class GislClient
                 if ($probeErrorType === 'probe_not_ready') {
                     // Not landed yet — keep polling, like feature_not_available.
                     $retryAfterMs = RateLimitHeaders::parseRetryAfterMs($e->responseHeaders['retry-after'] ?? null);
+                } elseif ($patient && $e->statusCode === 429 && !($e instanceof GislLongFormConcurrencyError)) {
+                    // Patient: the per-user probe bucket is spent (another call's polls
+                    // share it). Wait it out rather than end the wait; the spacing below
+                    // takes the Retry-After, else the patient backoff, clamped to the budget.
+                    $retryAfterMs = RateLimitHeaders::parseRetryAfterMs($e->responseHeaders['retry-after'] ?? null);
                 } elseif ($probeErrorType === 'probe_not_applicable') {
                     // Terminal: this upload's type is never probed, so polling cannot
                     // change the answer. Never-bounce: the caller creates anyway.
@@ -2943,16 +2973,28 @@ class GislClient
             // left. Converted from ns as a float: hrtime(true) is a float on
             // 32-bit builds and a ns budget overflows a 32-bit int there, while
             // microseconds fit (codex e8c58a71a7ec, fa9e0c70e20d).
-            $remainingNs = $deadlineNs - \hrtime(true);
+            $remainingNs = $deadlineNs - Sleeper::nowNs();
             if ($remainingNs <= 0) {
                 return new ProbeWaitResult(landed: false, reason: 'timeout');
             }
-            $backoffMs = $retryAfterMs ?? self::fullJitterMs($baseBackoffMs, $attempt - 1);
-            $sleepUs = (int) \min($backoffMs * 1000, \ceil($remainingNs / 1000));
-            if ($sleepUs > 0) {
-                \usleep($sleepUs);
+            if ($patient) {
+                // Spaced from this poll's START, so a slow answer counts toward the gap.
+                $gapMs = \max(
+                    $retryAfterMs ?? 0,
+                    \min(self::PATIENT_PROBE_BACKOFF_BASE_MS << \min($attempt - 1, 15), self::PATIENT_PROBE_BACKOFF_MAX_MS),
+                );
+                $untilGapNs = $attemptStartedNs + ($gapMs * 1_000_000) - Sleeper::nowNs();
+                $sleepUs = (int) \ceil(\min($untilGapNs, $remainingNs) / 1000);
+            } else {
+                $backoffMs = $retryAfterMs ?? self::fullJitterMs($baseBackoffMs, $attempt - 1);
+                $sleepUs = (int) \min($backoffMs * 1000, \ceil($remainingNs / 1000));
             }
-            if (\hrtime(true) >= $deadlineNs) {
+            // In slices of <= 1 s with the cancellation checked between them
+            // (F11): a patient gap reaches 30 s, a 429's Retry-After minutes.
+            if ($sleepUs > 0) {
+                Sleeper::sleepUsCancellable($sleepUs, $cancellation);
+            }
+            if (Sleeper::nowNs() >= $deadlineNs) {
                 return new ProbeWaitResult(landed: false, reason: 'timeout');
             }
         }
@@ -2961,16 +3003,40 @@ class GislClient
     /**
      * createWorkflow(), recovering from a `422 probe_pending` (dql51via): waits
      * for the named job's upload probe, then re-creates the SAME payload (an
-     * upload whose probe is `not_applicable`, never probed, is skipped). Gives
-     * up by rethrowing the original {@see GislProbePendingError} when the probe
-     * does not land within `$probeTimeoutMs` (default 30 s), lands corrupt or
-     * unsupported_codec, or three creates are refused. On a guest client
-     * ({@see Gisl::anonymous()}) it does NOT poll (the probe endpoint is sign-in
-     * only): it re-creates on Retry-After, else a 1 s doubling backoff capped at
-     * 30 s, with no count cap, until the budget (default 900 s, the policy's
-     * probe_wait_bound_seconds) runs out, with one last create at the boundary.
-     * A no-op when the server never refuses. Every ergonomic run()/submit()
+     * upload whose probe is `not_applicable`, never probed, is skipped). A
+     * no-op when the server never refuses. Every ergonomic run()/submit()
      * already uses it. Mirrors TS `createWorkflowAwaitingProbe`.
+     *
+     * The default budget `$probeTimeoutMs` is the contract's
+     * `video.probe_wait_bound_seconds` (900 s) for every caller, covering the
+     * refusal's Retry-After, every probe wait and every create gap; past it the
+     * server stops answering `probe_pending`. There is no create-count cap: the
+     * budget alone ends a recovery (4v7Vwvcw). So this call can now block for
+     * up to about 15 minutes; pass `$probeTimeoutMs` to bound it.
+     *
+     * Signed in, it polls with `waitForProbe(patient: true)`, starts each
+     * re-create at least max(Retry-After, 1 s doubling per create up to 30 s)
+     * after the previous create started (a refusal costs a `workflow_create`
+     * token), and waits out a re-create refused with a plain `429
+     * TOO_MANY_REQUESTS` the same way. `DUPLICATE_IN_PROGRESS` and the
+     * long-form concurrency 429 are rethrown at once. Under the DEFAULT budget,
+     * when the probe still has not landed at its end, it makes ONE last create
+     * about 2 s past it (the server's bound is strict, in whole seconds), which
+     * the server should then accept; so the default budget may end up to about
+     * 3 s late. An explicit `$probeTimeoutMs` is a strict cap: no create is
+     * scheduled past it, and a late timer may start one at most 1 s past. With
+     * an explicit budget of at least about 902 s it makes that one create once
+     * the server's 900 s bound has passed, instead of polling to the budget's end.
+     *
+     * On a guest client ({@see Gisl::anonymous()}) it does NOT poll (the probe
+     * endpoint is sign-in only): it re-creates on Retry-After, else a 1 s
+     * doubling backoff capped at 30 s, until the budget runs out, with one last
+     * create at the boundary. A guest's 429 is rethrown.
+     *
+     * Gives up by rethrowing the ORIGINAL {@see GislProbePendingError} when the
+     * budget runs out or the probe does not land within it, the probe lands
+     * corrupt or unsupported_codec, or (signed in) the refusal names no job
+     * whose upload is in the payload.
      */
     public function createWorkflowAwaitingProbe(
         WorkflowCreatePayload $payload,

@@ -7,8 +7,10 @@ namespace Gisl\Sdk\Tests\Unit;
 use Gisl\Sdk\Cancellation;
 use Gisl\Sdk\Errors\GislAbortError;
 use Gisl\Sdk\Errors\GislApiError;
+use Gisl\Sdk\Errors\GislLongFormConcurrencyError;
 use Gisl\Sdk\GislClient;
 use Gisl\Sdk\GislClientConfig;
+use Gisl\Sdk\Http\Sleeper;
 use Gisl\Sdk\ProbeWaitOptions;
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
@@ -34,28 +36,69 @@ final class GislClientWaitForProbeTest extends TestCase
 
     private HttpFactory $factory;
 
+    /** The fake monotonic clock {@see useFakeClock()} installs, in ns. */
+    private int $nowNs = 0;
+
+    /** @var list<int> Every primitive sleep the fake clock was asked for, in µs. */
+    private array $sleptUs = [];
+
     protected function setUp(): void
     {
         $this->factory = new HttpFactory();
     }
 
+    protected function tearDown(): void
+    {
+        Sleeper::setForTesting(null, null);
+    }
+
+    /**
+     * Replace ONLY Sleeper's two primitives: time stands still except when the
+     * loop sleeps (or a request's `$onRequest` advances it), so the production
+     * deadline, clamp and slice logic run on exact numbers. `$onSlice` runs after
+     * each slice, e.g. to cancel mid-wait.
+     */
+    private function useFakeClock(?\Closure $onSlice = null): void
+    {
+        $this->nowNs = 1_000_000_000_000;
+        $this->sleptUs = [];
+        Sleeper::setForTesting(
+            fn (): int => $this->nowNs,
+            function (int $us) use ($onSlice): void {
+                $this->sleptUs[] = $us;
+                $this->nowNs += $us * 1_000;
+                if ($onSlice !== null) {
+                    $onSlice();
+                }
+            },
+        );
+    }
+
     /**
      * @param list<ResponseInterface|\Throwable> $queue
+     * @param (\Closure(): void)|null           $onRequest runs before every response
      */
-    private function makeClient(array $queue): GislClient
+    private function makeClient(array $queue, ?\Closure $onRequest = null, ?int &$requests = null): GislClient
     {
-        $http = new class ($queue) implements ClientInterface {
+        $requests = 0;
+        $http = new class ($queue, $onRequest, $requests) implements ClientInterface {
             /** @var list<ResponseInterface|\Throwable> */
             private array $queue;
+            private int $requests;
 
             /** @param list<ResponseInterface|\Throwable> $queue */
-            public function __construct(array $queue)
+            public function __construct(array $queue, private readonly ?\Closure $onRequest, int &$requests)
             {
                 $this->queue = $queue;
+                $this->requests = &$requests;
             }
 
             public function sendRequest(RequestInterface $request): ResponseInterface
             {
+                ++$this->requests;
+                if ($this->onRequest !== null) {
+                    ($this->onRequest)();
+                }
                 $next = \array_shift($this->queue);
                 if ($next === null) {
                     throw new \RuntimeException('Stub PSR-18 client: response queue exhausted');
@@ -391,5 +434,211 @@ final class GislClientWaitForProbeTest extends TestCase
             self::assertSame('probe_not_applicable', $e->payload['error_type'] ?? null);
             self::assertFalse($e->retryable());
         }
+    }
+
+    // --- patient polling (4v7Vwvcw, mirrors TS Hal5c41E) ----------------------
+    // A signed-in probe_pending recovery may wait up to 900 s; at the default
+    // 250 ms jitter cadence a Free account's 10/min probe bucket is spent in the
+    // first seconds. `patient` spaces polls and waits a probe 429 out. Every
+    // test below runs on the fake Sleeper clock: no real sleeps.
+
+    private function rateLimited(?string $retryAfter = null, string $errorCode = 'TOO_MANY_REQUESTS'): ResponseInterface
+    {
+        $body = \json_encode(['success' => false, 'error' => $errorCode, 'message' => 'Too many requests'], JSON_THROW_ON_ERROR);
+        $headers = ['Content-Type' => 'application/json'];
+        if ($retryAfter !== null) {
+            $headers['Retry-After'] = $retryAfter;
+        }
+        return new Response(429, $headers, $body);
+    }
+
+    /**
+     * Runs one wait, recording each poll's elapsed ms.
+     *
+     * @param list<ResponseInterface|\Throwable> $queue
+     * @return array{0: \Gisl\Sdk\ProbeWaitResult, 1: list<int>}
+     */
+    private function runPatient(array $queue, int $timeoutMs, bool $patient = true, ?\Closure $onRequest = null): array
+    {
+        $client = $this->makeClient($queue, $onRequest);
+        $elapsed = [];
+        $result = $client->waitForProbe(self::FID, new ProbeWaitOptions(
+            timeoutMs: $timeoutMs,
+            onPoll: function (array $info) use (&$elapsed): void {
+                $elapsed[] = $info['elapsedMs'];
+            },
+            patient: $patient,
+        ));
+        return [$result, $elapsed];
+    }
+
+    public function test_patient_spaces_polls_3s_doubling_to_a_30s_cap_from_each_poll_start(): void
+    {
+        $this->useFakeClock();
+        [$result, $elapsed] = $this->runPatient(\array_fill(0, 50, $this->probe422('probe_not_ready')), 120_000);
+        self::assertFalse($result->landed);
+        self::assertSame('timeout', $result->reason);
+        // Gaps 3, 6, 12, 24, then 30, 30 s.
+        self::assertSame([0, 3_000, 9_000, 21_000, 45_000, 75_000, 105_000], $elapsed);
+        // The wait ends AT the budget, not a slice past it.
+        self::assertSame(1_000_000_000_000 + 120_000 * 1_000_000, $this->nowNs);
+    }
+
+    public function test_patient_counts_a_slow_answer_toward_the_gap(): void
+    {
+        // Each probe request takes 2 s: the gap runs from the poll's START, so the
+        // second poll is at 3 s, not 5 s.
+        $this->useFakeClock();
+        [$result, $elapsed] = $this->runPatient(
+            [$this->probe422('probe_not_ready'), $this->probeOk()],
+            60_000,
+            onRequest: function (): void {
+                $this->nowNs += 2_000_000_000;
+            },
+        );
+        self::assertTrue($result->landed);
+        self::assertSame([0, 3_000], $elapsed);
+    }
+
+    public function test_patient_stays_inside_the_10_per_minute_probe_bucket_over_900s(): void
+    {
+        $this->useFakeClock();
+        [$result, $elapsed] = $this->runPatient(\array_fill(0, 200, $this->probe422('probe_not_ready')), 900_000);
+        self::assertSame('timeout', $result->reason);
+        foreach ($elapsed as $from) {
+            $inWindow = \array_filter($elapsed, static fn (int $t): bool => $t >= $from && $t < $from + 60_000);
+            self::assertLessThanOrEqual(10, \count($inWindow), "window from {$from} ms");
+        }
+        // ...and inside the 100/h bucket in total.
+        self::assertLessThanOrEqual(100, \count($elapsed));
+        // Every sleep was sliced to at most 1 s.
+        self::assertLessThanOrEqual(1_000_000, \max($this->sleptUs));
+    }
+
+    public function test_patient_a_retry_after_longer_than_the_backoff_sets_the_gap(): void
+    {
+        $this->useFakeClock();
+        [$result, $elapsed] = $this->runPatient([$this->probe422('probe_not_ready', ['Retry-After' => '10']), $this->probeOk()], 60_000);
+        self::assertTrue($result->landed);
+        self::assertSame([0, 10_000], $elapsed);
+    }
+
+    public function test_patient_a_retry_after_shorter_than_the_backoff_does_not_shorten_the_gap(): void
+    {
+        $this->useFakeClock();
+        [$result, $elapsed] = $this->runPatient([$this->probe422('probe_not_ready', ['Retry-After' => '1']), $this->probeOk()], 60_000);
+        self::assertTrue($result->landed);
+        self::assertSame([0, 3_000], $elapsed);
+    }
+
+    public function test_patient_waits_a_probe_429_out_for_its_retry_after_then_lands(): void
+    {
+        $this->useFakeClock();
+        [$result, $elapsed] = $this->runPatient([$this->rateLimited('20'), $this->probeOk()], 60_000);
+        self::assertTrue($result->landed);
+        self::assertSame([0, 20_000], $elapsed);
+    }
+
+    public function test_patient_waits_a_probe_429_with_no_retry_after_out_with_the_patient_backoff(): void
+    {
+        $this->useFakeClock();
+        [$result, $elapsed] = $this->runPatient([$this->rateLimited(), $this->probeOk()], 60_000);
+        self::assertTrue($result->landed);
+        self::assertSame([0, 3_000], $elapsed);
+    }
+
+    public function test_patient_clamps_a_probe_429_wait_to_the_budget_and_makes_no_second_poll(): void
+    {
+        $this->useFakeClock();
+        $start = $this->nowNs;
+        // A 200 queued second: a poll at the edge would LAND instead of timing out.
+        [$result, $elapsed] = $this->runPatient([$this->rateLimited('3600'), $this->probeOk()], 10_000);
+        self::assertFalse($result->landed);
+        self::assertSame('timeout', $result->reason);
+        self::assertSame([0], $elapsed);
+        self::assertSame(10_000 * 1_000_000, $this->nowNs - $start);
+    }
+
+    public function test_patient_cancel_during_a_long_retry_after_is_honoured_within_one_slice_and_does_not_re_poll(): void
+    {
+        $cancellation = new Cancellation();
+        $slices = 0;
+        $this->useFakeClock(function () use (&$slices, $cancellation): void {
+            if (++$slices === 3) {
+                $cancellation->cancel();
+            }
+        });
+        $start = $this->nowNs;
+        $client = $this->makeClient([$this->rateLimited('600'), $this->probeOk()], null, $requests);
+        try {
+            $client->waitForProbe(self::FID, new ProbeWaitOptions(timeoutMs: 900_000, cancellation: $cancellation, patient: true));
+            self::fail('expected GislAbortError');
+        } catch (GislAbortError) {
+            // Cancelled during the 3rd 1 s slice; noticed before a 4th.
+            self::assertSame(3, $slices);
+            self::assertSame(3_000 * 1_000_000, $this->nowNs - $start);
+            self::assertSame(1, $requests, 'the probe was not re-polled');
+        }
+    }
+
+    public function test_without_patient_a_probe_429_still_propagates_as_a_base_api_error(): void
+    {
+        $this->useFakeClock();
+        $client = $this->makeClient([$this->rateLimited('5'), $this->probeOk()], null, $requests);
+        try {
+            $client->waitForProbe(self::FID, new ProbeWaitOptions(timeoutMs: 60_000));
+            self::fail('expected the 429');
+        } catch (GislApiError $e) {
+            self::assertSame(GislApiError::class, $e::class);
+            self::assertSame(429, $e->statusCode);
+            self::assertSame('TOO_MANY_REQUESTS', $e->errorCode);
+            self::assertSame('5', $e->responseHeaders['retry-after'] ?? null);
+            self::assertSame(1, $requests);
+        }
+    }
+
+    public function test_without_patient_the_cadence_is_the_sub_second_jitter_backoff(): void
+    {
+        $this->useFakeClock();
+        [$result, $elapsed] = $this->runPatient([$this->probe422('probe_not_ready'), $this->probeOk()], 60_000, patient: false);
+        self::assertTrue($result->landed);
+        self::assertCount(2, $elapsed);
+        // The attempt-1 full-jitter backoff is at most 250 ms; a patient wait would be 3 s.
+        self::assertLessThanOrEqual(250, $elapsed[1]);
+    }
+
+    public function test_without_patient_every_time_read_is_the_sleeper_clock(): void
+    {
+        // A 3600 s Retry-After clamped to a 30 s budget: on the fake clock the
+        // wait ends at exactly 30 s, with no real sleep, so the deadline, the
+        // remainder AND the sleep all went through Sleeper (F2, K3).
+        $this->useFakeClock();
+        $start = $this->nowNs;
+        $realStart = \hrtime(true);
+        [$result, $elapsed] = $this->runPatient([$this->probe422('probe_not_ready', ['Retry-After' => '3600']), $this->probeOk()], 30_000, patient: false);
+        self::assertSame('timeout', $result->reason);
+        self::assertSame([0], $elapsed);
+        self::assertSame(30_000 * 1_000_000, $this->nowNs - $start);
+        self::assertLessThan(1_000, (\hrtime(true) - $realStart) / 1_000_000, 'no real sleep');
+        self::assertCount(30, $this->sleptUs, 'sliced to 1 s');
+    }
+
+    public function test_patient_still_propagates_the_long_form_concurrency_429(): void
+    {
+        $this->useFakeClock();
+        $client = $this->makeClient([$this->rateLimited('5', 'LONG_FORM_CONCURRENCY_LIMIT_EXCEEDED'), $this->probeOk()]);
+        $this->expectException(GislLongFormConcurrencyError::class);
+        $client->waitForProbe(self::FID, new ProbeWaitOptions(timeoutMs: 60_000, patient: true));
+    }
+
+    public function test_patient_still_gives_up_on_repeated_5xx_and_still_propagates_a_404(): void
+    {
+        $this->useFakeClock();
+        [$result] = $this->runPatient([$this->proberCrash(), $this->proberCrash(), $this->proberCrash()], 900_000);
+        self::assertSame('prober_error', $result->reason);
+
+        $client = $this->makeClient([$this->uploadNotFound()]);
+        $this->expectException(GislApiError::class);
+        $client->waitForProbe(self::FID, new ProbeWaitOptions(timeoutMs: 900_000, patient: true));
     }
 }
