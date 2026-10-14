@@ -595,6 +595,9 @@ final class OperationBuilder
                     progress: $op->getProgress() !== null ? (float) $op->getProgress() : null,
                     errorCode: $op->getErrorCode(),
                     errorMessage: $op->getErrorMessage(),
+                    queuedAt: BuilderInternals::formatIso8601Utc($op->getQueuedAt()),
+                    startedAt: BuilderInternals::formatIso8601Utc($op->getStartedAt()),
+                    completedAt: BuilderInternals::formatIso8601Utc($op->getCompletedAt()),
                 );
             }
             $jobs[] = new JobBreakdown(

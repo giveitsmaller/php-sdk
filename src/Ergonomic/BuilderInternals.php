@@ -337,12 +337,13 @@ final class BuilderInternals
             return null;
         }
         if ($value instanceof \DateTimeInterface) {
-            $utc = $value->getTimezone()->getName() === 'UTC'
-                ? $value
-                : (new \DateTimeImmutable())
-                    ->setTimestamp($value->getTimestamp())
-                    ->setTimezone(new \DateTimeZone('UTC'));
-            return $utc->format('Y-m-d\TH:i:s.v\Z');
+            // createFromInterface keeps the microseconds. The setTimestamp()
+            // conversion this replaces truncated them, and a wire `...Z` value
+            // deserialises with timezone "Z", not "UTC", so every timestamp
+            // took that path and lost its milliseconds (qFgn1gn4).
+            return \DateTimeImmutable::createFromInterface($value)
+                ->setTimezone(new \DateTimeZone('UTC'))
+                ->format('Y-m-d\TH:i:s.v\Z');
         }
         return self::coerceNullableString($value);
     }

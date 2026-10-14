@@ -20,6 +20,12 @@ final class OperationBreakdown
         public readonly ?float $progress = null,
         public readonly ?string $errorCode = null,
         public readonly ?string $errorMessage = null,
+        /** ISO-8601 UTC, when the api queued this operation; null when not reported. */
+        public readonly ?string $queuedAt = null,
+        /** ISO-8601 UTC, when a worker started this operation. */
+        public readonly ?string $startedAt = null,
+        /** ISO-8601 UTC, when this operation reached a terminal status. */
+        public readonly ?string $completedAt = null,
     ) {
     }
 
@@ -41,6 +47,15 @@ final class OperationBreakdown
         }
         if ($this->errorMessage !== null) {
             $out['errorMessage'] = $this->errorMessage;
+        }
+        if ($this->queuedAt !== null) {
+            $out['queuedAt'] = $this->queuedAt;
+        }
+        if ($this->startedAt !== null) {
+            $out['startedAt'] = $this->startedAt;
+        }
+        if ($this->completedAt !== null) {
+            $out['completedAt'] = $this->completedAt;
         }
         return $out;
     }

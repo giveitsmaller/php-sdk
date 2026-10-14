@@ -281,6 +281,41 @@ final class GislClientWorkflowLifecycleTest extends TestCase
         self::assertSame(['limit_mb' => 500, 'ratio' => 1.5, 'unit' => 'MB', 'hard' => true], $op->getMessageParams());
     }
 
+    public function testOperationTimestampsHydrateOnTheRawClient(): void
+    {
+        // qFgn1gn4: the raw model carries per-operation queued/started/completed
+        // as DateTime; the ergonomic Result projects them to ISO strings.
+        $client = $this->makeClient($this->stubClient([
+            $this->jsonResponse(200, [
+                'success' => true,
+                'data' => [
+                    'workflow_id' => '01936fb2-0000-7000-8000-000000000001',
+                    'status' => 'completed',
+                    'jobs' => [[
+                        'job_id' => '01936fb3-0001-7000-8000-000000000001',
+                        'ref' => 'op',
+                        'status' => 'completed',
+                        'operations' => [[
+                            'id' => '01936fb4-0001-7000-8000-000000000001',
+                            'type' => 'compress',
+                            'status' => 'completed',
+                            'queued_at' => '2026-10-14T09:39:06.800Z',
+                            'started_at' => '2026-10-14T09:39:08.108Z',
+                            'completed_at' => '2026-10-14T09:39:56.451Z',
+                        ]],
+                    ]],
+                ],
+            ]),
+        ]));
+
+        $op = $client->getWorkflowStatus('01936fb2-0000-7000-8000-000000000001')->getJobs()[0]->getOperations()[0];
+
+        self::assertInstanceOf(\DateTimeInterface::class, $op->getQueuedAt());
+        self::assertSame('2026-10-14T09:39:06.800', $op->getQueuedAt()?->format('Y-m-d\\TH:i:s.v'));
+        self::assertSame('2026-10-14T09:39:08.108', $op->getStartedAt()?->format('Y-m-d\\TH:i:s.v'));
+        self::assertSame('2026-10-14T09:39:56.451', $op->getCompletedAt()?->format('Y-m-d\\TH:i:s.v'));
+    }
+
     public function testTheRequestSideStillRejectsAnUnknownInlineEnumValue(): void
     {
         // Only DEserialisation is tolerant: a caller building a model still

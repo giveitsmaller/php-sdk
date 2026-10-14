@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Gisl\Sdk\Tests\Unit\Ergonomic;
 
+use Gisl\Generated\OpenApi\Model\OperationResponse;
 use Gisl\Sdk\Ergonomic\Artifact;
 use Gisl\Sdk\Ergonomic\BuilderInternals;
+use Gisl\Sdk\Ergonomic\OperationBreakdown;
 use Gisl\Sdk\Ergonomic\OperationBuilder;
 use Gisl\Sdk\Ergonomic\PlannedValues;
 use Gisl\Sdk\Ergonomic\Result;
@@ -437,6 +439,148 @@ final class OperationBuilderRunTest extends TestCase
     public static function uploadOkStatic(): array
     {
         return self::uploadOk();
+    }
+
+    /**
+     * qFgn1gn4 — per-operation timestamps reach Result::$jobs[]->operations[]
+     * as UTC ISO-8601 strings, the same form as Result::$createdAt.
+     */
+    public function test_operation_breakdown_surfaces_per_operation_timestamps(): void
+    {
+        $op = self::runWithOperation([
+            'queued_at' => '2026-10-14T09:39:06.800Z',
+            'started_at' => '2026-10-14T09:39:08.108Z',
+            'completed_at' => '2026-10-14T09:39:56.451Z',
+        ]);
+
+        $this->assertSame('2026-10-14T09:39:06.800Z', $op->queuedAt);
+        $this->assertSame('2026-10-14T09:39:08.108Z', $op->startedAt);
+        $this->assertSame('2026-10-14T09:39:56.451Z', $op->completedAt);
+        $this->assertSame('2026-10-14T09:39:56.451Z', $op->toArray()['completedAt']);
+    }
+
+    /**
+     * qFgn1gn4 — the workflow-level timestamps share formatIso8601Utc, which
+     * used to drop milliseconds from a wire `Z` value (`.250Z` became `.000Z`).
+     */
+    public function test_result_created_and_updated_at_keep_their_milliseconds(): void
+    {
+        $status = self::statusCompleted();
+        $status['data']['created_at'] = '2026-10-14T09:39:06.250Z';
+        $status['data']['updated_at'] = '2026-10-14T10:39:56.451+01:00';
+        $http = self::stubClient([
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            self::jsonResponse(200, $status),
+            self::jsonResponse(200, self::downloadsOk()),
+        ]);
+        $result = self::makeClient($http)
+            ->compress(self::writeTempFile('input bytes'), ['quality' => 75])
+            ->run(new RunOptions(maxWait: '5m', useSSE: false, pollIntervalMs: 100));
+
+        $this->assertSame('2026-10-14T09:39:06.250Z', $result->createdAt);
+        $this->assertSame('2026-10-14T09:39:56.451Z', $result->updatedAt);
+    }
+
+    public function test_operation_breakdown_normalises_a_non_utc_offset(): void
+    {
+        $op = self::runWithOperation(['queued_at' => '2026-10-14T10:39:06.800+01:00']);
+
+        $this->assertSame('2026-10-14T09:39:06.800Z', $op->queuedAt);
+    }
+
+    public function test_operation_breakdown_omits_timestamps_the_api_did_not_report(): void
+    {
+        $op = self::runWithOperation(['queued_at' => '2026-10-14T09:39:06.800Z']);
+
+        $this->assertSame('2026-10-14T09:39:06.800Z', $op->queuedAt);
+        $this->assertNull($op->startedAt);
+        $this->assertNull($op->completedAt);
+        $this->assertArrayNotHasKey('startedAt', $op->toArray());
+        $this->assertArrayNotHasKey('completedAt', $op->toArray());
+    }
+
+    public function test_operation_breakdown_omits_timestamps_the_api_sent_as_null(): void
+    {
+        $op = self::runWithOperation(['queued_at' => null, 'started_at' => null, 'completed_at' => null]);
+
+        $this->assertNull($op->queuedAt);
+        $this->assertNull($op->startedAt);
+        $this->assertNull($op->completedAt);
+        $this->assertSame(['id', 'type', 'status', 'progress'], array_keys($op->toArray()));
+    }
+
+    /**
+     * Contract-drift guard: every date-time property of the generated
+     * OperationResponse must be projected onto OperationBreakdown, so a future
+     * op-level timestamp cannot be silently dropped.
+     */
+    public function test_every_date_time_property_of_operation_response_is_projected(): void
+    {
+        $wireNames = self::dateTimeOperationProps();
+        $this->assertNotEmpty($wireNames);
+
+        $op = self::runWithOperation(array_fill_keys($wireNames, '2026-10-14T09:39:06.800Z'));
+
+        $this->assertSame([], self::propsMissingFromProjection($wireNames, $op->toArray()));
+    }
+
+    public function test_negative_control_the_drift_check_names_a_dropped_property(): void
+    {
+        $op = self::runWithOperation(['queued_at' => '2026-10-14T09:39:06.800Z']);
+
+        $this->assertSame(
+            ['archived_at'],
+            self::propsMissingFromProjection(['queued_at', 'archived_at'], $op->toArray()),
+        );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function dateTimeOperationProps(): array
+    {
+        return array_keys(array_filter(
+            OperationResponse::openAPIFormats(),
+            static fn (?string $format): bool => $format === 'date-time',
+        ));
+    }
+
+    /**
+     * @param list<string> $wireNames
+     * @param array<string, mixed> $projected
+     * @return list<string>
+     */
+    private static function propsMissingFromProjection(array $wireNames, array $projected): array
+    {
+        $missing = [];
+        foreach ($wireNames as $wireName) {
+            $camel = lcfirst(str_replace('_', '', ucwords($wireName, '_')));
+            if (!array_key_exists($camel, $projected)) {
+                $missing[] = $wireName;
+            }
+        }
+        return $missing;
+    }
+
+    /**
+     * @param array<string, mixed> $operationFields
+     */
+    private static function runWithOperation(array $operationFields): OperationBreakdown
+    {
+        $status = self::statusCompleted();
+        $status['data']['jobs'][0]['operations'][0] += $operationFields;
+        $http = self::stubClient([
+            self::jsonResponse(200, self::uploadOk()),
+            self::jsonResponse(201, self::createOk()),
+            self::jsonResponse(200, $status),
+            self::jsonResponse(200, self::downloadsOk()),
+        ]);
+        $result = self::makeClient($http)
+            ->compress(self::writeTempFile('input bytes'), ['quality' => 75])
+            ->run(new RunOptions(maxWait: '5m', useSSE: false, pollIntervalMs: 100));
+
+        return $result->jobs[0]->operations[0];
     }
 
     /**

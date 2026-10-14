@@ -619,10 +619,13 @@ readonly property Gisl\Sdk\Ergonomic\MergeOptions::$targetSize : string|int|null
 readonly property Gisl\Sdk\Ergonomic\MergeOptions::$transition : ?string
 readonly property Gisl\Sdk\Ergonomic\MergeOptions::$transitionDuration : ?float
 readonly property Gisl\Sdk\Ergonomic\MergeOptions::$videoFormat : ?string
+readonly property Gisl\Sdk\Ergonomic\OperationBreakdown::$completedAt : ?string
 readonly property Gisl\Sdk\Ergonomic\OperationBreakdown::$errorCode : ?string
 readonly property Gisl\Sdk\Ergonomic\OperationBreakdown::$errorMessage : ?string
 readonly property Gisl\Sdk\Ergonomic\OperationBreakdown::$id : string
 readonly property Gisl\Sdk\Ergonomic\OperationBreakdown::$progress : ?float
+readonly property Gisl\Sdk\Ergonomic\OperationBreakdown::$queuedAt : ?string
+readonly property Gisl\Sdk\Ergonomic\OperationBreakdown::$startedAt : ?string
 readonly property Gisl\Sdk\Ergonomic\OperationBreakdown::$status : string
 readonly property Gisl\Sdk\Ergonomic\OperationBreakdown::$type : string
 readonly property Gisl\Sdk\Ergonomic\PathAsset::$path : string
