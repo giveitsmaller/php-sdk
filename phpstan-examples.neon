@@ -1,0 +1,16 @@
+# PHPStan over the hand-written examples in examples/php (P44EUyV6) — a CI GATE
+# (validate-php, "PHPStan over examples/php"). Unlike phpstan.neon (src + parity,
+# reported, not gated) this has NO baseline and NO ignore list: a broken example
+# must fail, not be absorbed.
+#
+# ⚠️ LEVEL 0, MEASURED 2026-10-14, not chosen: level 1 fails on the current
+# examples (12-massive-files.php: $db might not be defined), and level 8 has 8
+# findings. Level 0 catches unknown classes, functions and STATIC methods (e.g.
+# Gisl::creat()) but NOT an unknown INSTANCE method on the fluent chain
+# (->compresss() first fails at level 2). Card 93b8346T fixes the examples and
+# raises this to 8.
+parameters:
+    level: 0
+    paths:
+        - ../../examples/php
+    treatPhpDocTypesAsCertain: false
