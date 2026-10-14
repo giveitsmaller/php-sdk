@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Gisl\Sdk\FileFirst;
 
 use Gisl\Generated\OpenApi\Model\JobDownload;
+use Gisl\Generated\OpenApi\Model\OperationDownload;
 use Gisl\Generated\OpenApi\Model\WorkflowStatusResponse;
 use Gisl\Sdk\Ergonomic\BuilderInternals;
 use Gisl\Sdk\Ergonomic\RunTransport;
@@ -174,18 +175,7 @@ final class RunResult
         $artifacts = [];
         foreach ($jobDownloads as $job) {
             foreach ($job->getFiles() ?? [] as $file) {
-                $artifacts[] = new OutputFile(
-                    url: BuilderInternals::coerceString($file->getDownloadUrl()),
-                    filename: BuilderInternals::coerceString($file->getFilename()),
-                    sizeBytes: (int) ($file->getSizeBytes() ?? 0),
-                    operation: BuilderInternals::coerceString($file->getOperation()),
-                    chosenQuality: $file->getChosenQuality(),
-                    targetSizeMet: $file->getTargetSizeMet(),
-                    measuredQuality: $file->getMeasuredQuality(),
-                    qualityMetric: $file->getQualityMetric(),
-                    alreadyOptimal: $file->getAlreadyOptimal(),
-                    alreadyOptimalKind: $file->getAlreadyOptimalKind(),
-                );
+                $artifacts[] = self::outputFileFrom($file);
             }
         }
 
@@ -276,18 +266,7 @@ final class RunResult
 
             $outputs = [];
             foreach ($filesByRef[$ref] ?? [] as $file) {
-                $outputs[] = new OutputFile(
-                    url: BuilderInternals::coerceString($file->getDownloadUrl()),
-                    filename: BuilderInternals::coerceString($file->getFilename()),
-                    sizeBytes: (int) ($file->getSizeBytes() ?? 0),
-                    operation: BuilderInternals::coerceString($file->getOperation()),
-                    chosenQuality: $file->getChosenQuality(),
-                    targetSizeMet: $file->getTargetSizeMet(),
-                    measuredQuality: $file->getMeasuredQuality(),
-                    qualityMetric: $file->getQualityMetric(),
-                    alreadyOptimal: $file->getAlreadyOptimal(),
-                    alreadyOptimalKind: $file->getAlreadyOptimalKind(),
-                );
+                $outputs[] = self::outputFileFrom($file);
             }
             // The flat artifacts[] keeps every job's outputs in job order.
             foreach ($outputs as $output) {
@@ -323,6 +302,29 @@ final class RunResult
             failed: $failed,
             downloader: $downloader,
             transport: $transport,
+        );
+    }
+
+    /**
+     * The ONE projection from a generated download onto the file-first
+     * OutputFile, shared by the single-job and multi-job producers so a new
+     * field cannot reach one and miss the other. Mirrors the TS `toOutputFile`.
+     */
+    private static function outputFileFrom(OperationDownload $file): OutputFile
+    {
+        return new OutputFile(
+            url: BuilderInternals::coerceString($file->getDownloadUrl()),
+            filename: BuilderInternals::coerceString($file->getFilename()),
+            sizeBytes: (int) ($file->getSizeBytes() ?? 0),
+            operation: BuilderInternals::coerceString($file->getOperation()),
+            chosenQuality: $file->getChosenQuality(),
+            targetSizeMet: $file->getTargetSizeMet(),
+            measuredQuality: $file->getMeasuredQuality(),
+            qualityMetric: $file->getQualityMetric(),
+            alreadyOptimal: $file->getAlreadyOptimal(),
+            alreadyOptimalKind: $file->getAlreadyOptimalKind(),
+            pageIndex: $file->getPageIndex(),
+            position: $file->getPosition(),
         );
     }
 
@@ -620,8 +622,8 @@ final class RunResult
      *     ok: bool,
      *     targetSizeMissed?: bool,
      *     url?: string,
-     *     artifacts: list<array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool, measuredQuality?: float, qualityMetric?: string, alreadyOptimal?: bool, alreadyOptimalKind?: string}>,
-     *     succeeded: list<array{key: string|null, outputs: list<array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool, measuredQuality?: float, qualityMetric?: string, alreadyOptimal?: bool, alreadyOptimalKind?: string}>}>,
+     *     artifacts: list<array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool, measuredQuality?: float, qualityMetric?: string, alreadyOptimal?: bool, alreadyOptimalKind?: string, pageIndex?: int, position?: int}>,
+     *     succeeded: list<array{key: string|null, outputs: list<array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool, measuredQuality?: float, qualityMetric?: string, alreadyOptimal?: bool, alreadyOptimalKind?: string, pageIndex?: int, position?: int}>}>,
      *     failed: list<array{key: string|null, error: string, state: string, errorMessage?: string, errorCode?: string}>,
      *     transport?: string
      * }

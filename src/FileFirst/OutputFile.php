@@ -45,6 +45,14 @@ final class OutputFile
      *                                     the only kind today; treat null or an
      *                                     unrecognised value as a plain "already
      *                                     optimised".
+     * @param int|null    $pageIndex       1-based SOURCE page this output came
+     *                                     from: set for a PDF->image `convert`,
+     *                                     and for a `split` with `page_groups` it
+     *                                     is the group's FIRST page. Null (omitted)
+     *                                     on non-indexed outputs.
+     * @param int|null    $position        0-based ordinal of this output, when the
+     *                                     server provides it. Null (omitted)
+     *                                     otherwise; 0 is kept.
      */
     public function __construct(
         public readonly string $url,
@@ -57,6 +65,8 @@ final class OutputFile
         public readonly ?string $qualityMetric = null,
         public readonly ?bool $alreadyOptimal = null,
         public readonly ?string $alreadyOptimalKind = null,
+        public readonly ?int $pageIndex = null,
+        public readonly ?int $position = null,
     ) {
     }
 
@@ -67,7 +77,7 @@ final class OutputFile
      * The optional projected fields are OMITTED when null, mirroring TS's
      * omit-when-undefined so non-target-size outputs stay byte-identical.
      *
-     * @return array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool, measuredQuality?: float, qualityMetric?: string, alreadyOptimal?: bool, alreadyOptimalKind?: string}
+     * @return array{url: string, filename: string, sizeBytes: int, operation: string, chosenQuality?: int, targetSizeMet?: bool, measuredQuality?: float, qualityMetric?: string, alreadyOptimal?: bool, alreadyOptimalKind?: string, pageIndex?: int, position?: int}
      */
     public function toArray(): array
     {
@@ -94,6 +104,12 @@ final class OutputFile
         }
         if ($this->alreadyOptimalKind !== null) {
             $out['alreadyOptimalKind'] = $this->alreadyOptimalKind;
+        }
+        if ($this->pageIndex !== null) {
+            $out['pageIndex'] = $this->pageIndex;
+        }
+        if ($this->position !== null) {
+            $out['position'] = $this->position;
         }
         return $out;
     }

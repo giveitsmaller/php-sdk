@@ -730,6 +730,8 @@ readonly property Gisl\Sdk\FileFirst\OutputFile::$chosenQuality : ?int
 readonly property Gisl\Sdk\FileFirst\OutputFile::$filename : string
 readonly property Gisl\Sdk\FileFirst\OutputFile::$measuredQuality : ?float
 readonly property Gisl\Sdk\FileFirst\OutputFile::$operation : string
+readonly property Gisl\Sdk\FileFirst\OutputFile::$pageIndex : ?int
+readonly property Gisl\Sdk\FileFirst\OutputFile::$position : ?int
 readonly property Gisl\Sdk\FileFirst\OutputFile::$qualityMetric : ?string
 readonly property Gisl\Sdk\FileFirst\OutputFile::$sizeBytes : int
 readonly property Gisl\Sdk\FileFirst\OutputFile::$targetSizeMet : ?bool
