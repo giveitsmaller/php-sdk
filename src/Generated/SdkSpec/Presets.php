@@ -131,6 +131,70 @@ final class Presets
                 'stripUnusedCss' => false,
             ],
         ],
+        'image_convert' => [
+            'Size' => [
+                'quality' => 65,
+            ],
+            'Balanced' => [
+                'quality' => 80,
+            ],
+            'Quality' => [
+                'quality' => 92,
+            ],
+        ],
+        'video_convert' => [
+            'Size' => [
+                'crf' => 30,
+            ],
+            'Balanced' => [
+                'crf' => 23,
+            ],
+            'Quality' => [
+                'crf' => 18,
+            ],
+        ],
+        'image_thumbnail' => [
+            'Size' => [
+                'width' => 160,
+                'quality' => 70,
+            ],
+            'Balanced' => [
+                'width' => 320,
+                'quality' => 85,
+            ],
+            'Quality' => [
+                'width' => 640,
+                'quality' => 92,
+            ],
+        ],
+        'video_thumbnail' => [
+            'Size' => [
+                'width' => 160,
+                'quality' => 70,
+            ],
+            'Balanced' => [
+                'width' => 320,
+                'quality' => 85,
+            ],
+            'Quality' => [
+                'width' => 640,
+                'quality' => 92,
+            ],
+        ],
+        'document_thumbnail' => [
+            'Size' => [
+                'width' => 160,
+                'quality' => 70,
+            ],
+            'Balanced' => [
+                'width' => 320,
+                'quality' => 85,
+            ],
+            'Quality' => [
+                'width' => 640,
+                'quality' => 92,
+            ],
+        ],
     ];
 
     /** @codeCoverageIgnore */

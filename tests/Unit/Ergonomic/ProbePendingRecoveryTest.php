@@ -10,6 +10,8 @@ use Gisl\Generated\OpenApi\Model\UploadProbeResponse;
 use Gisl\Generated\OpenApi\Model\WorkflowCreateResponse;
 use Gisl\Sdk\Cancellation;
 use Gisl\Sdk\Ergonomic\BuilderInternals;
+use Gisl\Sdk\Ergonomic\Merge;
+use Gisl\Sdk\Ergonomic\MergeOptions;
 use Gisl\Sdk\Ergonomic\ProbePendingRecovery;
 use Gisl\Sdk\Ergonomic\RunOptions;
 use Gisl\Sdk\Errors\GislAbortError;
@@ -1079,6 +1081,200 @@ final class ProbePendingRecoveryTest extends TestCase
             self::assertSame(429, $e->statusCode);
             self::assertSame([0, 1_000], $this->relativeCreates());
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // f5ti3pik (contracts v2.235.0): a probe_pending refusal on a VIDEO merge
+    // names the FEEDER job `src_N` (the passthrough wrapping that upload), not
+    // the `merge` job. Through both public merge entry points, over stubbed
+    // PSR-18 with the real waitForProbe, recovery polls exactly that upload's
+    // probe and re-creates. No SDK change: this pins shipped behaviour. The
+    // inputs are small single-shot uploads, so the pre-create probe (multipart
+    // video only) sends nothing and the create meets the gate; probeBeforeCreate
+    // false would disable the recovery under test (see the opt-out test).
+    // -----------------------------------------------------------------------
+
+    public function testFilesMergeRunWaitsOnExactlyTheFeederJobsUploadThenReCreates(): void
+    {
+        $dir = self::mergeInputsDir();
+        $http = $this->mergeFeederHttp();
+        $client = self::makeClient($http);
+
+        $client->files([$dir . '/a.mp4', $dir . '/b.mp4', $dir . '/c.mp4'])
+            ->merge(new MergeOptions(mediaKind: 'video'))
+            ->run(maxWait: '5m', useSSE: false, pollIntervalMs: 100);
+
+        $creates = $this->mergeCreateBodies();
+        self::assertCount(2, $creates);
+        self::assertSame($creates[0], $creates[1], 'the SAME payload is re-created');
+        self::assertSame('upload', self::jobById($creates[0], 'src_1')['source']['type']);
+        self::assertSame(self::mergeFid('b.mp4'), self::jobById($creates[0], 'src_1')['source']['file_id']);
+        self::assertSame(['/api/uploads/' . self::mergeFid('b.mp4') . '/probe'], $this->probePaths());
+    }
+
+    public function testClientMergeWithARepeatedAssetWaitsOnTheSecondUniqueAssetsUpload(): void
+    {
+        $dir = self::mergeInputsDir();
+        $http = $this->mergeFeederHttp();
+        $client = self::makeClient($http);
+        $a = Merge::asset($dir . '/a.mp4');
+        $b = Merge::asset($dir . '/b.mp4');
+        $c = Merge::asset($dir . '/c.mp4');
+
+        // Play order a, a, b, c: MergedRecipe would lower one src job per
+        // position (src_1 = a); MergeBuilder dedups onto one src per asset
+        // (src_1 = b).
+        $client->merge([$a, $b, $c], new MergeOptions(mediaKind: 'video'))
+            ->sequence([$a, $a, $b, $c])
+            ->run(new RunOptions(maxWait: '5m', useSSE: false, pollIntervalMs: 100));
+
+        $creates = $this->mergeCreateBodies();
+        self::assertCount(2, $creates);
+        self::assertSame($creates[0], $creates[1], 'the SAME payload is re-created');
+        $srcJobs = [];
+        foreach (self::decodedJobs($creates[0]) as $job) {
+            if (\str_starts_with((string) ($job['id'] ?? ''), 'src_')) {
+                $srcJobs[] = [$job['id'], $job['source']['file_id']];
+            }
+        }
+        self::assertSame([
+            ['src_0', self::mergeFid('a.mp4')],
+            ['src_1', self::mergeFid('b.mp4')],
+            ['src_2', self::mergeFid('c.mp4')],
+        ], $srcJobs);
+        self::assertCount(4, self::jobById($creates[0], 'merge')['inputs']);
+        self::assertSame(['/api/uploads/' . self::mergeFid('b.mp4') . '/probe'], $this->probePaths());
+    }
+
+    /** @var list<RequestInterface> every request the merge-feeder stub saw */
+    private array $mergeRequests = [];
+
+    /** A deterministic upload id per input file name. */
+    private static function mergeFid(string $name): string
+    {
+        return match ($name) {
+            'a.mp4' => '01936fb1-7bb3-7000-8000-0000000000a0',
+            'b.mp4' => '01936fb1-7bb3-7000-8000-0000000000b0',
+            'c.mp4' => '01936fb1-7bb3-7000-8000-0000000000c0',
+        };
+    }
+
+    private static function mergeInputsDir(): string
+    {
+        $dir = \sys_get_temp_dir() . '/gisl-merge-feeder-' . \bin2hex(\random_bytes(6));
+        \mkdir($dir, 0700, true);
+        foreach (['a.mp4', 'b.mp4', 'c.mp4'] as $name) {
+            \file_put_contents($dir . '/' . $name, 'bytes-' . $name);
+        }
+        return $dir;
+    }
+
+    /**
+     * Routes by request: an upload answers with the id for the uploaded file's
+     * NAME (read from the multipart body, so upload order cannot matter); the
+     * first create is refused naming `src_1`; a probe lands `ok` echoing the
+     * polled id; then status and downloads complete the merge.
+     */
+    private function mergeFeederHttp(): ClientInterface
+    {
+        $this->mergeRequests = [];
+        $creates = 0;
+        return $this->recordingHttp(function (RequestInterface $r) use (&$creates): ResponseInterface {
+            $this->mergeRequests[] = $r;
+            $method = $r->getMethod();
+            $path = $r->getUri()->getPath();
+            if ($method === 'POST' && $path === '/api/uploads') {
+                if (\preg_match('/filename="([^"]+)"/', (string) $r->getBody(), $m) !== 1) {
+                    throw new \RuntimeException('upload carried no filename');
+                }
+                return self::jsonResponse(200, ['success' => true, 'data' => [
+                    'file_id' => self::mergeFid($m[1]),
+                    'original_name' => $m[1],
+                    'mime_type' => 'video/mp4',
+                    'size_bytes' => 11,
+                ]]);
+            }
+            if ($method === 'POST' && $path === '/api/workflows') {
+                return ++$creates === 1 ? self::refusal('src_1') : self::jsonResponse(201, self::createOk());
+            }
+            if (\preg_match('#^/api/uploads/([^/]+)/probe$#', $path, $m) === 1) {
+                return self::jsonResponse(200, ['success' => true, 'data' => [
+                    'file_id' => $m[1],
+                    'probe_status' => 'ok',
+                    'media_metadata' => ['duration_seconds' => 10, 'codec' => 'h264', 'container' => 'mp4', 'probed_at' => '2026-10-14T10:00:00Z'],
+                    'processing_class_pre_assignment' => 'short_form',
+                ]]);
+            }
+            if ($method === 'GET' && \str_ends_with($path, '/downloads')) {
+                return self::jsonResponse(200, self::mergeDownloads());
+            }
+            if ($method === 'GET' && \str_starts_with($path, '/api/workflows/')) {
+                return self::jsonResponse(200, self::mergeStatusCompleted());
+            }
+            throw new \RuntimeException("unrouted request: {$method} {$path}");
+        });
+    }
+
+    /** @return list<string> the create request bodies, in order */
+    private function mergeCreateBodies(): array
+    {
+        $bodies = [];
+        foreach ($this->mergeRequests as $r) {
+            if ($r->getMethod() === 'POST' && $r->getUri()->getPath() === '/api/workflows') {
+                $bodies[] = (string) $r->getBody();
+            }
+        }
+        return $bodies;
+    }
+
+    /** @return list<string> every probe path polled, in order */
+    private function probePaths(): array
+    {
+        $paths = [];
+        foreach ($this->mergeRequests as $r) {
+            if (\str_ends_with($r->getUri()->getPath(), '/probe')) {
+                $paths[] = $r->getUri()->getPath();
+            }
+        }
+        return $paths;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private static function decodedJobs(string $body): array
+    {
+        /** @var array{jobs: list<array<string, mixed>>} $decoded */
+        $decoded = \json_decode($body, true, 512, JSON_THROW_ON_ERROR);
+        return $decoded['jobs'];
+    }
+
+    /** @return array<string, mixed> */
+    private static function jobById(string $body, string $id): array
+    {
+        foreach (self::decodedJobs($body) as $job) {
+            if (($job['id'] ?? null) === $id) {
+                return $job;
+            }
+        }
+        self::fail("no job '{$id}' in the create payload");
+    }
+
+    /** @return array<string, mixed> */
+    private static function mergeStatusCompleted(): array
+    {
+        $status = self::statusCompleted();
+        $status['data']['jobs'][0]['ref'] = 'merge';
+        $status['data']['jobs'][0]['operations'][0]['type'] = 'merge';
+        return $status;
+    }
+
+    /** @return array<string, mixed> */
+    private static function mergeDownloads(): array
+    {
+        $downloads = self::downloadsOk();
+        $downloads['data']['downloads'][0]['ref'] = 'merge';
+        $downloads['data']['downloads'][0]['files'][0]['operation'] = 'merge';
+        $downloads['data']['downloads'][0]['files'][0]['filename'] = 'merged.mp4';
+        return $downloads;
     }
 
     // -----------------------------------------------------------------------
