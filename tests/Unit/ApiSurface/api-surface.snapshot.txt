@@ -200,6 +200,7 @@ final class Gisl\Sdk\FileFirst\OutputFile
 final class Gisl\Sdk\FileFirst\Recipe
 final class Gisl\Sdk\FileFirst\RecipeStep
 final class Gisl\Sdk\FileFirst\RunResult
+final class Gisl\Sdk\FileFirst\SplitRecipe
 final class Gisl\Sdk\FileFirst\StreamingDownloader implements Gisl\Sdk\FileFirst\Downloader
 final class Gisl\Sdk\FileFirst\WatermarkGate
 final class Gisl\Sdk\FileFirst\WatermarkedRecipe
@@ -406,6 +407,7 @@ method Gisl\Sdk\FileFirst\Recipe::key()
 method Gisl\Sdk\FileFirst\Recipe::output()
 method Gisl\Sdk\FileFirst\Recipe::resize()
 method Gisl\Sdk\FileFirst\Recipe::run()
+method Gisl\Sdk\FileFirst\Recipe::split()
 method Gisl\Sdk\FileFirst\Recipe::stepCount()
 method Gisl\Sdk\FileFirst\Recipe::submit()
 method Gisl\Sdk\FileFirst\Recipe::textWatermark()
@@ -418,6 +420,10 @@ method Gisl\Sdk\FileFirst\RunResult::byKey()
 method Gisl\Sdk\FileFirst\RunResult::downloadTo()
 method Gisl\Sdk\FileFirst\RunResult::toArray()
 method Gisl\Sdk\FileFirst\RunResult::toFile()
+method Gisl\Sdk\FileFirst\SplitRecipe::key()
+method Gisl\Sdk\FileFirst\SplitRecipe::run()
+method Gisl\Sdk\FileFirst\SplitRecipe::stepCount()
+method Gisl\Sdk\FileFirst\SplitRecipe::submit()
 method Gisl\Sdk\FileFirst\StreamingDownloader::downloadTo()
 method Gisl\Sdk\FileFirst\WatermarkedRecipe::__construct()
 method Gisl\Sdk\FileFirst\WatermarkedRecipe::compress()
@@ -510,6 +516,7 @@ method Gisl\Sdk\GislErgonomicClient::files()
 method Gisl\Sdk\GislErgonomicClient::limits()
 method Gisl\Sdk\GislErgonomicClient::merge()
 method Gisl\Sdk\GislErgonomicClient::operation()
+method Gisl\Sdk\GislErgonomicClient::split()
 method Gisl\Sdk\GislErgonomicClient::thumbnail()
 method Gisl\Sdk\GislErgonomicClient::transform()
 method Gisl\Sdk\GislErgonomicClient::withPresetDefaults()

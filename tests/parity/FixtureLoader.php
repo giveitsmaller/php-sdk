@@ -104,7 +104,9 @@ final class FixtureLoader
         Fixture::MODE_FILES,
     ];
 
-    private const LOWERING_OPS = ['compress', 'convert', 'thumbnail', 'text_watermark', 'output', 'resize'];
+    // `split` (DflFw0j1) returns a terminal SplitRecipe, so the loaders also enforce
+    // that it is the LAST op and never appears in files mode or a watermark block.
+    private const LOWERING_OPS = ['compress', 'convert', 'thumbnail', 'text_watermark', 'output', 'resize', 'split'];
     private const LOWERING_KEYS = ['file', 'resolvedFileId', 'operations', 'watermark'];
     private const LOWERING_FILE_KEYS = ['kind', 'path', 'uploadId', 'key'];
     private const LOWERING_OP_KEYS = ['op', 'optimize', 'format', 'width', 'height', 'text', 'options', 'fit'];
@@ -792,6 +794,11 @@ final class FixtureLoader
                     "[{$base}] files.operations[{$i}].op must be one of " . \implode('|', self::LOWERING_OPS),
                 );
             }
+            if ($opName === 'split') {
+                throw new \RuntimeException(
+                    "[{$base}] files.operations[{$i}].op 'split' is not valid in files mode (FilesRecipe has no split)",
+                );
+            }
             // text_watermark has no MergedRecipe equivalent (the merged output
             // exposes compress/convert/thumbnail only) — reject it as a
             // post-combine op at load time. Mirrors the TS loader.
@@ -862,6 +869,7 @@ final class FixtureLoader
                     "[{$base}] run.operations[{$i}].op must be one of " . \implode('|', self::LOWERING_OPS),
                 );
             }
+            self::assertSplitIsLast($opName, $i, \count($ops), $base, 'run');
             self::validateLoweringOpParams($opName, $op, "{$base} run.operations[{$i}]");
         }
         if (\array_key_exists('maxWait', $raw) && !\is_string($raw['maxWait']) && !\is_int($raw['maxWait'])) {
@@ -921,6 +929,7 @@ final class FixtureLoader
                     "[{$base}] submit.operations[{$i}].op must be one of " . \implode('|', self::LOWERING_OPS),
                 );
             }
+            self::assertSplitIsLast($opName, $i, \count($ops), $base, 'submit');
             self::validateLoweringOpParams($opName, $op, "{$base} submit.operations[{$i}]");
         }
         if (\array_key_exists('webhook', $raw) && (!\is_string($raw['webhook']) || $raw['webhook'] === '')) {
@@ -985,6 +994,12 @@ final class FixtureLoader
                     "[{$base}] lowering.operations[{$i}].op must be one of " . \implode('|', self::LOWERING_OPS),
                 );
             }
+            if ($hasWatermark && $opName === 'split') {
+                throw new \RuntimeException(
+                    "[{$base}] lowering.operations[{$i}].op 'split' cannot be combined with a watermark block (split returns a terminal SplitRecipe)",
+                );
+            }
+            self::assertSplitIsLast($opName, $i, \count($ops), $base, 'lowering');
             self::validateLoweringOpParams($opName, $op, "{$base} lowering.operations[{$i}]");
         }
         if ($hasWatermark) {
@@ -1059,6 +1074,11 @@ final class FixtureLoader
             }
             self::rejectUnknownLoweringKeys($op, self::LOWERING_OP_KEYS, "{$ctx}[{$i}]");
             $opName = $op['op'] ?? null;
+            if ($opName === 'split') {
+                throw new \RuntimeException(
+                    "[{$ctx}][{$i}].op 'split' is not valid in a watermark block (split returns a terminal SplitRecipe)",
+                );
+            }
             if (!\is_string($opName) || !\in_array($opName, $allowed, true)) {
                 throw new \RuntimeException("[{$ctx}][{$i}].op must be one of " . \implode('|', $allowed));
             }
@@ -1080,6 +1100,20 @@ final class FixtureLoader
         if (\count($extras) > 0) {
             throw new \RuntimeException(
                 "[{$ctx}] unknown key(s): " . \implode(', ', $extras) . '. Allowed: ' . \implode(', ', $allowed),
+            );
+        }
+    }
+
+    /**
+     * `split` returns a terminal SplitRecipe, so nothing can chain after it:
+     * reject a split at any position but the last. Mirrors the TS
+     * `assertSplitIsLast`.
+     */
+    private static function assertSplitIsLast(string $opName, int $i, int $count, string $base, string $block): void
+    {
+        if ($opName === 'split' && $i !== $count - 1) {
+            throw new \RuntimeException(
+                "[{$base}] {$block}.operations[{$i}].op 'split' must be the LAST op (split returns a terminal SplitRecipe)",
             );
         }
     }
@@ -1118,6 +1152,12 @@ final class FixtureLoader
             case 'compress':
                 if (\array_key_exists('optimize', $op) && (!\is_string($op['optimize']) || $op['optimize'] === '')) {
                     throw new \RuntimeException("[{$ctx}] compress 'optimize' must be a non-empty string when present");
+                }
+                break;
+            case 'split':
+                $splitOptions = $op['options'] ?? null;
+                if (!\is_array($splitOptions) || $splitOptions === [] || \array_is_list($splitOptions)) {
+                    throw new \RuntimeException("[{$ctx}] split requires a non-empty 'options' mapping");
                 }
                 break;
         }

@@ -6,6 +6,7 @@ namespace Gisl\Sdk\Tests\Unit;
 
 use Gisl\Sdk\Tests\Parity\FixtureLoader;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
@@ -98,6 +99,126 @@ final class FixtureLoaderSchemaParityTest extends TestCase
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessageMatches("/convert 'fit' must be one of max\\|crop\\|scale/");
+        FixtureLoader::loadByPath($path);
+    }
+
+    // --- DflFw0j1: split is the last op only, never in files mode or a watermark
+    // block, and carries a non-empty options mapping. Mirrors the TS
+    // loader-schema-parity split cases.
+
+    private const SPLIT_OP = ['op' => 'split', 'options' => ['mode' => 'page_range', 'page_range' => '1']];
+
+    /**
+     * Copy a fixture with `$raw[$block]['operations']` replaced by `$edit`.
+     *
+     * @param callable(list<array<string, mixed>>): list<array<string, mixed>> $edit
+     */
+    private function copyWithOps(string $stem, string $block, callable $edit): string
+    {
+        return $this->copyFixture($stem, static function (array $raw) use ($block, $edit): array {
+            /** @var array{operations: list<array<string, mixed>>} $spec */
+            $spec = $raw[$block];
+            $spec['operations'] = $edit($spec['operations']);
+            $raw[$block] = $spec;
+            return $raw;
+        });
+    }
+
+    public function test_the_unmutated_split_fixtures_load(): void
+    {
+        foreach (['ff_lowering_split_pdf_page_groups', 'ff_run_split_pdf_page_index', 'ff_submit_split_pdf_page_groups'] as $stem) {
+            FixtureLoader::loadByPath($this->copyFixture($stem, static fn (array $raw): array => $raw));
+        }
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_split_in_files_mode_is_rejected(): void
+    {
+        $path = $this->copyWithOps('ff_files_lowering_multi_compress', 'files', static fn (array $ops): array => [...$ops, self::SPLIT_OP]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessageMatches("/operations\\[1\\]\\.op 'split' is not valid in files mode/");
+        FixtureLoader::loadByPath($path);
+    }
+
+    public function test_split_in_watermark_overlay_ops_is_rejected(): void
+    {
+        $path = $this->copyFixture('ff_lowering_image_watermark_overlay', static function (array $raw): array {
+            /** @var array{watermark: array{overlay: array<string, mixed>}} $lowering */
+            $lowering = $raw['lowering'];
+            $lowering['watermark']['overlay']['operations'] = [self::SPLIT_OP];
+            $raw['lowering'] = $lowering;
+            return $raw;
+        });
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessageMatches("/\\[0\\]\\.op 'split' is not valid in a watermark block/");
+        FixtureLoader::loadByPath($path);
+    }
+
+    public function test_split_together_with_a_watermark_block_is_rejected(): void
+    {
+        $path = $this->copyWithOps('ff_lowering_image_watermark_overlay', 'lowering', static fn (array $ops): array => [self::SPLIT_OP]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessageMatches("/operations\\[0\\]\\.op 'split' cannot be combined with a watermark block/");
+        FixtureLoader::loadByPath($path);
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function splitFixtureBlocks(): iterable
+    {
+        yield 'lowering' => ['lowering', 'ff_lowering_split_pdf_page_groups'];
+        yield 'run' => ['run', 'ff_run_split_pdf_page_index'];
+        yield 'submit' => ['submit', 'ff_submit_split_pdf_page_groups'];
+    }
+
+    #[DataProvider('splitFixtureBlocks')]
+    public function test_split_that_is_not_the_last_op_is_rejected(string $block, string $stem): void
+    {
+        $splitAt = null;
+        $path = $this->copyWithOps($stem, $block, static function (array $ops) use (&$splitAt): array {
+            foreach ($ops as $i => $op) {
+                if (($op['op'] ?? null) === 'split') {
+                    $splitAt = $i;
+                }
+            }
+            return [...$ops, ['op' => 'compress']];
+        });
+        self::assertIsInt($splitAt);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessageMatches("/{$block}\\.operations\\[{$splitAt}\\]\\.op 'split' must be the LAST op/");
+        FixtureLoader::loadByPath($path);
+    }
+
+    /** @return iterable<string, array{callable(array<string, mixed>): array<string, mixed>}> */
+    public static function splitOptionsMutations(): iterable
+    {
+        yield 'no options key' => [static function (array $op): array {
+            unset($op['options']);
+            return $op;
+        }];
+        yield 'an empty options mapping' => [static fn (array $op): array => [...$op, 'options' => []]];
+    }
+
+    /**
+     * @param callable(array<string, mixed>): array<string, mixed> $edit
+     */
+    #[DataProvider('splitOptionsMutations')]
+    public function test_a_split_op_without_options_is_rejected(callable $edit): void
+    {
+        $path = $this->copyWithOps(
+            'ff_lowering_split_pdf_page_groups',
+            'lowering',
+            static fn (array $ops): array => \array_map(
+                static fn (array $op): array => ($op['op'] ?? null) === 'split' ? $edit($op) : $op,
+                $ops,
+            ),
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessageMatches("/split requires a non-empty 'options' mapping/");
         FixtureLoader::loadByPath($path);
     }
 }

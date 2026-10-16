@@ -245,6 +245,78 @@ final class Recipe
     }
 
     /**
+     * Split this file into N outputs (the `split` op, sole_op). Returns a
+     * TERMINAL {@see SplitRecipe}: nothing chains after a split and it cannot
+     * enter `batch()`, because an N-output job has no fan-out path into a
+     * following job. Steps BEFORE it are allowed (`->convert('pdf')->split(...)`):
+     * they run in an upstream job and `run()` returns only the split's outputs.
+     *
+     * The server picks the mime group from the input:
+     * - GIF: `frame_range` is REQUIRED (omitting it is a server 422), plus
+     *   `output_format`. Each frame carries `position` when the server provides it.
+     * - PDF: `mode: 'page_range'` + `page_range`, or `mode: 'page_groups'` +
+     *   `page_groups`. Each output carries `pageIndex` (for a group, its first page).
+     * - audio / video (beta): `mode` `interval` / `count` / `cut_points`, audio
+     *   also `silence`. Each segment carries `position` when the server provides it.
+     * At most 200 outputs. Mode/key pairings and caps are checked by the server.
+     * `precision: 'exact'` is planned and refused before upload
+     * (`feature_not_available`). A null value is dropped from the wire options.
+     * Mirrors the TS `Recipe.split`.
+     *
+     * @param array{
+     *   frame_range?: string,
+     *   output_format?: 'png'|'webp'|'jpg',
+     *   mode?: 'page_range'|'page_groups'|'interval'|'count'|'cut_points'|'silence',
+     *   page_range?: string,
+     *   page_groups?: int,
+     *   interval?: int|float,
+     *   count?: int,
+     *   cut_points?: list<int|float>,
+     *   silence_threshold_db?: int|float,
+     *   silence_min_duration?: int|float,
+     *   silence_handling?: 'keep_at_end',
+     *   precision?: 'fast'|'exact',
+     * } $options GIF (`image_gif`): `frame_range` (1-based inclusive `'start-end'`,
+     *   at most 200 frames) and `output_format` (default `'png'`). PDF: `mode`
+     *   `'page_range'` (default) with `page_range` (e.g. `'1,3,5-7'`), or
+     *   `'page_groups'` with `page_groups` (pages per output, 2-200). Audio/video:
+     *   `mode` `'interval'` (default, `interval` seconds), `'count'` (`count` pieces,
+     *   2-200) or `'cut_points'` (strictly increasing seconds, 1-199 entries); audio
+     *   `'silence'` (beta) with `silence_threshold_db` (dBFS, at most 0),
+     *   `silence_min_duration` (seconds) and `silence_handling`. `precision`:
+     *   `'fast'` (default) or the planned `'exact'`. Keys are all optional so the
+     *   `= []` default type-checks. Mirrors the TS `SplitOptions`; pinned by
+     *   `SplitOptionsShapeTest`.
+     *
+     * @throws GislConfigError `unknown_field` for a key not in the split contract;
+     *                         `multi_sole_op_unsupported` when this recipe already
+     *                         holds a sole_op step (e.g. `textWatermark()`), since
+     *                         one chain carries at most one.
+     */
+    public function split(array $options = []): SplitRecipe
+    {
+        OptionValidation::validateVerbOptions('split', $options);
+        // Eager, at the call: the same reason splitSingleInputJobs raises at
+        // lowering, but naming split so the failure points at this call.
+        foreach ($this->steps as $step) {
+            if (\in_array($step->opType, RunResult::SOLE_OP_TYPES, true)) {
+                throw new GislConfigError(
+                    "split() cannot follow {$step->opType}: both are sole_op operations and a recipe chains "
+                    . 'at most one — run them as separate workflows.',
+                    reason: 'multi_sole_op_unsupported',
+                );
+            }
+        }
+        $wire = [];
+        foreach ($options as $key => $value) {
+            if ($value !== null) {
+                $wire[$key] = $value;
+            }
+        }
+        return new SplitRecipe($this->withStep(new RecipeStep('split', $wire)));
+    }
+
+    /**
      * Produce ONE transformed image: keep or change format, plus quality, resize
      * and route-honored controls. The single user-facing image transform — the SDK
      * resolves the route from `(input format, output_format)` against the contract's

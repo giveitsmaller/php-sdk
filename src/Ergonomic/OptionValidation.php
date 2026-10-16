@@ -7,6 +7,7 @@ namespace Gisl\Sdk\Ergonomic;
 use Gisl\Generated\Operations\ConvertMetadata;
 use Gisl\Generated\Operations\ImageWatermarkMetadata;
 use Gisl\Generated\Operations\OperationMetadata;
+use Gisl\Generated\Operations\SplitMetadata;
 use Gisl\Generated\Operations\TextWatermarkMetadata;
 use Gisl\Generated\Operations\ThumbnailMetadata;
 use Gisl\Generated\Operations\TransformMetadata;
@@ -24,8 +25,8 @@ use Gisl\Sdk\Errors\GislConfigError;
  * set is read from the generated `OperationMetadata` (the same contract-anchored
  * source the wire-key conformance guard uses), so it cannot silently drift.
  *
- * SCOPE: `convert` / `thumbnail` / `textWatermark` / `watermark` / `output`
- * only. `compress` is deliberately EXCLUDED — its bag legitimately carries
+ * SCOPE: `convert` / `thumbnail` / `transform` / `split` / `textWatermark` /
+ * `watermark` / `output` only. `compress` is deliberately EXCLUDED — its bag legitimately carries
  * SDK-only keys (`optimize`, `presetOverrides`) and resolver aliases; it has its
  * own `unknown_field` validation through the preset resolver.
  */
@@ -117,6 +118,9 @@ final class OptionValidation
                 'convert' => self::operationOptionKeys(ConvertMetadata::instance()),
                 'thumbnail' => self::operationOptionKeys(ThumbnailMetadata::instance()),
                 'transform' => self::operationOptionKeys(TransformMetadata::instance()),
+                // split (DflFw0j1): the op-wide union of every mime group's keys; the
+                // group (and so which keys apply) is chosen server-side from the input MIME.
+                'split' => self::operationOptionKeys(SplitMetadata::instance()),
                 'textWatermark' => self::operationOptionKeys(TextWatermarkMetadata::instance()),
                 'watermark' => self::operationOptionKeys(ImageWatermarkMetadata::instance())
                     + self::operationOptionKeys(VideoWatermarkMetadata::instance()),

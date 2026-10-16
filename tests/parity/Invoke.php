@@ -18,6 +18,7 @@ use Gisl\Sdk\FileFirst\FileInput;
 use Gisl\Sdk\FileFirst\FilesRecipe;
 use Gisl\Sdk\FileFirst\MergedRecipe;
 use Gisl\Sdk\FileFirst\Recipe;
+use Gisl\Sdk\FileFirst\SplitRecipe;
 use Gisl\Sdk\FileFirst\WatermarkedRecipe;
 use Gisl\Sdk\GetSchemaOptions;
 use Gisl\Sdk\GislClient;
@@ -200,18 +201,19 @@ final class Invoke
             ? FileInput::uploadId((string) $file['uploadId'])
             : FileInput::path((string) $file['path']);
 
-        $recipe = new Recipe($input, $key);
         /** @var list<array<string, mixed>> $operations */
         $operations = $spec['operations'];
-        foreach ($operations as $op) {
-            $recipe = self::applyLoweringOp($recipe, $op);
-        }
+        $recipe = self::applyLoweringChain(new Recipe($input, $key), $operations);
 
         // FF4a (Z7zTr789) — a `watermark` block lowers `file(base)->watermark(
         // overlay, opts)` -> WatermarkedRecipe. The base recipe above carries the
         // base's preceding steps; build the overlay file-node + its own steps,
         // then lower against [baseId, overlayId]. Mirrors TS `lowerFixture`.
         if (isset($spec['watermark']) && \is_array($spec['watermark'])) {
+            // The loader rejects split with a watermark block; this narrows the type.
+            if (!$recipe instanceof Recipe) {
+                throw new \RuntimeException("[{$fixture->name}] a watermark block cannot follow split (SplitRecipe is terminal)");
+            }
             $wm = $spec['watermark'];
             /** @var array<string, mixed> $ov */
             $ov = $wm['overlay'];
@@ -295,12 +297,9 @@ final class Invoke
             ? FileInput::uploadId((string) $file['uploadId'])
             : FileInput::path((string) $file['path']);
 
-        $recipe = $client->file($input, $key);
         /** @var list<array<string, mixed>> $operations */
         $operations = $spec['operations'];
-        foreach ($operations as $op) {
-            $recipe = self::applyLoweringOp($recipe, $op);
-        }
+        $recipe = self::applyLoweringChain($client->file($input, $key), $operations);
 
         $maxWait = $spec['maxWait'] ?? null;
         $maxWaitArg = (\is_string($maxWait) || \is_int($maxWait)) ? $maxWait : null;
@@ -359,12 +358,9 @@ final class Invoke
             ? FileInput::uploadId((string) $file['uploadId'])
             : FileInput::path((string) $file['path']);
 
-        $recipe = $client->file($input, $key);
         /** @var list<array<string, mixed>> $operations */
         $operations = $spec['operations'];
-        foreach ($operations as $op) {
-            $recipe = self::applyLoweringOp($recipe, $op);
-        }
+        $recipe = self::applyLoweringChain($client->file($input, $key), $operations);
 
         $webhook = isset($spec['webhook']) && \is_string($spec['webhook']) ? $spec['webhook'] : null;
         $handle = $recipe->submit($webhook);
@@ -637,6 +633,33 @@ final class Invoke
                 "Unsupported post-watermark op '" . \var_export($op['op'] ?? null, true) . "'",
             ),
         };
+    }
+
+    /**
+     * Apply a lowering/run/submit op chain to a {@see Recipe}. A `split` op
+     * (DflFw0j1) turns the chain into a terminal {@see SplitRecipe}, so it must
+     * be the LAST op; the loaders enforce that, and this re-checks it. Mirrors
+     * TS `applyLoweringChain`.
+     *
+     * @param list<array<string, mixed>> $ops
+     */
+    private static function applyLoweringChain(Recipe $recipe, array $ops): Recipe|SplitRecipe
+    {
+        $count = \count($ops);
+        foreach ($ops as $i => $op) {
+            if (($op['op'] ?? null) === 'split') {
+                if ($i !== $count - 1) {
+                    throw new \RuntimeException("[lowering] split must be the last op (got it at {$i} of {$count})");
+                }
+                /** @var array<string, mixed> $splitOptions */
+                $splitOptions = isset($op['options']) && \is_array($op['options']) ? $op['options'] : [];
+
+                return $recipe->split($splitOptions);
+            }
+            $recipe = self::applyLoweringOp($recipe, $op);
+        }
+
+        return $recipe;
     }
 
     /**

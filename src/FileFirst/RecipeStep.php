@@ -16,6 +16,8 @@ namespace Gisl\Sdk\FileFirst;
  *  - `thumbnail`      — `['width'? => int, 'height'? => int]` (nulls already dropped).
  *  - `transform`      — `{rotate?: 0|90|180|270, flip?: 'none'|'horizontal'|'vertical'|'both'}` (passthrough; nulls dropped).
  *  - `text_watermark` — `['text' => string]`.
+ *  - `split`          — the split options bag (passthrough; nulls dropped). Always the LAST step: {@see Recipe::split()}
+ *                       returns a terminal {@see SplitRecipe}.
  *  - `output`         — `['output_format'? => string, ...resize/route options]` (an INTERNAL step kind for the image
  *                       Output facade; lowers to a `compress` (same_format) or `convert` (format_change) wire op per the
  *                       route projection — see {@see Recipe::lowerOutputStep()}).
@@ -23,8 +25,8 @@ namespace Gisl\Sdk\FileFirst;
 final class RecipeStep
 {
     /**
-     * @param 'compress'|'convert'|'thumbnail'|'transform'|'text_watermark'|'output' $opType
-     * @param array<string, mixed>                                       $options
+     * @param 'compress'|'convert'|'thumbnail'|'transform'|'text_watermark'|'output'|'split' $opType
+     * @param array<string, mixed>                                               $options
      */
     public function __construct(
         public readonly string $opType,

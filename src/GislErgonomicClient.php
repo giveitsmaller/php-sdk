@@ -316,6 +316,45 @@ class GislErgonomicClient extends GislClient
     }
 
     /**
+     * Single-op split into N outputs, with the same option bag as the file-first
+     * {@see \Gisl\Sdk\FileFirst\Recipe::split()}. The server picks the mime group
+     * from the input: GIF needs `frame_range` (omitting it is a server 422); PDF
+     * splits by `page_range` or `page_groups`; audio and video (beta) by
+     * `interval` / `count` / `cut_points` (audio also `silence`). An unknown key
+     * is rejected pre-upload (`unknown_field`) and a null value is dropped from
+     * the wire options. `precision: 'exact'` is planned and refused by the
+     * builder's planned-value gate at run()/submit(), before upload
+     * (`feature_not_available`). Mirrors the TS `split()` on the ergonomic client.
+     *
+     * @param array{
+     *   frame_range?: string,
+     *   output_format?: 'png'|'webp'|'jpg',
+     *   mode?: 'page_range'|'page_groups'|'interval'|'count'|'cut_points'|'silence',
+     *   page_range?: string,
+     *   page_groups?: int,
+     *   interval?: int|float,
+     *   count?: int,
+     *   cut_points?: list<int|float>,
+     *   silence_threshold_db?: int|float,
+     *   silence_min_duration?: int|float,
+     *   silence_handling?: 'keep_at_end',
+     *   precision?: 'fast'|'exact',
+     * } $options
+     */
+    public function split(string $input, array $options = []): OperationBuilder
+    {
+        OptionValidation::validateVerbOptions('split', $options);
+        $wire = [];
+        foreach ($options as $key => $value) {
+            if ($value !== null) {
+                $wire[$key] = $value;
+            }
+        }
+
+        return new OperationBuilder($this, 'split', $input, $wire, $this->presetDefaults, $this->scopedPresetDefaults);
+    }
+
+    /**
      * Convert to `$format` (e.g. 'webp', 'mp4', 'pdf'), the same shape as the
      * file-first Recipe::convert($format, $options) (2IvqIS7B). `$format` lowers
      * to the wire key `output_format`; `output_format` / `format` in the bag, an
@@ -447,14 +486,16 @@ class GislErgonomicClient extends GislClient
 
     /**
      * Generic operation escape hatch (qUhxfDA5). Build + run any operation type
-     * with no first-class verb — e.g. `text_watermark`, `split`, or a
-     * not-yet-in-contract op. Builds a SINGLE-input, SINGLE-operation job (the
-     * generic sibling of {@see compress()}/{@see convert()}/{@see thumbnail()}).
-     * `$options` reach the wire unchanged, with ONE pre-upload check: a value the
-     * contract marks `planned` in every group that declares the option (e.g.
-     * split `precision: 'exact'`) throws GislConfigError (`feature_not_available`)
+     * with no first-class verb — e.g. `text_watermark`, or a not-yet-in-contract
+     * op. Builds a SINGLE-input, SINGLE-operation job (the generic sibling of
+     * {@see compress()}/{@see convert()}/{@see thumbnail()}). `$options` reach the
+     * wire unchanged, with ONE pre-upload check: a value the contract marks
+     * `planned` in every group that declares the option (e.g. split
+     * `precision: 'exact'`) throws GislConfigError (`feature_not_available`)
      * before anything uploads. Everything else is validated by the server. NO
-     * preset resolution unless `$opType` is `compress`.
+     * preset resolution unless `$opType` is `compress`. Prefer the typed verbs
+     * (`compress` / `convert` / `thumbnail` / `transform` / `split`) when they
+     * exist — they add local validation.
      *
      * Multi-input operations canNOT be expressed here — they need multiple
      * sources. merge, archive and image/video watermarks have dedicated

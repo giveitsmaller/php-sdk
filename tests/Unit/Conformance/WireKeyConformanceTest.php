@@ -9,6 +9,7 @@ use Gisl\Generated\Operations\ConvertMetadata;
 use Gisl\Generated\Operations\ImageWatermarkMetadata;
 use Gisl\Generated\Operations\MergeMetadata;
 use Gisl\Generated\Operations\OperationMetadata;
+use Gisl\Generated\Operations\SplitMetadata;
 use Gisl\Generated\Operations\TextWatermarkMetadata;
 use Gisl\Generated\Operations\ThumbnailMetadata;
 use Gisl\Generated\Operations\TransformMetadata;
@@ -45,7 +46,7 @@ use PHPUnit\Framework\TestCase;
  * NOTE: `compress` conformance moved OUT of this suite (card 0fNO60BX) — it is now
  * owned by {@see CodeBuilderConformanceTest}, driven from the contract-authored
  * `code-builder-metadata.json` `sdk_exposure` gate (a single, stronger ledger). This
- * suite covers convert/thumbnail/text_watermark/merge/archive + the eager validator.
+ * suite covers convert/thumbnail/transform/split/text_watermark/merge/archive + the eager validator.
  */
 final class WireKeyConformanceTest extends TestCase
 {
@@ -224,6 +225,92 @@ final class WireKeyConformanceTest extends TestCase
         // TS emits it — so op-level is the parity-safe pin). A live op omits this field, so when a
         // re-vendor flips transform live this fails, forcing a re-review of the passthrough gating.
         self::assertSame('planned', TransformMetadata::instance()->availability);
+    }
+
+    // --- split --------------------------------------------------------------
+
+    #[Test]
+    public function split_passthrough_keys_conform_to_the_contract_for_every_mime_group(): void
+    {
+        $contract = $this->operationOptionKeys(SplitMetadata::instance());
+        $bags = [
+            ['frame_range' => '1-10', 'output_format' => 'png'],
+            ['mode' => 'page_groups', 'page_groups' => 3],
+            ['mode' => 'page_range', 'page_range' => '1-2'],
+            ['mode' => 'cut_points', 'cut_points' => [1, 2], 'precision' => 'fast'],
+            ['mode' => 'silence', 'silence_threshold_db' => -50, 'silence_min_duration' => 0.75, 'silence_handling' => 'keep_at_end'],
+            ['mode' => 'interval', 'interval' => 5],
+            ['mode' => 'count', 'count' => 2],
+        ];
+        foreach ($bags as $bag) {
+            $payload = (new Recipe(FileInput::path('input.bin')))->split($bag)->toWorkflowPayload(self::FILE_ID);
+            $this->assertKeysConform('split', $this->optionKeysOf($payload, 'split'), $contract);
+        }
+    }
+
+    /**
+     * Non-tautological key pin: the contract's split option-key set, written out.
+     * A contract key add/remove fails here and forces the `Recipe::split()` /
+     * `GislErgonomicClient::split()` array shapes to be revisited
+     * ({@see SplitOptionsShapeTest} ties those shapes to the same metadata).
+     * Mirrors the TS "exposes exactly the 12 contract keys".
+     */
+    #[Test]
+    public function split_exposes_exactly_the_12_contract_keys(): void
+    {
+        $keys = \array_keys($this->operationOptionKeys(SplitMetadata::instance()));
+        \sort($keys);
+        self::assertSame([
+            'count',
+            'cut_points',
+            'frame_range',
+            'interval',
+            'mode',
+            'output_format',
+            'page_groups',
+            'page_range',
+            'precision',
+            'silence_handling',
+            'silence_min_duration',
+            'silence_threshold_db',
+        ], $keys, 'split contract option keys drifted from the 12 the verb was exposed with');
+    }
+
+    /**
+     * Availability tripwire: the SDK passes beta groups/values through with no gate
+     * and relies on the shared planned-value gate for `precision: 'exact'`. If a
+     * re-vendor moves any of these, this fails and forces a re-review of that
+     * decision and of the split docblocks. Mirrors the TS tripwire.
+     */
+    #[Test]
+    public function split_availability_is_unchanged_since_the_verb_was_exposed(): void
+    {
+        $metadata = SplitMetadata::instance();
+        $groups = $metadata->mime_groups;
+        self::assertSame([
+            'op' => 'stable',
+            'soleOp' => true,
+            // image_gif declares no group-level availability, so it resolves to the op's.
+            'gif' => null,
+            'pdf' => 'stable',
+            'audio' => 'beta',
+            'video' => 'beta',
+            'silenceFeature' => 'beta',
+            'audioSilence' => 'beta',
+            'audioExact' => 'planned',
+            'videoExact' => 'planned',
+        ], [
+            'op' => $metadata->availability,
+            'soleOp' => $metadata->sole_op,
+            'gif' => $groups['image_gif']->availability ?? null,
+            'pdf' => $groups['document_pdf']->availability ?? null,
+            'audio' => $groups['audio']->availability ?? null,
+            'video' => $groups['video']->availability ?? null,
+            'silenceFeature' => $metadata->features['silence_mode_audio']->availability ?? null,
+            'audioSilence' => $groups['audio']->options['mode']->per_value_availability['silence']->availability ?? null,
+            'audioExact' => $groups['audio']->options['precision']->per_value_availability['exact']->availability ?? null,
+            'videoExact' => $groups['video']->options['precision']->per_value_availability['exact']->availability ?? null,
+        ]);
     }
 
     // --- text_watermark -----------------------------------------------------
@@ -405,6 +492,7 @@ final class WireKeyConformanceTest extends TestCase
         yield 'convert' => ['convert', OptionValidation::operationOptionKeys(ConvertMetadata::instance())];
         yield 'thumbnail' => ['thumbnail', OptionValidation::operationOptionKeys(ThumbnailMetadata::instance())];
         yield 'transform' => ['transform', OptionValidation::operationOptionKeys(TransformMetadata::instance())];
+        yield 'split' => ['split', OptionValidation::operationOptionKeys(SplitMetadata::instance())];
         yield 'textWatermark' => ['textWatermark', OptionValidation::operationOptionKeys(TextWatermarkMetadata::instance())];
         yield 'watermark' => ['watermark', $watermark];
     }
