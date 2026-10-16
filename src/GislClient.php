@@ -3055,6 +3055,13 @@ class GislClient
      * passes `$isVideo` so the low-level client never imports ergonomic media
      * detection.
      *
+     * Polls with waitForProbe(patient: true) (QDhKs5xv): a multipart video
+     * can take minutes to probe, and taking the api's `Retry-After: 3` on
+     * `probe_not_ready` as the whole gap polled 20 times a minute, spending a
+     * Free account's 10/min probe bucket and then failing the run on the probe's
+     * 429 before it ever created. A 429 is now waited out within `$timeoutMs`.
+     * The spacing is per call; parallel waits share the server's bucket.
+     *
      * Mirrors `packages/typescript/src/client.ts::maybeWaitForVideoProbe`.
      */
     public function maybeWaitForVideoProbe(
@@ -3071,7 +3078,7 @@ class GislClient
         if ($sizeBytes === null || $sizeBytes <= $this->config->multipartThresholdBytes) {
             return;
         }
-        $this->waitForProbe($fileId, new ProbeWaitOptions(timeoutMs: $timeoutMs, cancellation: $cancellation));
+        $this->waitForProbe($fileId, new ProbeWaitOptions(timeoutMs: $timeoutMs, cancellation: $cancellation, patient: true));
     }
 
     /**
