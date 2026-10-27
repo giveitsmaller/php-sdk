@@ -1930,10 +1930,11 @@ class GislClient
      * The response's `billingEffect` field tells the caller what happened to
      * outstanding reservations:
      *  - `unspent_reservation_released` — the unspent portion of the
-     *    reservation has been refunded as a separate `CreditTransaction`
-     *    with `type: refund`.
-     *  - `none` — no refund (all reserved credits were already consumed by
-     *    completed jobs, or this is an idempotent re-cancel).
+     *    reservation has been released as a separate `CreditTransaction`
+     *    with `type: reservation_release` (`reference_type:
+     *    workflow_reservation_release`). There is no `refund` type.
+     *  - `none` — nothing released (all reserved credits were already
+     *    consumed by completed jobs, or this is an idempotent re-cancel).
      *
      * Mirrors `packages/typescript/src/client.ts::cancelWorkflow`.
      */
@@ -2328,7 +2329,8 @@ class GislClient
     /**
      * Has the purchase behind a checkout session the caller started been
      * applied (NzdriXAK)? `GET /api/billing/checkout/{sessionId}/status`,
-     * **beta**; auth required. Pass `getSessionId()` from
+     * **stable** (contracts v2.236.0, #727, 2026-10-14; was beta); auth
+     * required. Pass `getSessionId()` from
      * {@see createCheckoutSession()}.
      *
      * `getStatus()` is one of the three `STATUS_*` constants on the model:
@@ -2781,10 +2783,11 @@ class GislClient
      *   `payload['error_type']`).
      * - `probe_not_applicable` — this upload's type is never probed (e.g. an
      *   image); terminal, no result will ever exist. Base {@see GislApiError}.
-     * - `feature_not_available` (thrown as {@see GislFeatureNotAvailableError})
-     *   — TRANSITIONAL: what the server sends today for BOTH causes above; it
-     *   does NOT mean "not implemented". The server switches to the two arms
-     *   above only after an SDK release that reads them is published.
+     *
+     * Contracts v2.236.0 declares only those two arms (both seen on prod). An
+     * older server build may still answer `feature_not_available` (thrown as
+     * {@see GislFeatureNotAvailableError}) for either cause; on this endpoint
+     * it does NOT mean "not implemented".
      *
      * Once landed it returns a `200` with any `probe_status`. For video uploads
      * the landed probe carries the codec + duration the server needs to admit
@@ -2830,10 +2833,11 @@ class GislClient
      * - `422 probe_not_applicable` → STOP. This upload's type is never probed
      *   (e.g. an image), so no result will ever exist: returns `landed: false`,
      *   reason `not_applicable`, after ONE request — no retry, no wait.
-     * - `422 feature_not_available` → TRANSITIONAL arm the server sends today
-     *   for both causes above → polled like `probe_not_ready`. Its retry
-     *   ceiling is `timeoutMs`: a never-probed upload answered this way
-     *   returns reason `timeout` once the budget runs out.
+     * - `422 feature_not_available` → not in the contract since v2.236.0; only
+     *   an older server build sends it, for either cause above → polled like
+     *   `probe_not_ready`. Its retry ceiling is `timeoutMs`: a never-probed
+     *   upload answered this way returns reason `timeout` once the budget
+     *   runs out.
      * - any `200` → STOP. Returns `landed: true` regardless of `probe_status`
      *   (ok / corrupt / unsupported_codec / missing_metadata) — the server +
      *   fan-out gate decide split-vs-single from the landed metadata; the SDK
@@ -2914,8 +2918,8 @@ class GislClient
                 $probe = $this->probeUpload($fileId);
                 return new ProbeWaitResult(landed: true, probe: $probe);
             } catch (GislFeatureNotAvailableError $e) {
-                // Not landed yet — keep polling. The transitional arm (either
-                // cause); `timeoutMs` is its ceiling.
+                // Not landed yet — keep polling. Only an older server build sends
+                // this (either cause); `timeoutMs` is its ceiling.
                 $retryAfterMs = RateLimitHeaders::parseRetryAfterMs($e->responseHeaders['retry-after'] ?? null);
             } catch (GislRequestNotSentError $e) {
                 // codex 9a189c13784b: this reports retryable() === false, so
@@ -3108,7 +3112,8 @@ class GislClient
      *     `probe_status`, `media_metadata`, etc.)
      *   - probe call itself threw → `{ fileId, error }` goes into `errors`
      *     (every arm of the not-cached `422` included: `probe_not_ready`,
-     *     `probe_not_applicable`, transitional `feature_not_available`; this
+     *     `probe_not_applicable`, and `feature_not_available` from an older
+     *     server build; this
      *     does not poll — see {@see waitForProbe()})
      *
      * The PHP path is sequential (single-threaded) where the TS reference

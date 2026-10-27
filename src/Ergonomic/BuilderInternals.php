@@ -52,7 +52,7 @@ final class BuilderInternals
      * declares `status_poll` — guarding GET /api/workflows/{id}/status and
      * /downloads — as a SLIDING WINDOW of 60 requests per minute, scaled at
      * consume time (:177, :188) by UserTier::rateLimitMultiplier()
-     * (Identity/Domain/Enums/UserTier.php:186-194): Free and Basic x1, Pro x5,
+     * (Identity/Domain/Enums/UserTier.php:186-194): Pay as you go (also spelled basic / free) x1, Pro x5,
      * Max x15, Enterprise x20.
      *
      * => 100 ms is 600 requests/minute: ten times the Free ceiling, twice

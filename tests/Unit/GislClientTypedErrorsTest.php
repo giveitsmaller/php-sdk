@@ -256,9 +256,9 @@ final class GislClientTypedErrorsTest extends TestCase
     }
 
     /**
-     * 🔴 `basic` IS THE BASE TIER as of contracts v2.196.0; `free` is DEPRECATED
-     * IN PLACE and occupies the SAME ordinal position — one tier under two
-     * names. The contract requires a tolerance artefact from both SDKs
+     * 🔴 `pay_as_you_go` IS THE BASE TIER as of contracts v2.236.0; `basic` and
+     * `free` are DEPRECATED spellings of it (removal: `IloAPrH4` / `nD8fCPDy`)
+     * and occupy the SAME ordinal position — one tier under three names. The contract requires a tolerance artefact from both SDKs
      * (`tkRA9Bim`) and warns that code handling `free` and not `basic` "will
      * silently take a different branch the day the producer switches".
      *

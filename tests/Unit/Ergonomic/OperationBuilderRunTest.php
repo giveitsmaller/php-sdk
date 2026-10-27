@@ -222,7 +222,8 @@ final class OperationBuilderRunTest extends TestCase
     /**
      * r7bpd7MY — THE POLL FLOOR IS 1000 ms AND THE NUMBER IS WHAT IS ASSERTED.
      *
-     * api's `status_poll` family is a SLIDING 60 requests/minute at Free and Basic
+     * api's `status_poll` family is a SLIDING 60 requests/minute at the base tier
+     * (`pay_as_you_go`; `basic` and `free` are its deprecated spellings)
      * (`TieredRateLimiterService.php:37-39`, scaled per tier by
      * `UserTier::rateLimitMultiplier()`). The previous 100 ms floor is 600/minute —
      * ten times that ceiling, and twice Pro's.

@@ -387,7 +387,7 @@ final class GislClientWaitForProbeTest extends TestCase
         self::assertLessThan(2.0, \microtime(true) - $start);
     }
 
-    public function test_feature_not_available_transitional_retries_until_timeout_ms(): void
+    public function test_feature_not_available_from_older_server_retries_until_timeout_ms(): void
     {
         $attempts = 0;
         $client = $this->makeClient(\array_fill(0, 200, $this->notLanded()));
