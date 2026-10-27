@@ -97,6 +97,8 @@ final class Invoke
         'compress',
         'thumbnail',
         'convert',
+        // JpgY3328: the single-op split (GislErgonomicClient::split).
+        'split',
     ];
 
     /**
@@ -1059,6 +1061,7 @@ final class Invoke
                 \is_string($opOptions['output_format'] ?? null) ? $opOptions['output_format'] : '',
                 \array_diff_key($opOptions, ['output_format' => true]),
             ),
+            'split' => $client->split($input, $opOptions),
             default => throw new \LogicException("Unreachable: unsupported ergonomic verb \"{$method}\""),
         };
     }

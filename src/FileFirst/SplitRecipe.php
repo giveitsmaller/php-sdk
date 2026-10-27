@@ -74,14 +74,17 @@ final class SplitRecipe
         ?int $probeTimeoutMs = null,
         ?bool $useSSE = null,
     ): RunResult {
+        // Named, not positional: `probeBeforeCreate`/`useSSE` are both `?bool`
+        // and `pollIntervalMs`/`probeTimeoutMs` both `?int`, so a reordered
+        // `Recipe::run()` would type-check and run.
         return $this->recipe->run(
-            $maxWait,
-            $onProgress,
-            $pollIntervalMs,
-            $cancellation,
-            $probeBeforeCreate,
-            $probeTimeoutMs,
-            $useSSE,
+            maxWait: $maxWait,
+            onProgress: $onProgress,
+            pollIntervalMs: $pollIntervalMs,
+            cancellation: $cancellation,
+            probeBeforeCreate: $probeBeforeCreate,
+            probeTimeoutMs: $probeTimeoutMs,
+            useSSE: $useSSE,
         );
     }
 
@@ -95,6 +98,10 @@ final class SplitRecipe
         ?bool $probeBeforeCreate = null,
         ?int $probeTimeoutMs = null,
     ): Handle {
-        return $this->recipe->submit($webhook, $probeBeforeCreate, $probeTimeoutMs);
+        return $this->recipe->submit(
+            webhook: $webhook,
+            probeBeforeCreate: $probeBeforeCreate,
+            probeTimeoutMs: $probeTimeoutMs,
+        );
     }
 }

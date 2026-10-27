@@ -74,6 +74,8 @@ final class FixtureLoader
         'compress',
         'thumbnail',
         'convert',
+        // JpgY3328: the single-op ergonomic split.
+        'split',
         // Multi-input ergonomic verbs (PHP P3 / dxIeLVbP).
         'merge',
         // File-first builder-chain LOWERING marker (FF2a / MfV0PDok). Not a

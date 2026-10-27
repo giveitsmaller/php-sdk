@@ -317,9 +317,9 @@ final class ParityErgonomicSeamTest extends TestCase
         /** @var list<string> $verbs */
         $verbs = $reflection->getReflectionConstant('ERGONOMIC_DISPATCH_VERBS')->getValue();
         $this->assertSame(
-            ['compress', 'thumbnail', 'convert'],
+            ['compress', 'thumbnail', 'convert', 'split'],
             $verbs,
-            'ERGONOMIC_DISPATCH_VERBS keyset drifted — these are the PHP P2 wired verbs.',
+            'ERGONOMIC_DISPATCH_VERBS keyset drifted — these are the PHP wired single-op verbs (P2 + split, JpgY3328).',
         );
     }
 
