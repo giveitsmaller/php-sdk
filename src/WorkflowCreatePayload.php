@@ -24,6 +24,10 @@ final class WorkflowCreatePayload
      *                                                                 `notify.email`). Opaque passthrough — the
      *                                                                 ergonomic `notifyEmail` surface is a separate
      *                                                                 follow-up (card y6jsQCpb).
+     * @param array{quote_id: string, quote_version: int}|null $acceptedQuote `AcceptedQuoteRef` wire shape
+     *                                                                 (contracts v2.238.0, planned: the api does not
+     *                                                                 serve quotes yet). Opaque passthrough; accepting
+     *                                                                 a quote ergonomically is card slwm9fHN.
      */
     public function __construct(
         public readonly array $jobs,
@@ -34,6 +38,7 @@ final class WorkflowCreatePayload
         public readonly ?array $delivery = null,
         public readonly ?array $processing = null,
         public readonly ?array $notify = null,
+        public readonly ?array $acceptedQuote = null,
     ) {
     }
 
@@ -68,6 +73,9 @@ final class WorkflowCreatePayload
         }
         if ($this->notify !== null) {
             $payload['notify'] = $this->notify;
+        }
+        if ($this->acceptedQuote !== null) {
+            $payload['accepted_quote'] = $this->acceptedQuote;
         }
         return $payload;
     }

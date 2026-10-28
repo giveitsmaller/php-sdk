@@ -46,11 +46,12 @@ final class WorkflowCreatePayloadTest extends TestCase
             delivery: ['mode' => 'bundle', 'bundle_format' => 'zip'],
             processing: ['class_hint' => 'auto'],
             notify: ['email' => ['to' => ['user@example.com']]],
+            acceptedQuote: ['quote_id' => 'q1', 'quote_version' => 2],
         );
 
         $wire = $payload->toWire();
         self::assertSame(
-            ['jobs', 'workflow_edges', 'callback_url', 'callback_events', 'export', 'delivery', 'processing', 'notify'],
+            ['jobs', 'workflow_edges', 'callback_url', 'callback_events', 'export', 'delivery', 'processing', 'notify', 'accepted_quote'],
             \array_keys($wire),
         );
         self::assertSame([['from' => 'a', 'to' => 'b']], $wire['workflow_edges']);
@@ -63,6 +64,7 @@ final class WorkflowCreatePayloadTest extends TestCase
         self::assertSame(['mode' => 'bundle', 'bundle_format' => 'zip'], $wire['delivery']);
         self::assertSame(['class_hint' => 'auto'], $wire['processing']);
         self::assertSame(['email' => ['to' => ['user@example.com']]], $wire['notify']);
+        self::assertSame(['quote_id' => 'q1', 'quote_version' => 2], $wire['accepted_quote']);
     }
 
     public function testToWireOmitsNullOptionalsIndividually(): void
@@ -87,5 +89,6 @@ final class WorkflowCreatePayloadTest extends TestCase
         self::assertArrayNotHasKey('delivery', $wire);
         self::assertArrayNotHasKey('processing', $wire);
         self::assertArrayNotHasKey('notify', $wire);
+        self::assertArrayNotHasKey('accepted_quote', $wire);
     }
 }
