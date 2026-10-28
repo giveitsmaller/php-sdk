@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Gisl\Sdk\Tests\Unit\Ergonomic;
 
 use Gisl\Sdk\Ergonomic\Artifact;
+use Gisl\Sdk\Ergonomic\BuilderInternals;
 use Gisl\Sdk\Ergonomic\ClipOptions;
 use Gisl\Sdk\Ergonomic\Handle;
 use Gisl\Sdk\Ergonomic\Merge;
@@ -36,6 +37,12 @@ use Psr\Http\Message\ResponseInterface;
 #[CoversClass(GislPerInputOptionsNotSupportedError::class)]
 final class MergeBuilderTest extends TestCase
 {
+    protected function tearDown(): void
+    {
+        BuilderInternals::setSleepForTesting(null);
+        parent::tearDown();
+    }
+
     /**
      * 36AZ98FV — codex review of PR #394 (e2e07e47fd6b) noted the merge path was
      * changed independently but covered only on the TypeScript side: every merge
@@ -99,12 +106,18 @@ final class MergeBuilderTest extends TestCase
             new \GuzzleHttp\Psr7\Response(429, ['Content-Type' => 'application/json', 'Retry-After' => '1'], '{"success":false,"error":"RATE_LIMITED","message":"slow"}'),
             self::jsonResponse(200, ['success' => true, 'data' => ['downloads' => []]]),
         ], $captured);
+        // Ao7EFBtA: record the wait's 1 s slices instead of sleeping them.
+        $sleptUs = [];
+        BuilderInternals::setSleepForTesting(static function (int $us) use (&$sleptUs): void {
+            $sleptUs[] = $us;
+        });
 
         self::makeClient($http)
             ->merge([$pathA, $pathB], new MergeOptions(mediaKind: 'video'))
             ->run(new RunOptions(maxWait: '30s', useSSE: false, pollIntervalMs: 1_000));
 
         $this->assertCount(6, $captured, 'the downloads fetch was retried once');
+        $this->assertSame([1_000_000], $sleptUs, 'the Retry-After: 1 wait');
     }
 
     public function test_submit_uploads_each_unique_asset_once_then_creates_workflow(): void

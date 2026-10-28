@@ -819,6 +819,7 @@ final class OperationBuilderRunTest extends TestCase
     protected function tearDown(): void
     {
         BuilderInternals::setClockForTesting(null);
+        BuilderInternals::setSleepForTesting(null);
         parent::tearDown();
     }
 
@@ -1027,6 +1028,22 @@ final class OperationBuilderRunTest extends TestCase
     // bTNCSX1x — a 429 from the status_poll bucket inside a wait is honoured.
     // -----------------------------------------------------------------------
 
+    /** @var list<int> microseconds per sleep slice, once {@see recordSleeps()} is installed */
+    private array $sleptUs = [];
+
+    /**
+     * Ao7EFBtA: the 429 wait sleeps through BuilderInternals::sleepMs(), so a
+     * test records each 1 s slice it asks for instead of sleeping it, and proves
+     * the wait from what was asked rather than from the wall clock. tearDown()
+     * restores usleep.
+     */
+    private function recordSleeps(): void
+    {
+        BuilderInternals::setSleepForTesting(function (int $us): void {
+            $this->sleptUs[] = $us;
+        });
+    }
+
     private static function rateLimited(?string $retryAfter): ResponseInterface
     {
         $headers = ['Content-Type' => 'application/json'];
@@ -1035,6 +1052,16 @@ final class OperationBuilderRunTest extends TestCase
         }
 
         return new Response(429, $headers, \json_encode(['success' => false, 'error' => 'RATE_LIMITED', 'message' => 'slow down'], JSON_THROW_ON_ERROR));
+    }
+
+    // The 429 tests below record their waits through the test sleeper, so this is the one
+    // place the production usleep in sleepMs() is shown to run (a no-op sleep would
+    // otherwise pass the suite). 50 ms, not a real Retry-After.
+    public function test_sleepMs_really_sleeps_when_no_test_sleeper_is_installed(): void
+    {
+        $started = \hrtime(true);
+        BuilderInternals::sleepMs(50, null, 'real-sleep pin');
+        $this->assertGreaterThanOrEqual(45, (\hrtime(true) - $started) / 1_000_000, 'the production usleep ran');
     }
 
     public function test_a_429_on_a_status_poll_waits_retry_after_then_completes(): void
@@ -1048,16 +1075,17 @@ final class OperationBuilderRunTest extends TestCase
             self::jsonResponse(200, self::statusCompleted()),
             self::jsonResponse(200, self::downloadsOk()),
         ], $captured));
-        $started = \microtime(true);
+        $this->recordSleeps();
 
         $result = $client->compress($tempPath, ['quality' => 75])
             ->run(new RunOptions(maxWait: '30s', useSSE: false, pollIntervalMs: 1_000));
 
         $this->assertSame('completed', $result->status);
         $this->assertCount(5, $captured, 'exactly one retry of the status poll');
-        // >= 1.95 s: above the largest no-header fallback (1.25 s), so only an
-        // honoured Retry-After passes.
-        $this->assertGreaterThanOrEqual(1.95, \microtime(true) - $started, 'the Retry-After wait happened');
+        // `Retry-After: 2` is exactly 2000 ms, asked for as two 1 s slices. The
+        // no-header fallback (at most 1.25 s on a first retry) cannot produce
+        // this list, so only an honoured Retry-After passes.
+        $this->assertSame([1_000_000, 1_000_000], $this->sleptUs, 'the Retry-After wait happened, in 1 s slices');
     }
 
     public function test_a_429_on_the_terminal_downloads_fetch_is_retried(): void
@@ -1071,12 +1099,14 @@ final class OperationBuilderRunTest extends TestCase
             self::rateLimited('1'),
             self::jsonResponse(200, self::downloadsOk()),
         ], $captured));
+        $this->recordSleeps();
 
         $result = $client->compress($tempPath, ['quality' => 75])
             ->run(new RunOptions(maxWait: '30s', useSSE: false, pollIntervalMs: 1_000));
 
         $this->assertSame('completed', $result->status);
         $this->assertCount(5, $captured);
+        $this->assertSame([1_000_000], $this->sleptUs, 'the Retry-After: 1 wait');
     }
 
     public function test_a_retry_after_past_the_deadline_throws_timeout_at_once(): void
@@ -1087,14 +1117,14 @@ final class OperationBuilderRunTest extends TestCase
             self::jsonResponse(201, self::createOk()),
             self::rateLimited('3600'),
         ]));
-        $started = \microtime(true);
+        $this->recordSleeps();
 
         try {
             $client->compress($tempPath, ['quality' => 75])
                 ->run(new RunOptions(maxWait: '30s', useSSE: false, pollIntervalMs: 1_000));
             $this->fail('must time out');
         } catch (GislTimeoutError) {
-            $this->assertLessThan(5.0, \microtime(true) - $started, 'no sleep through the budget');
+            $this->assertSame([], $this->sleptUs, 'no sleep through the budget');
         }
     }
 
@@ -1113,11 +1143,13 @@ final class OperationBuilderRunTest extends TestCase
             self::jsonResponse(200, self::statusCompleted()),
             self::jsonResponse(200, self::downloadsOk()),
         ], $captured));
+        $this->recordSleeps();
 
         $result = $client->compress($tempPath, ['quality' => 75])->run(new RunOptions(maxWait: '30s'));
 
         $this->assertSame('completed', $result->status);
         $this->assertCount(6, $captured);
+        $this->assertSame([1_000_000], $this->sleptUs, 'the Retry-After: 1 wait');
     }
 
     public function test_handle_wait_retries_a_429_on_its_downloads_fetch(): void
@@ -1132,10 +1164,12 @@ final class OperationBuilderRunTest extends TestCase
             self::rateLimited('1'),
             self::jsonResponse(200, self::downloadsOk()),
         ], $captured));
+        $this->recordSleeps();
 
         $client->compress($tempPath, ['quality' => 75])->submit()->wait('30s');
 
         $this->assertCount(6, $captured);
+        $this->assertSame([1_000_000], $this->sleptUs, 'the Retry-After: 1 wait');
     }
 
     public function test_the_downloads_fetch_is_patient_success_on_the_sixth_attempt(): void
@@ -1152,12 +1186,20 @@ final class OperationBuilderRunTest extends TestCase
         }
         $queue[] = self::jsonResponse(200, self::downloadsOk());
         $client = self::makeClient(self::stubClient($queue, $captured));
+        // Keyed by how many requests had gone out when the slice was asked for,
+        // so each fallback wait is attributed to the 429 it follows.
+        $sleptUsAfterRequest = [];
+        BuilderInternals::setSleepForTesting(static function (int $us) use (&$captured, &$sleptUsAfterRequest): void {
+            $sent = \count($captured);
+            $sleptUsAfterRequest[$sent] = ($sleptUsAfterRequest[$sent] ?? 0) + $us;
+        });
 
         $result = $client->compress($tempPath, ['quality' => 75])
             ->run(new RunOptions(maxWait: '120s', useSSE: false, pollIntervalMs: 1_000));
 
         $this->assertSame('completed', $result->status);
         $this->assertCount(9, $captured, 'five 429s then success: beyond a status budget of 4');
+        $this->assertSame([4, 5, 6, 7, 8], \array_keys($sleptUsAfterRequest), 'one backoff wait after each of the five 429s');
     }
 
     public function test_a_permanent_429_exhausts_the_budget_then_propagates(): void

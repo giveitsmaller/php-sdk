@@ -50,7 +50,7 @@ final class GislClientUploadResumeTest extends TestCase
 
     public function testRejectsSubThresholdFile(): void
     {
-        $filePath = $this->writeBigFile(1 * 1024 * 1024); // 1 MB, below 10 MB threshold
+        $filePath = $this->writeSparseFile(1 * 1024 * 1024); // 1 MB, below 10 MB threshold
         $captured = [];
         $client = $this->makeClient($this->stubClient([], $captured));
 
@@ -202,7 +202,7 @@ final class GislClientUploadResumeTest extends TestCase
         // before ETags are folded into $uploaded.
         $totalParts = 5;
         $fileSize = ($totalParts - 1) * self::CHUNK + 4 * 1024 * 1024; // 68 MiB
-        $filePath = $this->writeBigFile($fileSize);
+        $filePath = $this->writeSparseFile($fileSize);
 
         // No S3 PUTs queued — uploader handles them. Captured = [/status, /presign, /complete].
         $captured = [];
@@ -483,7 +483,7 @@ final class GislClientUploadResumeTest extends TestCase
     {
         $totalParts = 5;
         $fileSize = ($totalParts - 1) * self::CHUNK + 4 * 1024 * 1024;
-        $filePath = $this->writeBigFile($fileSize);
+        $filePath = $this->writeSparseFile($fileSize);
 
         // Only /status + /presign should hit HTTP — the uploader throws before
         // any ETag is folded, so /complete must never be reached.
@@ -678,7 +678,7 @@ final class GislClientUploadResumeTest extends TestCase
     {
         $totalParts = 3;
         $fileSize = ($totalParts - 1) * self::CHUNK + 4 * 1024 * 1024;
-        $filePath = $this->writeBigFile($fileSize);
+        $filePath = $this->writeSparseFile($fileSize);
 
         $captured = [];
         $http = $this->stubClient([
@@ -711,7 +711,7 @@ final class GislClientUploadResumeTest extends TestCase
     {
         $totalParts = 3;
         $fileSize = ($totalParts - 1) * self::CHUNK + 4 * 1024 * 1024;
-        $filePath = $this->writeBigFile($fileSize);
+        $filePath = $this->writeSparseFile($fileSize);
 
         $captured = [];
         $http = $this->stubClient([
@@ -739,7 +739,7 @@ final class GislClientUploadResumeTest extends TestCase
 
     public function testRejectsStatusTotalPartsAbove10000WithTypedError(): void
     {
-        $filePath = $this->writeBigFile(50 * 1024 * 1024);
+        $filePath = $this->writeSparseFile(50 * 1024 * 1024);
         $captured = [];
         $http = $this->stubClient([
             $this->jsonResponse(200, [
@@ -771,7 +771,7 @@ final class GislClientUploadResumeTest extends TestCase
     {
         $totalParts = 3;
         $fileSize = ($totalParts - 1) * self::CHUNK + 4 * 1024 * 1024;
-        $filePath = $this->writeBigFile($fileSize);
+        $filePath = $this->writeSparseFile($fileSize);
 
         $captured = [];
         $http = $this->stubClient([
@@ -864,7 +864,7 @@ final class GislClientUploadResumeTest extends TestCase
     {
         $totalParts = 3;
         $fileSize = ($totalParts - 1) * self::CHUNK + 4 * 1024 * 1024;
-        $filePath = $this->writeBigFile($fileSize);
+        $filePath = $this->writeSparseFile($fileSize);
 
         $captured = [];
         $http = $this->stubClient([
@@ -887,7 +887,7 @@ final class GislClientUploadResumeTest extends TestCase
     {
         $totalParts = 3;
         $fileSize = ($totalParts * self::CHUNK + 1024 * 1024 * 1024); // far exceeds plan
-        $filePath = $this->writeBigFile($fileSize);
+        $filePath = $this->writeSparseFile($fileSize);
 
         $captured = [];
         $http = $this->stubClient([
@@ -1051,7 +1051,9 @@ final class GislClientUploadResumeTest extends TestCase
      * concurrent uploader is faked in these tests (it never reads the bytes), so
      * a sparse fixture lets a many-part resume (whose real plan would be GBs at
      * the contract-mandated >=16 MiB chunk) run without materialising the bytes.
-     * Do NOT use this for the sequential path — that path actually reads chunks.
+     * The same holds for a resume refused or short-circuited before any part is
+     * PUT (Ao7EFBtA).
+     * Do NOT use this where the sequential path PUTs a part — that path reads chunks.
      */
     private function writeSparseFile(int $size): string
     {

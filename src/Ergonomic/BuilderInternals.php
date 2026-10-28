@@ -161,14 +161,10 @@ final class BuilderInternals
                 // them AND after the last one (second-identity + codex
                 // e6f93a2dfaac): a single usleep of a long Retry-After ignored a
                 // cancel for its whole length, and the retried call then
-                // returned a result the caller had already cancelled.
-                $remainingMs = $waitMs;
-                while ($remainingMs > 0) {
-                    self::throwIfCancelled($cancellation, "rate-limit wait for workflow {$workflowId}");
-                    $sliceMs = \min(1_000, $remainingMs);
-                    \usleep($sliceMs * 1_000);
-                    $remainingMs -= $sliceMs;
-                }
+                // returned a result the caller had already cancelled. sleepMs()
+                // does the slicing and the per-slice check; it has no check after
+                // the last slice, so that one stays here.
+                self::sleepMs($waitMs, $cancellation, "rate-limit wait for workflow {$workflowId}");
                 self::throwIfCancelled($cancellation, "rate-limit wait for workflow {$workflowId}");
             }
         }

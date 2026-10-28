@@ -6,6 +6,7 @@ namespace Gisl\Sdk\Tests\FileFirst;
 
 use Gisl\Sdk\Ergonomic\ArchiveFormat;
 use Gisl\Sdk\Ergonomic\ArchiveRecipeOptions;
+use Gisl\Sdk\Ergonomic\BuilderInternals;
 use Gisl\Sdk\Errors\GislConfigError;
 use Gisl\Sdk\Errors\GislTimeoutError;
 use Gisl\Sdk\FileFirst\ArchivedRecipe;
@@ -29,6 +30,12 @@ use Psr\Http\Message\ResponseInterface;
 final class ArchivedRecipeTest extends TestCase
 {
     private const WORKFLOW_ID = '01936fb2-0000-7000-8000-0000000000a0';
+
+    protected function tearDown(): void
+    {
+        BuilderInternals::setSleepForTesting(null);
+        parent::tearDown();
+    }
 
     public function test_getInputCount_reports_the_number_of_bundled_inputs(): void
     {
@@ -188,6 +195,11 @@ final class ArchivedRecipeTest extends TestCase
             new \GuzzleHttp\Psr7\Response(429, ['Content-Type' => 'application/json', 'Retry-After' => '1'], '{"success":false,"error":"RATE_LIMITED","message":"slow"}'),
             $this->archiveDownloadsResponse(),
         ], $captured);
+        // Ao7EFBtA: record the wait's 1 s slices instead of sleeping them.
+        $sleptUs = [];
+        BuilderInternals::setSleepForTesting(static function (int $us) use (&$sleptUs): void {
+            $sleptUs[] = $us;
+        });
 
         $result = $this->makeClient($http)
             ->files([FileInput::uploadId('id0'), FileInput::uploadId('id1')])
@@ -196,6 +208,7 @@ final class ArchivedRecipeTest extends TestCase
 
         self::assertTrue($result->ok);
         self::assertCount(5, $captured);
+        self::assertSame([1_000_000], $sleptUs, 'the Retry-After: 1 wait');
     }
 
     public function test_run_creates_the_lowered_archive_dag_and_projects_only_the_archive_output(): void
