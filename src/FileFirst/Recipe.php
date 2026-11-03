@@ -829,6 +829,7 @@ final class Recipe
             webhookSecret: $created->getWebhookSecret(),
             client: $this->client,
             key: $this->key,
+            quote: $created->getQuote(),
         );
     }
 

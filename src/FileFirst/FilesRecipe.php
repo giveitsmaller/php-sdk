@@ -424,6 +424,7 @@ final class FilesRecipe
             webhookSecret: $created->getWebhookSecret(),
             client: $this->client,
             key: null,
+            quote: $created->getQuote(),
         );
     }
 

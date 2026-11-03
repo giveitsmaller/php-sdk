@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Gisl\Sdk\Tests\Unit\Ergonomic;
 
+use Gisl\Generated\OpenApi\Model\CreditQuote;
 use Gisl\Sdk\Ergonomic\Handle;
 use Gisl\Sdk\Ergonomic\StatusSnapshot;
 use Gisl\Sdk\Errors\GislConfigError;
@@ -602,6 +603,128 @@ final class HandleTest extends TestCase
 
         self::assertSame('completed', $result->state);
         self::assertNull($result->succeeded[0]->key);
+    }
+
+    // -----------------------------------------------------------------------
+    // quote — the planned reservation quote, decoded from the wire (RHxg7olf)
+    // -----------------------------------------------------------------------
+
+    private const QUOTE_WORKFLOW_ID = '019539ac-2222-7000-8000-000000000002';
+
+    // The contract's `paused` example (GET /api/workflows/{id}/quote, 200), as the
+    // API sends it; the same fixture as the TS handle.test.ts. Nonempty on purpose:
+    // the lines are what a decoder can get wrong (5Bhk3c7Q: the generated line_id
+    // pattern rejected `main/0`).
+    private const WIRE_QUOTE = [
+        'quote_id' => '019539b0-5555-7000-8000-000000000002',
+        'quote_version' => 1,
+        'workflow_id' => self::QUOTE_WORKFLOW_ID,
+        'status' => 'accepted',
+        'expires_at' => null,
+        'max_hold_credits' => 46,
+        'held_credits' => 0,
+        'charged_credits' => 0,
+        'released_credits' => 0,
+        'final' => false,
+        'settlement_pending' => false,
+        'pricing_version' => '2026-10-01',
+        'meter' => null,
+        'lines' => [
+            [
+                'line_id' => 'main/0',
+                'job_ref' => 'main',
+                'operation_index' => 0,
+                'operation_type' => 'compress',
+                'job_id' => '019539ad-3333-7000-8000-000000000005',
+                'operation_id' => '019539ae-4444-7000-8000-000000000006',
+                'max_credits' => 40,
+                'state' => 'paused',
+                'charged_credits' => 0,
+                'released_credits' => 0,
+            ],
+            [
+                'line_id' => 'main/1',
+                'job_ref' => 'main',
+                'operation_index' => 1,
+                'operation_type' => 'thumbnail_video',
+                'job_id' => '019539ad-3333-7000-8000-000000000005',
+                'operation_id' => '019539ae-4444-7000-8000-000000000007',
+                'max_credits' => 6,
+                'state' => 'paused',
+                'charged_credits' => 0,
+                'released_credits' => 0,
+            ],
+        ],
+    ];
+
+    #[Test]
+    public function submit_puts_the_create_response_quote_on_handle_quote_and_to_array_is_unchanged(): void
+    {
+        $path = (string) \tempnam(\sys_get_temp_dir(), 'gisl-quote-');
+        \file_put_contents($path, 'x');
+        $uploadThenCreate = fn (): array => [
+            $this->jsonResponse(200, ['success' => true, 'data' => [
+                'file_id' => '01936fb1-7bb3-7000-8000-000000000001',
+                'original_name' => 'x',
+                'mime_type' => 'application/octet-stream',
+                'size_bytes' => 1,
+            ]]),
+            $this->jsonResponse(201, ['success' => true, 'data' => [
+                'workflow_id' => self::QUOTE_WORKFLOW_ID,
+                'status' => 'paused_insufficient_credits',
+                'jobs' => [],
+                'created_at' => '2026-10-16T12:00:00Z',
+                'warnings' => [],
+                'webhook_secret' => 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
+                'quote' => self::WIRE_QUOTE,
+            ]]),
+        ];
+        $client = $this->makeErgonomicClient($this->stubClient([...$uploadThenCreate(), ...$uploadThenCreate()]));
+
+        // Operation-first (OperationBuilder::submit()), then the documented file-first path (Recipe::submit()).
+        $handle = $client->compress($path, ['quality' => 75])->submit();
+        $fileFirstHandle = $client->file($path)->compress()->submit();
+        \unlink($path);
+
+        self::assertIsTheWireQuote($handle->quote);
+        self::assertIsTheWireQuote($fileFirstHandle->quote);
+        self::assertSame(
+            [
+                'workflowId' => self::QUOTE_WORKFLOW_ID,
+                'webhookSecret' => 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
+            ],
+            $handle->toArray(),
+        );
+    }
+
+    #[Test]
+    public function status_puts_the_status_response_quote_on_snapshot_quote_and_to_array_is_unchanged(): void
+    {
+        $http = $this->stubClient([
+            $this->jsonResponse(200, ['success' => true, 'data' => [
+                'workflow_id' => self::QUOTE_WORKFLOW_ID,
+                'status' => 'paused_insufficient_credits',
+                'created_at' => '2026-10-16T12:00:00Z',
+                'updated_at' => '2026-10-16T12:01:00Z',
+                'jobs' => [],
+                'quote' => self::WIRE_QUOTE,
+            ]]),
+        ]);
+
+        // A reattached handle has no create-response quote, so this one can only come from status().
+        $snap = $this->makeErgonomicClient($http)->workflow(self::QUOTE_WORKFLOW_ID)->status();
+
+        self::assertIsTheWireQuote($snap->quote);
+        self::assertSame(['workflowId' => self::QUOTE_WORKFLOW_ID, 'state' => 'paused_insufficient_credits'], $snap->toArray());
+    }
+
+    private static function assertIsTheWireQuote(?CreditQuote $quote): void
+    {
+        self::assertInstanceOf(CreditQuote::class, $quote);
+        self::assertSame('019539b0-5555-7000-8000-000000000002', $quote->getQuoteId());
+        self::assertSame(46, $quote->getMaxHoldCredits());
+        self::assertCount(2, $quote->getLines());
+        self::assertSame('main/0', $quote->getLines()[0]->getLineId());
     }
 
     // -----------------------------------------------------------------------

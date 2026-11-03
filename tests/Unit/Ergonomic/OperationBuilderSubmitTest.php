@@ -73,6 +73,8 @@ final class OperationBuilderSubmitTest extends TestCase
             'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
             $handle->webhookSecret,
         );
+        // A create response with no `quote` (every API today) parses to a handle without one.
+        $this->assertNull($handle->quote);
         // FF5a back-compat: the enriched Handle's toArray() shape must stay
         // byte-identical to {workflowId, webhookSecret} — no `client` leakage,
         // no extra keys, fixed field order.

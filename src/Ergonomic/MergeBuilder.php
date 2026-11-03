@@ -227,6 +227,7 @@ final class MergeBuilder
             workflowId: $created->getWorkflowId() ?? '',
             webhookSecret: $created->getWebhookSecret(),
             client: $this->client,
+            quote: $created->getQuote(),
         );
     }
 

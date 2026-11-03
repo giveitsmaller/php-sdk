@@ -599,6 +599,7 @@ readonly property Gisl\Sdk\Ergonomic\ClipOptions::$transition : ?string
 readonly property Gisl\Sdk\Ergonomic\ClipOptions::$trimEnd : ?float
 readonly property Gisl\Sdk\Ergonomic\ClipOptions::$trimStart : ?float
 readonly property Gisl\Sdk\Ergonomic\Handle::$key : ?string
+readonly property Gisl\Sdk\Ergonomic\Handle::$quote : ?Gisl\Generated\OpenApi\Model\CreditQuote
 readonly property Gisl\Sdk\Ergonomic\Handle::$webhookSecret : ?string
 readonly property Gisl\Sdk\Ergonomic\Handle::$workflowId : string
 readonly property Gisl\Sdk\Ergonomic\HandleAsset::$fileId : string
@@ -675,6 +676,7 @@ readonly property Gisl\Sdk\Ergonomic\RunOptions::$useSSE : bool
 readonly property Gisl\Sdk\Ergonomic\RunTransport::$name : string
 readonly property Gisl\Sdk\Ergonomic\RunTransport::$value : string
 readonly property Gisl\Sdk\Ergonomic\SseConnectRefused::$refusal : Gisl\Sdk\Errors\GislApiError
+readonly property Gisl\Sdk\Ergonomic\StatusSnapshot::$quote : ?Gisl\Generated\OpenApi\Model\CreditQuote
 readonly property Gisl\Sdk\Ergonomic\StatusSnapshot::$state : string
 readonly property Gisl\Sdk\Ergonomic\StatusSnapshot::$workflowId : string
 readonly property Gisl\Sdk\Ergonomic\SubmitOptions::$cancellation : ?Gisl\Sdk\Cancellation

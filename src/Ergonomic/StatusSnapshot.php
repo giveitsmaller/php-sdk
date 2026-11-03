@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Gisl\Sdk\Ergonomic;
 
+use Gisl\Generated\OpenApi\Model\CreditQuote;
 use Gisl\Sdk\WorkflowConstants;
 
 /**
@@ -21,6 +22,14 @@ final class StatusSnapshot
     public function __construct(
         public readonly string $workflowId,
         public readonly string $state,
+        // The workflow's live reservation quote from the status response: the
+        // most it can be charged (`getMaxHoldCredits()`) and how much of that
+        // is held, charged and released right now. PLANNED on the api and
+        // read-tolerant: null until the API emits quotes and for a workflow
+        // without one. The generated contract model. Kept OUT of
+        // {@see toArray()}, but `json_encode()` of the snapshot includes it
+        // (public property).
+        public readonly ?CreditQuote $quote = null,
     ) {
     }
 

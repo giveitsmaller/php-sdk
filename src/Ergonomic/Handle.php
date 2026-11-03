@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Gisl\Sdk\Ergonomic;
 
+use Gisl\Generated\OpenApi\Model\CreditQuote;
 use Gisl\Generated\OpenApi\Model\JobDownload;
 use Gisl\Generated\OpenApi\Model\WorkflowStatusResponse;
 use Gisl\Sdk\Errors\GislConfigError;
@@ -58,6 +59,17 @@ final class Handle
         // reattached handle (`client->workflow(id)`) passes no key → null →
         // keyless RunResult.
         public readonly ?string $key = null,
+        // The create response's reservation quote, threaded from every
+        // `submit()`: the most the workflow can be charged
+        // (`getMaxHoldCredits()`) and its per-operation lines. Read it after
+        // `submit()` and before {@see wait()}; for the live amounts read
+        // {@see StatusSnapshot::$quote} from {@see status()}. PLANNED on the
+        // api and read-tolerant: null until the API emits quotes, for a
+        // workflow without one, and for a reattached handle (no create
+        // response). The generated contract model. Kept OUT of
+        // {@see toArray()}, but `json_encode()` of the handle includes it
+        // (public property), as it does `$key`.
+        public readonly ?CreditQuote $quote = null,
     ) {
     }
 
@@ -75,6 +87,7 @@ final class Handle
         return new StatusSnapshot(
             $this->workflowId,
             BuilderInternals::coerceString($status->getStatus()),
+            $status->getQuote(),
         );
     }
 

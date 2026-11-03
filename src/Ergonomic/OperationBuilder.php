@@ -526,6 +526,7 @@ final class OperationBuilder
             workflowId: $created->getWorkflowId() ?? '',
             webhookSecret: $created->getWebhookSecret(),
             client: $this->client,
+            quote: $created->getQuote(),
         );
     }
 
