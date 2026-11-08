@@ -30,8 +30,9 @@ use Psr\Http\Message\ResponseInterface;
  * `application/octet-stream` (RFC 7578 §4.4 unknown-binary default).
  *
  * No active parity fixture asserts the MULTIPART-INITIATE part content-type
- * (the upload_multipart family is skipped on the sub-floor chunk size), so the
- * multipart assertions here are the only guard for that half.
+ * (the upload_multipart family runs, but its initiate `file` part declares no
+ * content-type, so the comparator never checks it), so the multipart
+ * assertions here are the only guard for that half.
  */
 #[CoversClass(GislClient::class)]
 final class GislClientUploadContentTypeTest extends TestCase

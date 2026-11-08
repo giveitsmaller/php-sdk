@@ -59,19 +59,12 @@ final class ParityTest extends TestCase
         // (pins `text/plain`) is no longer skipped — the parity harness
         // forwards the fixture's bytes-arg content-type via UploadOptions.
 
-        // BOTH SDKs enforce the contract chunk-range floor (16 MiB /
-        // 16777216 bytes — raised 5 MiB -> 16 MiB by CON-1 / contracts
-        // z4GDTUMx, ADR-0011). These fixtures pin a ~2 MB recommended_chunk_size
-        // to keep the binary payload compact, below that floor, so BOTH SDKs
-        // reject it: PHP via the generated `MultipartInitiateResponse`
-        // hydrate-time validator, TS via the same contract chunk-range guard
-        // (`packages/typescript/src/client.ts:~1097`). This is a deliberate
-        // shared divergence on an out-of-contract fixture, NOT a generator bug.
-        // See packages/php/tests/parity/KNOWN_DIVERGENCES.md.
-        'upload_multipart' =>
-            'Both SDKs enforce the contract chunk-range floor (16 MiB / 16777216); '
-            . 'the fixture pins ~2 MB recommendedChunkSize to keep the payload compact, '
-            . 'so both reject it. Deliberate shared divergence, not a generator bug.',
+        // xbWn0diW (RESOLVED): `upload_multipart`, `upload_metadata_hint` and
+        // `upload_boundary_multipart` pinned a ~2 MB recommended_chunk_size,
+        // below the contract's 16 MiB floor, so both SDKs rejected them and both
+        // harnesses skipped them. They now pin the floor (16777216) and run in
+        // both SDKs; the part plan and every request byte are unchanged.
+
         // NOT a divergence: both SDKs agree to refuse. Here only because the
         // harness has no other skip mechanism.
         'ff_lowering_video_watermark_overlay' =>
@@ -79,10 +72,6 @@ final class ParityTest extends TestCase
             . 'planned by contracts v2.203.0, so the SDK throws at watermark() before any payload '
             . 'exists. RESTORE THIS FIXTURE when the op is re-listed; the video lowering shape is '
             . 'uncovered until then.',
-        'upload_metadata_hint' =>
-            'Same sub-floor recommendedChunkSize as upload_multipart; both SDKs reject the ~2 MB value.',
-        'upload_boundary_multipart' =>
-            'Same sub-floor recommendedChunkSize as upload_multipart; both SDKs reject the ~2 MB value.',
     ];
 
     #[DataProvider('fixtureProvider')]

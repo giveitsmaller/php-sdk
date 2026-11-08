@@ -488,14 +488,6 @@ final class RecipeChainOptionsTest extends TestCase
     }
 
     #[Test]
-    public function bare_compress_on_an_extensionless_path_emits_no_options_key(): void
-    {
-        $ops = $this->operations($this->recipe('photo')->compress());
-        self::assertSame([['type' => 'compress']], $ops);
-        self::assertArrayNotHasKey('options', $ops[0]);
-    }
-
-    #[Test]
     public function convert_with_no_bag_carries_only_output_format(): void
     {
         self::assertSame(

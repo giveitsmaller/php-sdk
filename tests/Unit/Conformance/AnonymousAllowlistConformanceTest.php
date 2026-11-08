@@ -11,7 +11,6 @@ use Gisl\Sdk\GislAnonymousClient;
 use Gisl\Sdk\GislClient;
 use GuzzleHttp\Psr7\HttpFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Client\ClientExceptionInterface;
 use Psr\Http\Client\ClientInterface;
@@ -201,47 +200,51 @@ final class AnonymousAllowlistConformanceTest extends TestCase
      * Every excluded method throws before any I/O, driven from the table the
      * structural test proves complete.
      */
-    #[DataProvider('excludedMethods')]
-    public function testExcludedMethodThrowsBeforeAnyIo(string $method): void
+    public function testExcludedMethodThrowsBeforeAnyIo(): void
     {
-        $factory = new HttpFactory();
-        $client = Gisl::anonymous(
-            baseUrl: 'https://api.example.com',
-            httpClient: new class () implements ClientInterface {
-                public function sendRequest(RequestInterface $request): ResponseInterface
-                {
-                    throw new class ('an anonymous gate let a request through') extends \RuntimeException implements ClientExceptionInterface {};
+        $methods = \array_keys(self::EXCLUDED_METHODS);
+        self::assertNotSame([], $methods);
+
+        $failures = [];
+        foreach ($methods as $method) {
+            try {
+                // A fresh client per row: one row's state never reaches the next.
+                $factory = new HttpFactory();
+                $client = Gisl::anonymous(
+                    baseUrl: 'https://api.example.com',
+                    httpClient: new class () implements ClientInterface {
+                        public function sendRequest(RequestInterface $request): ResponseInterface
+                        {
+                            throw new class ('an anonymous gate let a request through') extends \RuntimeException implements ClientExceptionInterface {};
+                        }
+                    },
+                    requestFactory: $factory,
+                    streamFactory: $factory,
+                );
+                $reflection = new \ReflectionMethod($client, $method);
+                $args = [];
+                foreach ($reflection->getParameters() as $parameter) {
+                    if ($parameter->isOptional()) {
+                        break;
+                    }
+                    $args[] = self::dummyFor($parameter);
                 }
-            },
-            requestFactory: $factory,
-            streamFactory: $factory,
-        );
-        $reflection = new \ReflectionMethod($client, $method);
-        $args = [];
-        foreach ($reflection->getParameters() as $parameter) {
-            if ($parameter->isOptional()) {
-                break;
+
+                $result = $reflection->invokeArgs($client, $args);
+                if ($result instanceof \Generator) {
+                    $result->current();
+                }
+                $failures[] = "{$method}: did not throw on an anonymous client";
+            } catch (GislFeatureRequiresAuthError $e) {
+                if ($e->operation !== $method) {
+                    $failures[] = "{$method}: operation is '{$e->operation}', expected '{$method}'";
+                }
+            } catch (\Throwable $e) {
+                $failures[] = "{$method}: threw " . $e::class . ": {$e->getMessage()}";
             }
-            $args[] = self::dummyFor($parameter);
         }
 
-        try {
-            $result = $reflection->invokeArgs($client, $args);
-            if ($result instanceof \Generator) {
-                $result->current();
-            }
-            self::fail("{$method} did not throw on an anonymous client");
-        } catch (GislFeatureRequiresAuthError $e) {
-            self::assertSame($method, $e->operation);
-        }
-    }
-
-    /** @return iterable<string, array{string}> */
-    public static function excludedMethods(): iterable
-    {
-        foreach (\array_keys(self::EXCLUDED_METHODS) as $name) {
-            yield $name => [$name];
-        }
+        self::assertSame([], $failures, \implode("\n", $failures));
     }
 
     private static function dummyFor(\ReflectionParameter $parameter): mixed

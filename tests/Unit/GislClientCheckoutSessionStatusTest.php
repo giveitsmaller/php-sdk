@@ -148,109 +148,105 @@ final class GislClientCheckoutSessionStatusTest extends TestCase
         }
     }
 
-    /** @return iterable<string, array{array<string, mixed>|list<mixed>, string|null}> */
-    public static function malformedData(): iterable
+    public function testAMalformedBodyIsAContractError(): void
     {
-        yield 'missing status' => [['session_id' => 'cs_1'], 'status'];
-        yield 'non-string status' => [['session_id' => 'cs_1', 'status' => 1], 'status'];
-        yield 'missing session_id' => [['status' => 'paid'], 'session_id'];
-        yield 'non-string session_id' => [['session_id' => 7, 'status' => 'paid'], 'session_id'];
-        yield 'data is a list' => [['cs_1', 'paid'], null];
-    }
+        // label => [data, the path the error must name].
+        $cases = [
+            'missing status' => [['session_id' => 'cs_1'], 'status'],
+            'non-string status' => [['session_id' => 'cs_1', 'status' => 1], 'status'],
+            'missing session_id' => [['status' => 'paid'], 'session_id'],
+            'non-string session_id' => [['session_id' => 7, 'status' => 'paid'], 'session_id'],
+            'data is a list' => [['cs_1', 'paid'], null],
+            // codex 217e07fe004f: json_decode(assoc) cannot tell `{}` from `[]`, and both
+            // used to skip the checks and hydrate a model with null required fields.
+            'empty object' => [new \stdClass(), 'session_id'],
+            'empty list' => [[], 'session_id'],
+        ];
 
-    /** @param array<string, mixed>|list<mixed> $data */
-    #[DataProvider('malformedData')]
-    public function testAMalformedBodyIsAContractError(array $data, ?string $field): void
-    {
-        $client = $this->clientAnswering($this->json(200, ['success' => true, 'data' => $data]));
+        self::assertNotSame([], $cases);
 
-        try {
-            $client->getCheckoutSessionStatus('cs_1');
-            self::fail('a malformed body must throw');
-        } catch (GislResponseContractError $e) {
-            self::assertSame($field, $e->path);
+        $failures = [];
+        foreach ($cases as $label => [$data, $field]) {
+            try {
+                // A fresh client per row.
+                $client = $this->clientAnswering($this->json(200, ['success' => true, 'data' => $data]));
+                $client->getCheckoutSessionStatus('cs_1');
+                $failures[] = "{$label}: a malformed body must throw";
+            } catch (GislResponseContractError $e) {
+                if ($e->path !== $field) {
+                    $failures[] = "{$label}: path is " . \var_export($e->path, true) . ', expected ' . \var_export($field, true);
+                }
+            } catch (\Throwable $e) {
+                $failures[] = "{$label}: threw " . $e::class . ": {$e->getMessage()}";
+            }
         }
-    }
 
-    /**
-     * codex 217e07fe004f: json_decode(assoc) cannot tell `{}` from `[]`, and both
-     * used to skip the checks and hydrate a model with null required fields.
-     *
-     * @return iterable<string, array{mixed}>
-     */
-    public static function emptyData(): iterable
-    {
-        yield 'empty object' => [new \stdClass()];
-        yield 'empty list' => [[]];
-    }
-
-    #[DataProvider('emptyData')]
-    public function testAnEmptyDataIsAContractError(mixed $data): void
-    {
-        $client = $this->clientAnswering($this->json(200, ['success' => true, 'data' => $data]));
-
-        try {
-            $client->getCheckoutSessionStatus('cs_1');
-            self::fail('an empty `data` must not hydrate a model with null required fields');
-        } catch (GislResponseContractError $e) {
-            self::assertSame('session_id', $e->path);
-        }
+        self::assertSame([], $failures, \implode("\n", $failures));
     }
 
     /**
      * codex af81ae4ef038: a 2xx the SDK cannot read as the contracted JSON envelope is
      * the response violating the contract (as getHealth() treats it), not a bare GislError.
-     *
-     * @return iterable<string, array{string}>
      */
-    public static function unreadable2xxBodies(): iterable
+    public function testAnUnreadable2xxIsAContractError(): void
     {
-        yield 'empty body' => [''];
-        yield 'not JSON' => ['<html>gateway</html>'];
-        yield 'JSON scalar' => ['"paid"'];
-        yield 'envelope without data' => ['{"success":true}'];
-        yield 'envelope without success' => ['{"data":{"session_id":"cs_1","status":"paid"}}'];
-    }
+        $cases = [
+            'empty body' => '',
+            'not JSON' => '<html>gateway</html>',
+            'JSON scalar' => '"paid"',
+            'envelope without data' => '{"success":true}',
+            'envelope without success' => '{"data":{"session_id":"cs_1","status":"paid"}}',
+        ];
 
-    #[DataProvider('unreadable2xxBodies')]
-    public function testAnUnreadable2xxIsAContractError(string $body): void
-    {
-        $client = $this->clientAnswering(new Response(200, ['Content-Type' => 'application/json'], $body));
+        self::assertNotSame([], $cases);
 
-        try {
-            $client->getCheckoutSessionStatus('cs_1');
-            self::fail('an unreadable 2xx must throw');
-        } catch (GislResponseContractError $e) {
-            self::assertStringContainsString('/api/billing/checkout/cs_1/status', $e->getMessage());
+        $failures = [];
+        foreach ($cases as $label => $body) {
+            try {
+                // A fresh client per row.
+                $client = $this->clientAnswering(new Response(200, ['Content-Type' => 'application/json'], $body));
+                $client->getCheckoutSessionStatus('cs_1');
+                $failures[] = "{$label}: an unreadable 2xx must throw";
+            } catch (GislResponseContractError $e) {
+                if (!\str_contains($e->getMessage(), '/api/billing/checkout/cs_1/status')) {
+                    $failures[] = "{$label}: message '{$e->getMessage()}' does not name the endpoint";
+                }
+            } catch (\Throwable $e) {
+                $failures[] = "{$label}: threw " . $e::class . ": {$e->getMessage()}";
+            }
         }
+
+        self::assertSame([], $failures, \implode("\n", $failures));
     }
 
     /**
      * codex b7a99b89c985: the contract declares only 200 as success here.
-     *
-     * @return iterable<string, array{int}>
      */
-    public static function non200Successes(): iterable
+    public function testANon200SuccessWithAValidBodyIsAContractError(): void
     {
-        yield '201' => [201];
-        yield '202' => [202];
-        yield '206' => [206];
-    }
+        $rows = [201, 202, 206];
+        self::assertNotSame([], $rows);
 
-    #[DataProvider('non200Successes')]
-    public function testANon200SuccessWithAValidBodyIsAContractError(int $status): void
-    {
-        $client = $this->clientAnswering($this->json($status, [
-            'success' => true,
-            'data' => ['session_id' => 'cs_1', 'status' => 'paid'],
-        ]));
-
-        try {
-            $client->getCheckoutSessionStatus('cs_1');
-            self::fail("a {$status} must not be accepted");
-        } catch (GislResponseContractError $e) {
-            self::assertStringContainsString((string) $status, $e->getMessage());
+        $failures = [];
+        foreach ($rows as $status) {
+            try {
+                // A fresh client per row.
+                $client = $this->clientAnswering($this->json($status, [
+                    'success' => true,
+                    'data' => ['session_id' => 'cs_1', 'status' => 'paid'],
+                ]));
+                $client->getCheckoutSessionStatus('cs_1');
+                $failures[] = "{$status}: a {$status} must not be accepted";
+            } catch (GislResponseContractError $e) {
+                if (!\str_contains($e->getMessage(), (string) $status)) {
+                    $failures[] = "{$status}: message '{$e->getMessage()}' does not name the status";
+                }
+            } catch (\Throwable $e) {
+                $failures[] = "{$status}: threw " . $e::class . ": {$e->getMessage()}";
+            }
         }
+
+        self::assertSame([], $failures, \implode("\n", $failures));
     }
 
     public function testA401GoesThroughTheSharedMapping(): void

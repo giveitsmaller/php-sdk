@@ -15,21 +15,16 @@ array). Keep the two in sync — see "How to remove a skip" below.
 ## Status snapshot (v1 launch gate — P8 `ftI4Myby`)
 
 - **Shared fixtures**: 74
-- **Skipped (PHP)**: 4 (3 divergences in §1 + 1 withdrawn operation in §2; all with a rationale)
+- **Skipped (PHP)**: 1 (the withdrawn operation in §2, which is not a divergence)
 - **Failing**: 0
 
 The full PHP suite (unit + parity) is green via `make project/sdk/php/check`.
-Three of the four skips below are the only PHP conformance divergences; none is a
-functional defect in the hand-written SDK logic, and all are tracked for
-reduction. The launch gate passes with these documented exceptions.
+There is no PHP conformance divergence left to skip: the one remaining skip is a
+fixture both SDKs agree to refuse. The launch gate passes with it documented.
 
-The three in §1 fall in one bucket; §2 is not a divergence at all:
-
-- **Bucket B — shared TS+PHP skip of an out-of-contract fixture**
-  (§1 recommendedChunkSize). The TS reference runner skips the same three
-  fixtures for the same reason (`packages/typescript/tests/parity/parity.test.ts`);
-  the fixture pins a value below the contract chunk-range floor, so neither SDK
-  accepts it.
+Bucket B (§1, the shared TS+PHP skip of three fixtures that pinned an
+out-of-contract `recommendedChunkSize`) is **RESOLVED** — the fixtures now pin
+the contract floor and run in both SDKs.
 
 Bucket A (the §1 multipart `file` part Content-Type PHP-specific divergence,
 Trello `RWWBYklu`) is **RESOLVED** — the PHP SDK now forwards the caller-supplied
@@ -40,30 +35,24 @@ skipped.
 
 ## Divergences
 
-### 1. Sub-floor chunk size — both SDKs enforce the contract chunk-range (3 fixtures, Bucket B)
+### 1. Sub-floor chunk size — RESOLVED (3 fixtures, Bucket B)
 
 Both SDKs enforce the contract chunk-range floor of **16 MiB (16777216 bytes)**
 on `recommendedChunkSize` (raised 5 MiB → 16 MiB by CON-1 / contracts
 `z4GDTUMx`, ADR-0011): PHP via the generated
 `MultipartInitiateResponse::setRecommendedChunkSize` hydrate-time validator, TS
-via the same contract chunk-range guard (`packages/typescript/src/client.ts:~1097`,
-a previously-lax TS path closed in codex review). These fixtures intentionally
-pin a small (~2 MB) `recommended_chunk_size` to keep the binary payload
-compact — a value below the contract floor — so **both** runners reject it and
-skip the same three fixtures. This is a deliberate shared divergence on an
-out-of-contract fixture, **not** a generator bug. The happy-path multipart wire
-shape is covered elsewhere (PHP unit tests; TS `client.test.ts` /
-`upload-streaming.test.ts`) with contract-valid chunk sizes.
+via the same contract chunk-range guard in `packages/typescript/src/client.ts`.
+`upload_multipart`, `upload_metadata_hint` and `upload_boundary_multipart`
+pinned a ~2 MB `recommended_chunk_size`, below that floor, so both runners
+rejected and skipped them.
 
-| Fixture | Reason |
-|---|---|
-| `upload_multipart` | Both SDKs reject the fixture's sub-16-MiB (~2 MB) recommendedChunkSize. |
-| `upload_metadata_hint` | Same sub-floor value as `upload_multipart`. |
-| `upload_boundary_multipart` | Same sub-floor value as `upload_multipart`. |
-
-**Resolution:** none planned — the fixtures pin an out-of-contract value on
-purpose to keep payloads compact, and both SDKs correctly reject it. A
-conformant server never sends below the 16 MiB floor.
+**Resolution (`xbWn0diW`):** the three fixtures now pin `16777216`. The value
+never kept the payload compact: each upload is an 8 MiB first chunk plus a tail
+shorter than one chunk, so the part plan (2 parts, one presigned PUT) and every
+request byte are unchanged. The same change quoted their `expires_at` timestamps,
+which the PHP harness's YAML loader read as an integer while every running
+fixture already quoted theirs. They are the only cross-SDK proof of initiate,
+then PUT, then complete, and run in both SDKs again.
 
 ### 2. Withdrawn operation — NOT a divergence (1 fixture)
 

@@ -6,7 +6,6 @@ namespace Gisl\Sdk\Tests\Unit\Http;
 
 use Gisl\Sdk\Http\RateLimitHeaders;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -22,38 +21,31 @@ final class RateLimitHeadersTest extends TestCase
     // isApiRetryableStatus — bounded predicate (408 / 429 / 500-599)
     // -----------------------------------------------------------------
 
-    /**
-     * @return list<array{int}>
-     */
-    public static function retryableStatusProvider(): array
+    public function testRetryableStatusBoundaries(): void
     {
-        return [[408], [429], [500], [503], [599]];
-    }
+        // status => expected. 599 / 600 is the upper edge of the 5xx window.
+        $cases = [
+            408 => true, 429 => true, 500 => true, 503 => true, 599 => true,
+            200 => false, 301 => false, 400 => false, 404 => false, 409 => false,
+            418 => false, 600 => false, 700 => false,
+        ];
 
-    #[DataProvider('retryableStatusProvider')]
-    public function testRetryableStatuses(int $status): void
-    {
-        self::assertTrue(RateLimitHeaders::isApiRetryableStatus($status));
-    }
+        self::assertNotSame([], $cases);
 
-    /**
-     * @return list<array{int}>
-     */
-    public static function nonRetryableStatusProvider(): array
-    {
-        return [[200], [301], [400], [404], [409], [418], [600], [700]];
-    }
+        $failures = [];
+        foreach ($cases as $status => $expected) {
+            try {
+                $actual = RateLimitHeaders::isApiRetryableStatus($status);
+                if ($actual !== $expected) {
+                    $failures[] = "{$status}: isApiRetryableStatus returned " . \var_export($actual, true)
+                        . ', expected ' . \var_export($expected, true);
+                }
+            } catch (\Throwable $e) {
+                $failures[] = "{$status}: threw " . $e::class . ": {$e->getMessage()}";
+            }
+        }
 
-    #[DataProvider('nonRetryableStatusProvider')]
-    public function testNonRetryableStatuses(int $status): void
-    {
-        self::assertFalse(RateLimitHeaders::isApiRetryableStatus($status));
-    }
-
-    public function testFiveHundredWindowIsBoundedAt599(): void
-    {
-        self::assertTrue(RateLimitHeaders::isApiRetryableStatus(599));
-        self::assertFalse(RateLimitHeaders::isApiRetryableStatus(600));
+        self::assertSame([], $failures, \implode("\n", $failures));
     }
 
     // -----------------------------------------------------------------

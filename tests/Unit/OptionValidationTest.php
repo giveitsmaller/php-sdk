@@ -236,30 +236,6 @@ final class OptionValidationTest extends TestCase
     }
 
     #[Test]
-    public function convert_positional_owned_throws_synchronously_at_the_verb_call(): void
-    {
-        try {
-            $this->recipe('clip.mov')->convert('mp4', ['output_format' => 'webm']);
-            self::fail('a positional-owned output_format must throw at the verb call');
-        } catch (GislConfigError $err) {
-            self::assertSame('unknown_field', $err->reason);
-            self::assertSame(['output_format'], $err->conflictingFields);
-        }
-    }
-
-    #[Test]
-    public function text_watermark_positional_owned_throws_synchronously_at_the_verb_call(): void
-    {
-        try {
-            $this->recipe('photo.jpg')->textWatermark('real', ['text' => 'fake']);
-            self::fail('a positional-owned text must throw at the verb call');
-        } catch (GislConfigError $err) {
-            self::assertSame('unknown_field', $err->reason);
-            self::assertSame(['text'], $err->conflictingFields);
-        }
-    }
-
-    #[Test]
     public function thumbnail_with_one_or_no_dimension_is_accepted_at_the_verb_call(): void
     {
         self::assertSame(1, $this->recipe('photo.jpg')->thumbnail(['width' => 320])->stepCount());

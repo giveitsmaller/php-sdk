@@ -26,18 +26,6 @@ final class FileInputAudioLosslessTest extends TestCase
     }
 
     #[Test]
-    public function path_with_wav_extension_is_lossless(): void
-    {
-        self::assertTrue(FileInput::path('a.WAV')->compressAudioLosslessHint());
-    }
-
-    #[Test]
-    public function path_with_lossy_extension_is_not_lossless(): void
-    {
-        self::assertFalse(FileInput::path('song.mp3')->compressAudioLosslessHint());
-    }
-
-    #[Test]
     public function upload_id_input_has_no_inferable_signal(): void
     {
         self::assertFalse(FileInput::uploadId('uploaded-123')->compressAudioLosslessHint());

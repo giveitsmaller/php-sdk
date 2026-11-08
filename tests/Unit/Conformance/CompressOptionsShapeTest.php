@@ -109,55 +109,69 @@ final class CompressOptionsShapeTest extends TestCase
         }
     }
 
-    /** @return iterable<string, array{string}> */
-    public static function explicitKeys(): iterable
+    /** @return list<string> */
+    private static function explicitKeys(): array
     {
         [, $keys] = self::optionsShape(Recipe::class, 'compress');
-        foreach ($keys as $key) {
-            if (!\in_array($key, self::SDK_ONLY_KEYS, true)) {
-                yield $key => [$key];
-            }
-        }
+
+        return \array_values(\array_filter($keys, static fn (string $key): bool => !\in_array($key, self::SDK_ONLY_KEYS, true)));
     }
 
     #[Test]
-    #[DataProvider('explicitKeys')]
-    public function every_declared_explicit_key_is_accepted_for_some_media(string $key): void
+    public function every_declared_explicit_key_is_accepted_for_some_media(): void
     {
-        $value = $key === 'targetSize' ? '50MB' : 1;
-        $acceptedBy = [];
-        foreach (\array_keys(PresetResolver::KNOWN_WIRE_FIELDS) as $media) {
+        $keys = self::explicitKeys();
+        self::assertNotSame([], $keys);
+
+        $failures = [];
+        foreach ($keys as $key) {
             try {
-                PresetResolver::resolveCompress($media, null, null, null, null, [$key => $value]);
-                $acceptedBy[] = $media;
+                $value = $key === 'targetSize' ? '50MB' : 1;
+                $acceptedBy = [];
+                foreach (\array_keys(PresetResolver::KNOWN_WIRE_FIELDS) as $media) {
+                    try {
+                        PresetResolver::resolveCompress($media, null, null, null, null, [$key => $value]);
+                        $acceptedBy[] = $media;
+                    } catch (GislConfigError $e) {
+                        if ($e->reason !== 'unknown_field') {
+                            $acceptedBy[] = $media;
+                        }
+                    }
+                }
+                if ($acceptedBy === []) {
+                    $failures[] = "{$key}: no media accepts '{$key}'";
+                }
+            } catch (\Throwable $e) {
+                $failures[] = "{$key}: threw " . $e::class . ": {$e->getMessage()}";
+            }
+        }
+
+        self::assertSame([], $failures, \implode("\n", $failures));
+    }
+
+    #[Test]
+    public function a_misspelled_key_is_refused_as_unknown_field(): void
+    {
+        $media = \array_keys(PresetResolver::KNOWN_WIRE_FIELDS);
+        self::assertNotSame([], $media);
+
+        $failures = [];
+        foreach ($media as $medium) {
+            try {
+                PresetResolver::resolveCompress($medium, null, null, null, null, ['qualty' => 80]);
+                $failures[] = "{$medium}: 'qualty' must be refused for {$medium}";
             } catch (GislConfigError $e) {
                 if ($e->reason !== 'unknown_field') {
-                    $acceptedBy[] = $media;
+                    $failures[] = "{$medium}: reason {$e->reason}, expected unknown_field";
+                } elseif ($e->conflictingFields !== ['qualty']) {
+                    $failures[] = "{$medium}: conflictingFields " . \json_encode($e->conflictingFields) . ', expected ["qualty"]';
                 }
+            } catch (\Throwable $e) {
+                $failures[] = "{$medium}: threw " . $e::class . ": {$e->getMessage()}";
             }
         }
-        self::assertNotSame([], $acceptedBy, "no media accepts '{$key}'");
-    }
 
-    /** @return iterable<string, array{string}> */
-    public static function presetMedia(): iterable
-    {
-        foreach (\array_keys(PresetResolver::KNOWN_WIRE_FIELDS) as $media) {
-            yield $media => [$media];
-        }
-    }
-
-    #[Test]
-    #[DataProvider('presetMedia')]
-    public function a_misspelled_key_is_refused_as_unknown_field(string $media): void
-    {
-        try {
-            PresetResolver::resolveCompress($media, null, null, null, null, ['qualty' => 80]);
-            self::fail("'qualty' must be refused for {$media}");
-        } catch (GislConfigError $e) {
-            self::assertSame('unknown_field', $e->reason);
-            self::assertSame(['qualty'], $e->conflictingFields);
-        }
+        self::assertSame([], $failures, \implode("\n", $failures));
     }
 
     #[Test]

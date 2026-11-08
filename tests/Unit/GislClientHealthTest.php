@@ -166,33 +166,49 @@ final class GislClientHealthTest extends TestCase
         self::assertSame('dev', $health->getBuild());
     }
 
-    /** @return iterable<string, array{string, string}> */
-    public static function malformedBodies(): iterable
+    public function testAMalformed2xxIsAResponseContractError(): void
     {
-        yield 'app missing' => ['{"build":"1.0.0"}', '`app` must be a boolean'];
-        yield 'app a string' => ['{"app":"true"}', '`app` must be a boolean'];
-        yield 'app a number' => ['{"app":1}', '`app` must be a boolean'];
-        yield 'build a number' => ['{"app":true,"build":117}', '`build`, when present, must be a string'];
-        yield 'build null' => ['{"app":true,"build":null}', '`build`, when present, must be a string'];
-        yield 'a JSON list' => ['[{"app":true}]', 'expected a JSON object'];
-        yield 'JSON null' => ['null', 'expected a JSON object'];
-        yield 'empty object' => ['{}', '`app` must be a boolean'];
-        yield 'an envelope' => ['{"success":true,"data":{"app":true}}', '`app` must be a boolean'];
-        yield 'not JSON' => ['<html>ok</html>', 'body is not valid JSON'];
-        yield 'empty body' => ['', 'body is not valid JSON'];
-    }
+        // label => [body, detail]. Rows with the same detail are NOT redundant:
+        // 'empty object' alone proves `{}` (which decodes to `[]`, a list to
+        // array_is_list) is not read as a JSON list, and 'an envelope' alone
+        // proves the client does not unwrap an envelope.
+        $cases = [
+            'app missing' => ['{"build":"1.0.0"}', '`app` must be a boolean'],
+            'app a string' => ['{"app":"true"}', '`app` must be a boolean'],
+            'app a number' => ['{"app":1}', '`app` must be a boolean'],
+            'build a number' => ['{"app":true,"build":117}', '`build`, when present, must be a string'],
+            'build null' => ['{"app":true,"build":null}', '`build`, when present, must be a string'],
+            'a JSON list' => ['[{"app":true}]', 'expected a JSON object'],
+            'JSON null' => ['null', 'expected a JSON object'],
+            'empty object' => ['{}', '`app` must be a boolean'],
+            'an envelope' => ['{"success":true,"data":{"app":true}}', '`app` must be a boolean'],
+            'not JSON' => ['<html>ok</html>', 'body is not valid JSON'],
+            'empty body' => ['', 'body is not valid JSON'],
+        ];
 
-    #[DataProvider('malformedBodies')]
-    public function testAMalformed2xxIsAResponseContractError(string $body, string $detail): void
-    {
-        $history = [];
-        try {
-            $this->client([self::json($body)], $history)->getHealth();
-            self::fail('a malformed body must not hydrate');
-        } catch (GislResponseContractError $e) {
-            self::assertSame('/healthz', $e->operation);
-            self::assertStringContainsString($detail, $e->getMessage());
+        self::assertNotSame([], $cases);
+
+        $failures = [];
+        foreach ($cases as $label => [$body, $detail]) {
+            try {
+                // A fresh client and history per row.
+                unset($history);
+                $history = [];
+                $this->client([self::json($body)], $history)->getHealth();
+                $failures[] = "{$label}: a malformed body must not hydrate";
+            } catch (GislResponseContractError $e) {
+                if ($e->operation !== '/healthz') {
+                    $failures[] = "{$label}: operation is '{$e->operation}', expected '/healthz'";
+                }
+                if (!\str_contains($e->getMessage(), $detail)) {
+                    $failures[] = "{$label}: message '{$e->getMessage()}' does not contain '{$detail}'";
+                }
+            } catch (\Throwable $e) {
+                $failures[] = "{$label}: threw " . $e::class . ": {$e->getMessage()}";
+            }
         }
+
+        self::assertSame([], $failures, \implode("\n", $failures));
     }
 
     /** @return iterable<string, array{int}> */

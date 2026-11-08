@@ -8,7 +8,6 @@ use Gisl\Generated\Operations\CompressMetadata;
 use Gisl\Sdk\Generated\SdkSpec\Enums\OptimizeFor;
 use Gisl\Sdk\Ergonomic\PresetResolver;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -127,22 +126,21 @@ final class PresetPlannedConformanceTest extends TestCase
         return $planned;
     }
 
-    /** @return iterable<string, array{string}> */
-    public static function presetMediaProvider(): iterable
+    /**
+     * Every preset media x every optimize level, as [media, level] cells.
+     *
+     * @return list<array{string, OptimizeFor}>
+     */
+    private static function mediaLevels(): array
     {
-        foreach (\array_keys(PresetResolver::KNOWN_WIRE_FIELDS) as $media) {
-            yield (string) $media => [(string) $media];
-        }
-    }
-
-    /** @return iterable<string, array{string, OptimizeFor}> */
-    public static function mediaLevelProvider(): iterable
-    {
+        $cells = [];
         foreach (\array_keys(PresetResolver::KNOWN_WIRE_FIELDS) as $media) {
             foreach ([OptimizeFor::Size, OptimizeFor::Balanced, OptimizeFor::Quality] as $level) {
-                yield $media . ' / ' . $level->value => [(string) $media, $level];
+                $cells[] = [(string) $media, $level];
             }
         }
+
+        return $cells;
     }
 
     // --- 1. the hand table is a faithful projection --------------------------
@@ -156,16 +154,33 @@ final class PresetPlannedConformanceTest extends TestCase
         self::assertSame($media, $table, 'a new preset medium must not be able to skip the gate');
     }
 
-    #[DataProvider('presetMediaProvider')]
-    public function test_hand_table_matches_the_contract(string $media): void
+    public function test_hand_table_matches_the_contract(): void
     {
-        // Every preset medium must be a real compress mime-group — otherwise the
-        // lookup silently yields [] and the whole gate passes vacuously.
-        self::assertArrayHasKey($media, self::$compressGroups);
+        $media = \array_map('strval', \array_keys(PresetResolver::KNOWN_WIRE_FIELDS));
+        self::assertNotSame([], $media);
 
-        $fromTable = PresetResolver::PLANNED_COMPRESS_OPTIONS[$media];
-        \sort($fromTable);
-        self::assertSame(self::plannedKeysFromContract($media), $fromTable);
+        $failures = [];
+        foreach ($media as $medium) {
+            try {
+                // Every preset medium must be a real compress mime-group — otherwise the
+                // lookup silently yields [] and the whole gate passes vacuously.
+                if (!\array_key_exists($medium, self::$compressGroups)) {
+                    $failures[] = "{$medium}: {$medium} is not a compress mime-group";
+                    continue;
+                }
+                $fromTable = PresetResolver::PLANNED_COMPRESS_OPTIONS[$medium];
+                \sort($fromTable);
+                $fromContract = self::plannedKeysFromContract($medium);
+                if ($fromTable !== $fromContract) {
+                    $failures[] = "{$medium}: hand table " . \json_encode($fromTable)
+                        . ' != contract ' . \json_encode($fromContract);
+                }
+            } catch (\Throwable $e) {
+                $failures[] = "{$medium}: threw " . $e::class . ": {$e->getMessage()}";
+            }
+        }
+
+        self::assertSame([], $failures, \implode("\n", $failures));
     }
 
     public function test_positive_control_the_contract_marks_options_planned(): void
@@ -182,19 +197,35 @@ final class PresetPlannedConformanceTest extends TestCase
 
     // --- 2. no shipped preset cell emits a planned option --------------------
 
-    #[DataProvider('mediaLevelProvider')]
-    public function test_shipped_presets_never_emit_a_planned_option(string $media, OptimizeFor $level): void
+    public function test_shipped_presets_never_emit_a_planned_option(): void
     {
-        $resolved = PresetResolver::resolveCompress($media, null, null, null, $level, []);
-        $planned = self::plannedKeysFromContract($media);
+        $cells = self::mediaLevels();
+        self::assertNotSame([], $cells);
 
-        $onWire = \array_values(\array_intersect(\array_keys($resolved['wireOptions']), $planned));
-        self::assertSame([], $onWire, "{$media}/{$level->value} put a planned option on the wire");
+        $failures = [];
+        foreach ($cells as [$media, $level]) {
+            $label = "{$media}/{$level->value}";
+            try {
+                $resolved = PresetResolver::resolveCompress($media, null, null, null, $level, []);
+                $planned = self::plannedKeysFromContract($media);
 
-        // The introspection surface must agree with the wire — a caller reading
-        // resolvedOptions must not be told we sent something we dropped.
-        $applied = \array_values(\array_intersect(\array_keys($resolved['resolvedOptions']->applied), $planned));
-        self::assertSame([], $applied);
+                $onWire = \array_values(\array_intersect(\array_keys($resolved['wireOptions']), $planned));
+                if ($onWire !== []) {
+                    $failures[] = "{$label}: put a planned option on the wire: " . \implode(', ', $onWire);
+                }
+
+                // The introspection surface must agree with the wire — a caller reading
+                // resolvedOptions must not be told we sent something we dropped.
+                $applied = \array_values(\array_intersect(\array_keys($resolved['resolvedOptions']->applied), $planned));
+                if ($applied !== []) {
+                    $failures[] = "{$label}: resolvedOptions->applied lists a planned option: " . \implode(', ', $applied);
+                }
+            } catch (\Throwable $e) {
+                $failures[] = "{$label}: threw " . $e::class . ": {$e->getMessage()}";
+            }
+        }
+
+        self::assertSame([], $failures, \implode("\n", $failures));
     }
 
     public function test_positive_control_a_surviving_cell_still_emits_keys(): void
@@ -207,16 +238,7 @@ final class PresetPlannedConformanceTest extends TestCase
         self::assertNotSame([], $resolved['wireOptions']);
     }
 
-    /** @return iterable<string, array{string}> */
-    public static function documentMediaProvider(): iterable
-    {
-        foreach (['document_office', 'document_odf', 'document_epub'] as $media) {
-            yield $media => [$media];
-        }
-    }
-
-    #[DataProvider('documentMediaProvider')]
-    public function test_known_consequence_document_presets_are_now_a_noop(string $media): void
+    public function test_known_consequence_document_presets_are_now_a_noop(): void
     {
         // Pinning a real product consequence rather than hiding it: every key these
         // three cells shipped was `planned`, so after the drop all three levels
@@ -229,10 +251,25 @@ final class PresetPlannedConformanceTest extends TestCase
         // the generated preset table (and PRESET_VERSION / presetConfigHash), so it is
         // deliberately NOT made here. Raised with the hub; this test fails the moment
         // someone gives these cells a value, which is the point.
-        foreach ([OptimizeFor::Size, OptimizeFor::Balanced, OptimizeFor::Quality] as $level) {
-            $resolved = PresetResolver::resolveCompress($media, null, null, null, $level, []);
-            self::assertSame([], $resolved['wireOptions'], "{$media}/{$level->value}");
+        $rows = ['document_office', 'document_odf', 'document_epub'];
+        self::assertNotSame([], $rows);
+
+        $failures = [];
+        foreach ($rows as $media) {
+            foreach ([OptimizeFor::Size, OptimizeFor::Balanced, OptimizeFor::Quality] as $level) {
+                $label = "{$media}/{$level->value}";
+                try {
+                    $wire = PresetResolver::resolveCompress($media, null, null, null, $level, [])['wireOptions'];
+                    if ($wire !== []) {
+                        $failures[] = "{$label}: expected an empty payload, got " . \json_encode($wire);
+                    }
+                } catch (\Throwable $e) {
+                    $failures[] = "{$label}: threw " . $e::class . ": {$e->getMessage()}";
+                }
+            }
         }
+
+        self::assertSame([], $failures, \implode("\n", $failures));
     }
 
     public function test_document_pdf_preset_is_not_a_noop(): void
@@ -265,18 +302,34 @@ final class PresetPlannedConformanceTest extends TestCase
      * `media: 'image'` and never learns the input format. Filed as SB1wmTJz rather than
      * smuggled into this fix.
      */
-    #[DataProvider('mediaLevelProvider')]
-    public function test_shipped_presets_never_emit_a_planned_value(string $media, OptimizeFor $level): void
+    public function test_shipped_presets_never_emit_a_planned_value(): void
     {
-        $resolved = PresetResolver::resolveCompress($media, null, null, null, $level, []);
-        $options = self::$compressGroups[$media]['options'] ?? [];
-        self::assertIsArray($options);
+        $cells = self::mediaLevels();
+        self::assertNotSame([], $cells);
 
-        /** @var array<string, mixed> $group */
-        $group = self::$compressGroups[$media];
-        $offenders = self::plannedOffenders(self::$compressRoot, $group, $resolved['wireOptions']);
+        $failures = [];
+        foreach ($cells as [$media, $level]) {
+            $label = "{$media}/{$level->value}";
+            try {
+                $resolved = PresetResolver::resolveCompress($media, null, null, null, $level, []);
+                $options = self::$compressGroups[$media]['options'] ?? [];
+                if (!\is_array($options)) {
+                    $failures[] = "{$label}: the contract's options for {$media} are not an array";
+                    continue;
+                }
 
-        self::assertSame([], $offenders, "{$media}/{$level->value} put a planned VALUE on the wire");
+                /** @var array<string, mixed> $group */
+                $group = self::$compressGroups[$media];
+                $offenders = self::plannedOffenders(self::$compressRoot, $group, $resolved['wireOptions']);
+                if ($offenders !== []) {
+                    $failures[] = "{$label}: put a planned VALUE on the wire: " . \implode(', ', $offenders);
+                }
+            } catch (\Throwable $e) {
+                $failures[] = "{$label}: threw " . $e::class . ": {$e->getMessage()}";
+            }
+        }
+
+        self::assertSame([], $failures, \implode("\n", $failures));
     }
 
     public function test_positive_control_the_contract_marks_some_values_planned(): void

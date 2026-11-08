@@ -251,22 +251,6 @@ final class WatermarkRecipeTest extends TestCase
         self::assertArrayNotHasKey('crf', $compress['options'] ?? []);
     }
 
-    /**
-     * SKIPPED, NOT DELETED. This pinned the synthetic post-media resolution for a
-     * VIDEO watermark — none of that logic changed; it cannot run because the
-     * gate refuses before a payload exists.
-     *
-     * 🔑 RE-ENABLE WHEN video_watermark IS RE-LISTED. The image path still covers
-     * the sole_op split; what is uncovered is the VIDEO synthetic media arm.
-     * Mirrors the TypeScript skip.
-     */
-    public function test_post_watermark_compress_resolves_against_video_output_media(): void
-    {
-        $this->markTestSkipped(
-            'video_watermark withdrawn to planned by contracts v2.203.0; re-enable when re-listed.',
-        );
-    }
-
     public function test_all_post_watermark_steps_lower_into_the_post_job_in_order(): void
     {
         // Every chained post-step lowers into the downstream `post` job in chain

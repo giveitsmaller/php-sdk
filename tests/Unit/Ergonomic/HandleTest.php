@@ -17,7 +17,6 @@ use Gisl\Sdk\GislClientConfig;
 use Gisl\Sdk\GislErgonomicClient;
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Client\ClientInterface;
@@ -198,26 +197,36 @@ final class HandleTest extends TestCase
         self::assertSame('in_progress', $snap->state);
     }
 
-    /**
-     * @return iterable<string, array{string, bool}>
-     */
-    public static function terminalStateProvider(): iterable
-    {
-        yield 'completed' => ['completed', true];
-        yield 'failed' => ['failed', true];
-        yield 'partially_failed' => ['partially_failed', true];
-        yield 'cancelled' => ['cancelled', true];
-        yield 'expired' => ['expired', true];
-        yield 'paused_insufficient_credits' => ['paused_insufficient_credits', true];
-        yield 'pending' => ['pending', false];
-        yield 'in_progress' => ['in_progress', false];
-    }
-
     #[Test]
-    #[DataProvider('terminalStateProvider')]
-    public function status_snapshot_is_terminal_table(string $state, bool $expected): void
+    public function status_snapshot_is_terminal_table(): void
     {
-        self::assertSame($expected, (new StatusSnapshot('wf_1', $state))->isTerminal());
+        // state => expected isTerminal()
+        $cases = [
+            'completed' => true,
+            'failed' => true,
+            'partially_failed' => true,
+            'cancelled' => true,
+            'expired' => true,
+            'paused_insufficient_credits' => true,
+            'pending' => false,
+            'in_progress' => false,
+        ];
+
+        self::assertNotSame([], $cases);
+
+        $failures = [];
+        foreach ($cases as $state => $expected) {
+            try {
+                $actual = (new StatusSnapshot('wf_1', $state))->isTerminal();
+                if ($actual !== $expected) {
+                    $failures[] = "{$state}: isTerminal() returned " . \var_export($actual, true);
+                }
+            } catch (\Throwable $e) {
+                $failures[] = "{$state}: threw " . $e::class . ": {$e->getMessage()}";
+            }
+        }
+
+        self::assertSame([], $failures, \implode("\n", $failures));
     }
 
     #[Test]
@@ -454,37 +463,50 @@ final class HandleTest extends TestCase
         self::assertSame('https://signed.example.com/photo_compressed.jpg', $result->byKey('hero')->outputs[0]->url);
     }
 
-    /**
-     * @return iterable<string, array{string}>
-     */
-    public static function nonTerminalStateProvider(): iterable
-    {
-        yield 'pending' => ['pending'];
-        yield 'in_progress' => ['in_progress'];
-    }
-
     #[Test]
-    #[DataProvider('nonTerminalStateProvider')]
-    public function result_throws_not_ready_for_a_non_terminal_workflow_without_downloading(string $state): void
+    public function result_throws_not_ready_for_a_non_terminal_workflow_without_downloading(): void
     {
-        $captured = [];
-        $http = $this->stubClient([$this->statusResponse($state)], $captured);
-        $client = $this->makeClient($http);
+        $rows = ['pending', 'in_progress'];
+        self::assertNotSame([], $rows);
 
-        try {
-            (new Handle(self::WORKFLOW_ID, null, $client))->result();
-            self::fail('expected GislResultNotReadyError');
-        } catch (GislResultNotReadyError $e) {
-            self::assertSame(self::WORKFLOW_ID, $e->getWorkflowId());
-            self::assertSame($state, $e->getState());
+        $failures = [];
+        foreach ($rows as $state) {
+            try {
+                // A fresh stub, client and request history per row.
+                unset($captured);
+                $captured = [];
+                $http = $this->stubClient([$this->statusResponse($state)], $captured);
+                $client = $this->makeClient($http);
+
+                try {
+                    (new Handle(self::WORKFLOW_ID, null, $client))->result();
+                    $failures[] = "{$state}: expected GislResultNotReadyError, result() returned";
+                    continue;
+                } catch (GislResultNotReadyError $e) {
+                    if ($e->getWorkflowId() !== self::WORKFLOW_ID) {
+                        $failures[] = "{$state}: workflow id is '{$e->getWorkflowId()}'";
+                    }
+                    if ($e->getState() !== $state) {
+                        $failures[] = "{$state}: error state is '{$e->getState()}'";
+                    }
+                }
+
+                // Exactly one request (the status fetch) — no downloads, no events.
+                if (\count($captured) !== 1) {
+                    $failures[] = "{$state}: expected exactly one request, recorded " . \count($captured);
+                }
+                foreach ($captured as $request) {
+                    $uri = (string) $request->getUri();
+                    if (\str_contains($uri, '/downloads') || \str_contains($uri, '/events')) {
+                        $failures[] = "{$state}: requested {$uri}";
+                    }
+                }
+            } catch (\Throwable $e) {
+                $failures[] = "{$state}: threw " . $e::class . ": {$e->getMessage()}";
+            }
         }
 
-        // Exactly one request (the status fetch) — no downloads, no events.
-        self::assertCount(1, $captured);
-        foreach ($captured as $request) {
-            self::assertStringNotContainsString('/downloads', (string) $request->getUri());
-            self::assertStringNotContainsString('/events', (string) $request->getUri());
-        }
+        self::assertSame([], $failures, \implode("\n", $failures));
     }
 
     // -----------------------------------------------------------------------
@@ -749,51 +771,74 @@ final class HandleTest extends TestCase
         self::assertCount(1, $result->artifacts);
     }
 
-    /**
-     * @return iterable<string, array{string}>
-     */
-    public static function nonCompletedTerminalProvider(): iterable
-    {
-        yield 'failed' => ['failed'];
-        yield 'partially_failed' => ['partially_failed'];
-        yield 'cancelled' => ['cancelled'];
-        yield 'expired' => ['expired'];
-        yield 'paused_insufficient_credits' => ['paused_insufficient_credits'];
-    }
-
     #[Test]
-    #[DataProvider('nonCompletedTerminalProvider')]
-    public function from_terminal_downloads_partitions_non_completed_terminal_into_failed_only(string $state): void
+    public function from_terminal_downloads_partitions_non_completed_terminal_into_failed_only(): void
     {
         // A non-completed terminal status partitions into failed with ok=false,
         // even though the downloads response carries files — success is ONLY
         // state==='completed'.
-        $http = $this->stubClient([
-            $this->statusResponse($state, [
-                ['operations' => [['error_message' => 'boom']]],
-            ]),
-            $this->downloadsResponse(),
-        ]);
-        $client = $this->makeClient($http);
+        $states = ['failed', 'partially_failed', 'cancelled', 'expired', 'paused_insufficient_credits'];
 
-        $result = (new Handle(self::WORKFLOW_ID, null, $client))->result();
+        self::assertNotSame([], $states);
 
-        self::assertSame($state, $result->state);
-        self::assertFalse($result->ok);
-        self::assertSame([], $result->succeeded);
-        self::assertCount(1, $result->failed);
-        self::assertNull($result->failed[0]->key);
-        self::assertInstanceOf(GislItemFailedError::class, $result->failed[0]->error);
-        // The server-provided reason must survive + carry the state prefix — a
-        // regression dropping or mis-formatting it would otherwise pass.
-        self::assertSame($state . ': boom', $result->failed[0]->error->getMessage());
-        // The reattached Handle funnels through fromTerminalDownloads, so the
-        // typed error carries the terminal state + the op's message.
-        self::assertSame($state, $result->failed[0]->error->state);
-        self::assertSame('boom', $result->failed[0]->error->errorMessage);
-        // Downloads still flatten into artifacts even though the run failed;
-        // the partition is independent of artifact presence.
-        self::assertNotEmpty($result->artifacts);
+        $failures = [];
+        foreach ($states as $state) {
+            try {
+                // A fresh stub and client per row.
+                $http = $this->stubClient([
+                    $this->statusResponse($state, [
+                        ['operations' => [['error_message' => 'boom']]],
+                    ]),
+                    $this->downloadsResponse(),
+                ]);
+                $client = $this->makeClient($http);
+
+                $result = (new Handle(self::WORKFLOW_ID, null, $client))->result();
+                $failed = $result->failed[0] ?? null;
+                $error = $failed?->error;
+
+                $observed = [
+                    'state' => $result->state,
+                    'ok' => $result->ok,
+                    'succeeded' => $result->succeeded,
+                    'failed count' => \count($result->failed),
+                    'failed key' => $failed?->key,
+                    'error class' => $error === null ? null : $error::class,
+                    // The server-provided reason must survive + carry the state prefix — a
+                    // regression dropping or mis-formatting it would otherwise pass.
+                    'error message' => $error?->getMessage(),
+                    // The reattached Handle funnels through fromTerminalDownloads, so the
+                    // typed error carries the terminal state + the op's message.
+                    'error state' => $error instanceof GislItemFailedError ? $error->state : null,
+                    'error errorMessage' => $error instanceof GislItemFailedError ? $error->errorMessage : null,
+                    // Downloads still flatten into artifacts even though the run failed;
+                    // the partition is independent of artifact presence.
+                    'has artifacts' => $result->artifacts !== [],
+                ];
+                $expected = [
+                    'state' => $state,
+                    'ok' => false,
+                    'succeeded' => [],
+                    'failed count' => 1,
+                    'failed key' => null,
+                    'error class' => GislItemFailedError::class,
+                    'error message' => $state . ': boom',
+                    'error state' => $state,
+                    'error errorMessage' => 'boom',
+                    'has artifacts' => true,
+                ];
+                foreach ($expected as $what => $want) {
+                    if ($observed[$what] !== $want) {
+                        $failures[] = "{$state}: {$what} is " . \var_export($observed[$what], true)
+                            . ', expected ' . \var_export($want, true);
+                    }
+                }
+            } catch (\Throwable $e) {
+                $failures[] = "{$state}: threw " . $e::class . ": {$e->getMessage()}";
+            }
+        }
+
+        self::assertSame([], $failures, \implode("\n", $failures));
     }
 
     #[Test]

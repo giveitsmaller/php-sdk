@@ -8,7 +8,6 @@ use Gisl\Sdk\Errors\GislApiError;
 use Gisl\Sdk\Generated\SdkSpec\ErrorCategory;
 use Gisl\Sdk\Http\RateLimitHeaders;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -189,33 +188,16 @@ final class GislApiErrorRetryMetadataTest extends TestCase
     // retryable — status predicate boundaries via the accessor
     // -----------------------------------------------------------------
 
-    /**
-     * @return list<array{int, bool}>
-     */
-    public static function statusBoundaryProvider(): array
-    {
-        return [
-            [408, true],
-            [429, true],
-            [500, true],
-            [599, true],
-            [400, false],
-            [404, false],
-            [600, false],
-        ];
-    }
-
-    #[DataProvider('statusBoundaryProvider')]
-    public function testRetryableFollowsStatusBoundaries(int $status, bool $expected): void
+    public function testRetryableFollowsTheStatus(): void
     {
         // errorCode is a registry miss so retryable is driven purely by status.
-        $error = new GislApiError(
-            message: 'x',
-            statusCode: $status,
-            errorCode: 'unknown_error',
-        );
+        // The window itself is RateLimitHeadersTest's; this proves the accessor
+        // reads it, with one status on each side so a constant return fails.
+        $notFound = new GislApiError(message: 'x', statusCode: 404, errorCode: 'unknown_error');
+        $unavailable = new GislApiError(message: 'x', statusCode: 503, errorCode: 'unknown_error');
 
-        self::assertSame($expected, $error->retryable());
+        self::assertFalse($notFound->retryable());
+        self::assertTrue($unavailable->retryable());
     }
 
     // -----------------------------------------------------------------

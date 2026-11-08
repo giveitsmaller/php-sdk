@@ -71,127 +71,87 @@ final class ApiSurfaceSnapshotTest extends TestCase
         self::assertGreaterThan(500, count($rows));
         self::assertNotEmpty(preg_grep('/^case Gisl\\\\Sdk\\\\Generated\\\\SdkSpec\\\\Enums\\\\/', $rows), 'generated enum cases are public API');
         self::assertNotEmpty(preg_grep('/^const Gisl\\\\Sdk\\\\Generated\\\\SdkSpec\\\\/', $rows), 'generated constants are public API');
+
+        // The snapshot comparison is a set difference, blind to order and
+        // duplicates, so the extractor's sorted-and-unique contract is pinned here.
+        $sorted = $rows;
+        sort($sorted, SORT_STRING);
+        self::assertSame($sorted, $rows, 'rows are sorted');
+        self::assertSame(count($rows), count(array_unique($rows)), 'rows are unique');
     }
 
-    // --- The extractor, one assertion per kind -------------------------------
+    // --- The extractor, every kind pinned at once ----------------------------
     // A method-only extractor would pass a snapshot test while a property, a
     // constant, an enum case or an interface changed, so each kind is pinned.
-
-    public function testAPublicMethodIsARow(): void
-    {
-        self::assertContains('method ' . self::FIXTURE_NS . 'Clean\\Widget::describe()', $this->fixtureRows());
-        self::assertContains('static method ' . self::FIXTURE_NS . 'Clean\\Widget::make()', $this->fixtureRows());
-    }
-
-    public function testAPublicPropertyIsARow(): void
-    {
-        self::assertContains('property ' . self::FIXTURE_NS . 'Clean\\Widget::$label : string = ""', $this->fixtureRows());
-        self::assertContains('readonly property ' . self::FIXTURE_NS . 'Clean\\Widget::$size : int', $this->fixtureRows(), 'promoted readonly properties are API');
-        self::assertContains('static property ' . self::FIXTURE_NS . 'Clean\\Widget::$counter : int = 0', $this->fixtureRows());
-    }
-
-    public function testAPublicConstantIsARow(): void
-    {
-        self::assertContains('const ' . self::FIXTURE_NS . 'Clean\\Widget::LIMIT = 3', $this->fixtureRows(), 'the VALUE is recorded');
-        self::assertContains('final const ' . self::FIXTURE_NS . 'Clean\\Widget::SEALED = "x"', $this->fixtureRows(), 'final blocks subclass overrides');
-        self::assertContains(
-            'const ' . self::FIXTURE_NS . 'Clean\\Widget::TABLE = {"b":{"retryable":true},"a":{"retryable":false}}',
-            $this->fixtureRows(),
-            'behaviour fields are recorded; `description` prose is not',
-        );
-        self::assertContains(
-            'const ' . self::FIXTURE_NS . 'Clean\\Widget::HOSTS = {"prod":"https://p.example"}',
-            $this->fixtureRows(),
-            'a flat scalar map keeps its values: a changed host is API',
-        );
-    }
-
-    public function testAnEnumCaseIsARow(): void
-    {
-        $rows = $this->fixtureRows();
-        self::assertContains('enum:string ' . self::FIXTURE_NS . 'Clean\\Shade', $rows, 'UnitEnum/BackedEnum are engine-added, not listed');
-        self::assertContains('case ' . self::FIXTURE_NS . 'Clean\\Shade::Dark = "dark"', $rows, 'the backing VALUE is recorded: from() depends on it');
-        self::assertSame([], preg_grep('/Shade::(from|tryFrom|cases)\(\)/', $rows), 'engine-supplied enum methods are not declared API');
-    }
-
-    public function testAnInterfaceIsARow(): void
-    {
-        self::assertContains('interface ' . self::FIXTURE_NS . 'Clean\\Describable', $this->fixtureRows());
-        self::assertContains('const ' . self::FIXTURE_NS . 'Clean\\Describable::KIND = "widget"', $this->fixtureRows());
-        self::assertSame([], preg_grep('/Widget::KIND/', $this->fixtureRows()), 'an inherited interface constant is recorded once, on the interface');
-        self::assertContains('method ' . self::FIXTURE_NS . 'Clean\\Describable::describe()', $this->fixtureRows());
-    }
-
-    public function testMemberLevelInternalIsExcludedAndProseIsNot(): void
-    {
-        $rows = $this->fixtureRows();
-        self::assertNotContains('method ' . self::FIXTURE_NS . 'Clean\\Widget::internalHelper()', $rows);
-        self::assertSame([], preg_grep('/Widget::HIDDEN_LIMIT/', $rows));
-        self::assertSame([], preg_grep('/Widget::\$hiddenProperty/', $rows));
-        self::assertSame([], preg_grep('/Widget::oneLineInternal\(\)/', $rows), 'a one-line /** @internal */ docblock is a tag too');
-        self::assertContains('method ' . self::FIXTURE_NS . 'Clean\\Widget::mentionsInternalInProse()', $rows);
-        self::assertNotEmpty(preg_grep('/^class .*\\\\Clean\\\\Widget extends /', $rows), 'a member-level tag must not drop its class');
-    }
-
-    public function testClassLevelInternalExcludesOnlyThatClass(): void
-    {
-        $rows = $this->fixtureRows();
-        self::assertContains('internal ' . self::FIXTURE_NS . 'Clean\\Plumbing', $rows);
-        self::assertSame([], preg_grep('/Plumbing::/', $rows));
-        self::assertNotEmpty(preg_grep('/^class .*\\\\Clean\\\\Widget extends /', $rows));
-    }
-
-    public function testAFinalMethodOnANonFinalClassIsMarked(): void
-    {
-        self::assertContains('final method ' . self::FIXTURE_NS . 'Clean\\Widget::locked()', $this->fixtureRows());
-    }
-
-    public function testAnInternalBaseOutsideTheRootContributesNoRows(): void
-    {
-        $rows = $this->fixtureRows();
-        self::assertSame([], preg_grep('/ForeignChild::foreign\(\)/', $rows), 'only @internal bases UNDER the walk root are folded into the child');
-        self::assertContains(
-            'final class ' . self::FIXTURE_NS . 'Clean\\ForeignChild extends ' . self::FIXTURE_NS . 'Outside\\ForeignInternalBase',
-            $rows,
-        );
-    }
-
-    public function testNonPublicMembersAreNotRows(): void
-    {
-        self::assertSame([], preg_grep('/::notPublic\(\)/', $this->fixtureRows()));
-    }
-
-    public function testTheHeaderRecordsParentInterfacesAndTraits(): void
-    {
-        self::assertContains(
-            'class ' . self::FIXTURE_NS . 'Clean\\Widget extends ' . self::FIXTURE_NS . 'Clean\\BaseWidget < RuntimeException < Exception'
+    //
+    // ⚠️ This golden is EXACT and ORDERED, and nothing regenerates it:
+    // GISL_UPDATE_API_SURFACE rewrites the src/ snapshot only. The documented
+    // regen command runs this whole class, so a golden it rewrote would bless
+    // an extractor regression. Edit it by hand, and only for an intended
+    // extractor change. Being exact, it also pins every absence below.
+    private const FIXTURE_GOLDEN = [
+        // The FULL chain: changing a parent breaks every `catch (Parent $e)`;
+        // dropping an interface breaks every instanceof.
+        'abstract class ' . self::FIXTURE_NS . 'Clean\\BaseWidget extends RuntimeException < Exception implements Stringable, Throwable',
+        // The backing VALUE is recorded: from() depends on it.
+        'case ' . self::FIXTURE_NS . 'Clean\\Shade::Dark = "dark"',
+        'case ' . self::FIXTURE_NS . 'Clean\\Shade::Light = "light"',
+        // ALL implemented interfaces, inherited included (that is what instanceof
+        // answers), and the traits. A member-level @internal does not drop it.
+        'class ' . self::FIXTURE_NS . 'Clean\\Widget extends ' . self::FIXTURE_NS . 'Clean\\BaseWidget < RuntimeException < Exception'
             . ' implements ' . self::FIXTURE_NS . 'Clean\\Describable, Stringable, Throwable uses ' . self::FIXTURE_NS . 'Clean\\Greets',
-            $this->fixtureRows(),
-            'changing a parent breaks every `catch (Parent $e)`; dropping an interface breaks every instanceof. '
-            . 'ALL implemented interfaces, inherited included: that is what instanceof answers',
-        );
-        self::assertContains('abstract class ' . self::FIXTURE_NS . 'Clean\\BaseWidget extends RuntimeException < Exception implements Stringable, Throwable', $this->fixtureRows());
-        self::assertContains(
-            'final class ' . self::FIXTURE_NS . 'Clean\\PublicChild extends ' . self::FIXTURE_NS . 'Clean\\HiddenBase < LogicException < Exception implements Stringable, Throwable',
-            $this->fixtureRows(),
-            'the FULL chain: HiddenBase is @internal and has no header, so its parent is only visible here',
-        );
-    }
+        // An inherited interface constant is recorded once, on the interface (no Widget::KIND).
+        'const ' . self::FIXTURE_NS . 'Clean\\Describable::KIND = "widget"',
+        // A flat scalar map keeps its values: a changed host is API.
+        'const ' . self::FIXTURE_NS . 'Clean\\Widget::HOSTS = {"prod":"https://p.example"}',
+        // The VALUE is recorded.
+        'const ' . self::FIXTURE_NS . 'Clean\\Widget::LIMIT = 3',
+        // Behaviour fields are recorded; `description` prose is not.
+        'const ' . self::FIXTURE_NS . 'Clean\\Widget::TABLE = {"b":{"retryable":true},"a":{"retryable":false}}',
+        // UnitEnum/BackedEnum are engine-added, not listed; nor are from/tryFrom/cases.
+        'enum:string ' . self::FIXTURE_NS . 'Clean\\Shade',
+        // Only @internal bases UNDER the walk root are folded into the child:
+        // no ForeignChild::foreign().
+        'final class ' . self::FIXTURE_NS . 'Clean\\ForeignChild extends ' . self::FIXTURE_NS . 'Outside\\ForeignInternalBase',
+        // HiddenBase is @internal and has no header, so its parent is only visible here.
+        'final class ' . self::FIXTURE_NS . 'Clean\\PublicChild extends ' . self::FIXTURE_NS . 'Clean\\HiddenBase < LogicException < Exception implements Stringable, Throwable',
+        // final blocks subclass overrides.
+        'final const ' . self::FIXTURE_NS . 'Clean\\Widget::SEALED = "x"',
+        // A final method on a non-final class is marked.
+        'final method ' . self::FIXTURE_NS . 'Clean\\Widget::locked()',
+        'interface ' . self::FIXTURE_NS . 'Clean\\Describable',
+        // A class-level @internal excludes only that class, and none of its members.
+        'internal ' . self::FIXTURE_NS . 'Clean\\HiddenBase',
+        'internal ' . self::FIXTURE_NS . 'Clean\\Plumbing',
+        // An inherited member is recorded once, at its declaration (no Widget::inherited(),
+        // and nothing of a non-package parent such as getMessage()).
+        'method ' . self::FIXTURE_NS . 'Clean\\BaseWidget::inherited()',
+        'method ' . self::FIXTURE_NS . 'Clean\\Describable::describe()',
+        'method ' . self::FIXTURE_NS . 'Clean\\Greets::greet()',
+        // The internal base has no rows, so the public child must carry them.
+        'method ' . self::FIXTURE_NS . 'Clean\\PublicChild::leaked()',
+        'method ' . self::FIXTURE_NS . 'Clean\\Widget::__construct()',
+        'method ' . self::FIXTURE_NS . 'Clean\\Widget::describe()',
+        // A trait method is callable on Widget, so it is Widget surface.
+        'method ' . self::FIXTURE_NS . 'Clean\\Widget::greet()',
+        // `@internal` in prose only is still public API. The tagged members
+        // (internalHelper, HIDDEN_LIMIT, $hiddenProperty, the one-line-docblock
+        // oneLineInternal) and the protected notPublic are not rows.
+        'method ' . self::FIXTURE_NS . 'Clean\\Widget::mentionsInternalInProse()',
+        'property ' . self::FIXTURE_NS . 'Clean\\PublicChild::$leakedProperty : int = 0',
+        'property ' . self::FIXTURE_NS . 'Clean\\Widget::$label : string = ""',
+        'readonly property ' . self::FIXTURE_NS . 'Clean\\Shade::$name : string',
+        'readonly property ' . self::FIXTURE_NS . 'Clean\\Shade::$value : string',
+        // Promoted readonly properties are API.
+        'readonly property ' . self::FIXTURE_NS . 'Clean\\Widget::$size : int',
+        'static method ' . self::FIXTURE_NS . 'Clean\\Widget::make()',
+        'static property ' . self::FIXTURE_NS . 'Clean\\Widget::$counter : int = 0',
+        'trait ' . self::FIXTURE_NS . 'Clean\\Greets',
+    ];
 
-    public function testATraitIsARowAndItsMethodsReachTheUsingClass(): void
+    public function testTheExtractorEmitsExactlyTheFixtureGolden(): void
     {
-        $rows = $this->fixtureRows();
-        self::assertContains('trait ' . self::FIXTURE_NS . 'Clean\\Greets', $rows);
-        self::assertContains('method ' . self::FIXTURE_NS . 'Clean\\Greets::greet()', $rows);
-        self::assertContains('method ' . self::FIXTURE_NS . 'Clean\\Widget::greet()', $rows, 'callable on Widget, so it is Widget surface');
-    }
-
-    public function testMembersInheritedFromAnInternalBaseAreRecordedOnThePublicChild(): void
-    {
-        $rows = $this->fixtureRows();
-        self::assertContains('internal ' . self::FIXTURE_NS . 'Clean\\HiddenBase', $rows);
-        self::assertContains('method ' . self::FIXTURE_NS . 'Clean\\PublicChild::leaked()', $rows, 'the base has no rows, so the child must carry them');
-        self::assertContains('property ' . self::FIXTURE_NS . 'Clean\\PublicChild::$leakedProperty : int = 0', $rows);
+        self::assertSame(self::FIXTURE_GOLDEN, $this->fixtureRows());
     }
 
     public function testASecondSymbolInAFileFailsLoudly(): void
@@ -202,29 +162,12 @@ final class ApiSurfaceSnapshotTest extends TestCase
         ApiSurface::rows(self::FIXTURES . '/Stowaway', self::FIXTURE_NS . 'Stowaway\\');
     }
 
-    public function testAnInheritedMemberIsRecordedOnceAtItsDeclaration(): void
-    {
-        $rows = $this->fixtureRows();
-        self::assertContains('method ' . self::FIXTURE_NS . 'Clean\\BaseWidget::inherited()', $rows);
-        self::assertNotContains('method ' . self::FIXTURE_NS . 'Clean\\Widget::inherited()', $rows);
-        self::assertSame([], preg_grep('/::getMessage\(\)/', $rows), 'members of a non-package parent are not this package\'s surface');
-    }
-
     public function testASourceFileThatYieldsNoSymbolFailsLoudly(): void
     {
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('NoSymbolHere.php declares no class');
 
         ApiSurface::rows(self::FIXTURES . '/Unaudited', self::FIXTURE_NS . 'Unaudited\\');
-    }
-
-    public function testRowsAreSortedAndUnique(): void
-    {
-        $rows = ApiSurface::rows(self::SOURCE_DIR, 'Gisl\\Sdk\\');
-        $sorted = $rows;
-        sort($sorted, SORT_STRING);
-        self::assertSame($sorted, $rows);
-        self::assertSame(count($rows), count(array_unique($rows)));
     }
 
     /**

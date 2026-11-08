@@ -229,7 +229,7 @@ final class EndpointParityTest extends TestCase
         );
         self::assertNotEmpty(self::rowsOfKind('method'));
         self::assertNotEmpty(self::rowsOfKind('internal'));
-        self::assertSame($expectedBound, \array_keys([...self::boundRows()]));
+        self::assertSame($expectedBound, self::boundRows());
     }
 
     // ------------------------------------------------------------------
@@ -237,16 +237,13 @@ final class EndpointParityTest extends TestCase
     // ------------------------------------------------------------------
 
     /**
-     * @return iterable<string, array{string}>
+     * Operation ids of the method and internal rows.
+     *
+     * @return list<string>
      */
-    public static function boundRows(): iterable
+    private static function boundRows(): array
     {
-        $cases = [];
-        foreach (self::rowsOfKind('method', 'internal') as $row) {
-            $cases[self::operationId($row)] = [self::operationId($row)];
-        }
-
-        return $cases;
+        return \array_map(self::operationId(...), self::rowsOfKind('method', 'internal'));
     }
 
     /**
@@ -267,17 +264,32 @@ final class EndpointParityTest extends TestCase
         return null;
     }
 
-    #[DataProvider('boundRows')]
-    public function testBoundMethodExistsPublicOnGislClientAndIsInheritedUnchanged(string $operationId): void
+    public function testEveryBoundMethodExistsPublicOnGislClientAndIsInheritedUnchanged(): void
     {
-        $method = self::classify(self::row($operationId))['value'];
+        $operationIds = self::boundRows();
+        self::assertNotSame([], $operationIds);
 
-        self::assertNull(self::existenceFailure(GislClient::class, $method));
-        self::assertSame(
-            GislClient::class,
-            (new \ReflectionMethod(GislErgonomicClient::class, $method))->getDeclaringClass()->getName(),
-            "GislErgonomicClient overrides {$method}; the row's binding is proven on GislClient only",
-        );
+        $failures = [];
+        foreach ($operationIds as $operationId) {
+            try {
+                $method = self::classify(self::row($operationId))['value'];
+                $missing = self::existenceFailure(GislClient::class, $method);
+                if ($missing !== null) {
+                    // The override check reflects the method, so it only runs once the method exists.
+                    $failures[] = "{$operationId}: {$missing}";
+                    continue;
+                }
+                $declaring = (new \ReflectionMethod(GislErgonomicClient::class, $method))->getDeclaringClass()->getName();
+                if ($declaring !== GislClient::class) {
+                    $failures[] = "{$operationId}: GislErgonomicClient overrides {$method} (declared on {$declaring}); "
+                        . "the row's binding is proven on GislClient only";
+                }
+            } catch (\Throwable $e) {
+                $failures[] = "{$operationId}: threw " . $e::class . ": {$e->getMessage()}";
+            }
+        }
+
+        self::assertSame([], $failures, \implode("\n", $failures));
     }
 
     // ------------------------------------------------------------------
@@ -341,16 +353,13 @@ final class EndpointParityTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{string}>
+     * Operation ids of the method rows.
+     *
+     * @return list<string>
      */
-    public static function directRows(): iterable
+    private static function directRows(): array
     {
-        $cases = [];
-        foreach (self::rowsOfKind('method') as $row) {
-            $cases[self::operationId($row)] = [self::operationId($row)];
-        }
-
-        return $cases;
+        return \array_map(self::operationId(...), self::rowsOfKind('method'));
     }
 
     /**
@@ -470,16 +479,33 @@ final class EndpointParityTest extends TestCase
         return \count($requests) === 1 ? null : 'expected exactly one request, recorded ' . \count($requests);
     }
 
-    #[DataProvider('directRows')]
-    public function testDirectRowIssuesExactlyOneRequestToItsSpecLocation(string $operationId): void
+    public function testEveryDirectRowIssuesExactlyOneRequestToItsSpecLocation(): void
     {
-        $row = self::row($operationId);
-        $method = self::classify($row)['value'];
-        $requests = $this->record($method);
+        $operationIds = self::directRows();
+        self::assertNotSame([], $operationIds);
 
-        self::assertNull(self::exactlyOneFailure($requests));
-        $expectedHost = $method === self::STREAM_METHOD ? self::STREAM_HOST : self::API_HOST;
-        self::assertSame([], self::locationMismatches($requests[0], self::location($row), $expectedHost));
+        $failures = [];
+        foreach ($operationIds as $operationId) {
+            try {
+                $row = self::row($operationId);
+                $method = self::classify($row)['value'];
+                // record() builds a fresh client and history for every call.
+                $requests = $this->record($method);
+                $countFailure = self::exactlyOneFailure($requests);
+                if ($countFailure !== null) {
+                    $failures[] = "{$operationId}: {$countFailure}";
+                    continue;
+                }
+                $expectedHost = $method === self::STREAM_METHOD ? self::STREAM_HOST : self::API_HOST;
+                foreach (self::locationMismatches($requests[0], self::location($row), $expectedHost) as $what => $why) {
+                    $failures[] = "{$operationId}: {$what} {$why}";
+                }
+            } catch (\Throwable $e) {
+                $failures[] = "{$operationId}: threw " . $e::class . ": {$e->getMessage()}";
+            }
+        }
+
+        self::assertSame([], $failures, \implode("\n", $failures));
     }
 
     // ------------------------------------------------------------------

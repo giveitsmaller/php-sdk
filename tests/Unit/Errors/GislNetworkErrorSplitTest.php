@@ -10,7 +10,6 @@ use Gisl\Sdk\Errors\GislNetworkError;
 use Gisl\Sdk\Errors\GislRequestNotSentError;
 use Gisl\Sdk\Errors\GislTransportError;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -45,32 +44,19 @@ final class GislNetworkErrorSplitTest extends TestCase
         self::assertFalse((new GislRequestNotSentError('malformed uri'))->retryable());
     }
 
-    /**
-     * @return list<array{int, bool}>
-     */
-    public static function statusRetryability(): array
-    {
-        return [
-            [404, false],   // the case that made a class-wide `true` a lie
-            [403, false],
-            [410, false],
-            [408, true],
-            [429, true],
-            [500, true],
-            [503, true],    // the case that made a class-wide `false` a lie
-        ];
-    }
-
     #[Test]
-    #[DataProvider('statusRetryability')]
-    public function a_download_http_error_derives_retryability_from_its_status(
-        int $status,
-        bool $expected,
-    ): void {
-        $e = new GislDownloadHttpError("Download failed with status {$status}", $status);
+    public function a_download_http_error_derives_retryability_from_its_status(): void
+    {
+        // 404 is the case that made a class-wide `true` a lie, 503 the case that
+        // made a class-wide `false` a lie. The status window itself is
+        // RateLimitHeadersTest's.
+        $notFound = new GislDownloadHttpError('Download failed with status 404', 404);
+        $unavailable = new GislDownloadHttpError('Download failed with status 503', 503);
 
-        self::assertSame($status, $e->status);
-        self::assertSame($expected, $e->retryable());
+        self::assertSame(404, $notFound->status);
+        self::assertFalse($notFound->retryable());
+        self::assertSame(503, $unavailable->status);
+        self::assertTrue($unavailable->retryable());
     }
 
     #[Test]

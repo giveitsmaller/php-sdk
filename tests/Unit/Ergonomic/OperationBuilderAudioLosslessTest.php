@@ -6,7 +6,6 @@ namespace Gisl\Sdk\Tests\Unit\Ergonomic;
 
 use Gisl\Sdk\Ergonomic\OperationBuilder;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -19,91 +18,74 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(OperationBuilder::class)]
 final class OperationBuilderAudioLosslessTest extends TestCase
 {
-    /**
-     * @return array<string, array{string}>
-     */
-    public static function losslessFilenames(): array
+    public function testDetectAudioLosslessClassifiesByFilenameExtension(): void
     {
-        return [
-            'song.flac' => ['song.flac'],
-            'a.wav' => ['a.wav'],
-            'uppercase path' => ['PATH/X.FLAC'],
-            'mixed case wav' => ['audio/clip.WAV'],
+        // label => [filename, expected]
+        $cases = [
+            'song.flac' => ['song.flac', true],
+            'a.wav' => ['a.wav', true],
+            'uppercase path' => ['PATH/X.FLAC', true],
+            'mixed case wav' => ['audio/clip.WAV', true],
+            'mp3' => ['song.mp3', false],
+            'aac' => ['a.aac', false],
+            'm4a' => ['b.m4a', false],
+            'ogg' => ['c.ogg', false],
+            'oga' => ['d.oga', false],
+            'opus' => ['e.opus', false],
+            'unknown ext' => ['f.unknownext', false],
+            'no extension' => ['noextension', false],
         ];
+
+        self::assertNotSame([], $cases);
+
+        $failures = [];
+        foreach ($cases as $label => [$input, $expected]) {
+            try {
+                $actual = OperationBuilder::detectAudioLossless($input);
+                if ($actual !== $expected) {
+                    $failures[] = "{$label}: detectAudioLossless('{$input}') returned " . \var_export($actual, true);
+                }
+            } catch (\Throwable $e) {
+                $failures[] = "{$label}: threw " . $e::class . ": {$e->getMessage()}";
+            }
+        }
+
+        $this->assertSame([], $failures, \implode("\n", $failures));
     }
 
-    #[DataProvider('losslessFilenames')]
-    public function testDetectAudioLosslessTrueForFlacWav(string $input): void
+    public function testDetectAudioLosslessFromMimeClassifiesTheLosslessSet(): void
     {
-        $this->assertTrue(OperationBuilder::detectAudioLossless($input));
-    }
-
-    /**
-     * @return array<string, array{string}>
-     */
-    public static function lossyOrUnknownFilenames(): array
-    {
-        return [
-            'mp3' => ['song.mp3'],
-            'aac' => ['a.aac'],
-            'm4a' => ['b.m4a'],
-            'ogg' => ['c.ogg'],
-            'oga' => ['d.oga'],
-            'opus' => ['e.opus'],
-            'unknown ext' => ['f.unknownext'],
-            'no extension' => ['noextension'],
-        ];
-    }
-
-    #[DataProvider('lossyOrUnknownFilenames')]
-    public function testDetectAudioLosslessFalseForLossyOrUnknown(string $input): void
-    {
-        $this->assertFalse(OperationBuilder::detectAudioLossless($input));
-    }
-
-    /**
-     * @return array<string, array{string}>
-     */
-    public static function losslessMimes(): array
-    {
-        return [
-            'audio/flac' => ['audio/flac'],
-            'audio/x-flac' => ['audio/x-flac'],
-            'audio/wav' => ['audio/wav'],
-            'audio/x-wav' => ['audio/x-wav'],
-            'audio/wave' => ['audio/wave'],
+        // label => [mime, expected]
+        $cases = [
+            'audio/flac' => ['audio/flac', true],
+            'audio/x-flac' => ['audio/x-flac', true],
+            'audio/wav' => ['audio/wav', true],
+            'audio/x-wav' => ['audio/x-wav', true],
+            'audio/wave' => ['audio/wave', true],
             // MIME parameters must be stripped before the exact-set lookup
             // (codex 18b6b684) — mirrors the TS Blob parameterised-MIME case.
-            'audio/flac; codecs=flac' => ['audio/flac; codecs=flac'],
+            'audio/flac; codecs=flac' => ['audio/flac; codecs=flac', true],
+            // The lookup is case-insensitive.
+            'AUDIO/FLAC' => ['AUDIO/FLAC', true],
+            'audio/mpeg' => ['audio/mpeg', false],
+            'audio/ogg' => ['audio/ogg', false],
+            'image/png' => ['image/png', false],
         ];
-    }
 
-    #[DataProvider('losslessMimes')]
-    public function testDetectAudioLosslessFromMimeTrueForLosslessSet(string $mime): void
-    {
-        $this->assertTrue(OperationBuilder::detectAudioLosslessFromMime($mime));
-    }
+        self::assertNotSame([], $cases);
 
-    /**
-     * @return array<string, array{string}>
-     */
-    public static function nonLosslessMimes(): array
-    {
-        return [
-            'audio/mpeg' => ['audio/mpeg'],
-            'audio/ogg' => ['audio/ogg'],
-            'image/png' => ['image/png'],
-        ];
-    }
+        $failures = [];
+        foreach ($cases as $label => [$mime, $expected]) {
+            try {
+                $actual = OperationBuilder::detectAudioLosslessFromMime($mime);
+                if ($actual !== $expected) {
+                    $failures[] = "{$label}: detectAudioLosslessFromMime('{$mime}') returned " . \var_export($actual, true);
+                }
+            } catch (\Throwable $e) {
+                $failures[] = "{$label}: threw " . $e::class . ": {$e->getMessage()}";
+            }
+        }
 
-    #[DataProvider('nonLosslessMimes')]
-    public function testDetectAudioLosslessFromMimeFalseForOthers(string $mime): void
-    {
-        $this->assertFalse(OperationBuilder::detectAudioLosslessFromMime($mime));
-    }
-
-    public function testDetectAudioLosslessFromMimeIsCaseInsensitive(): void
-    {
-        $this->assertTrue(OperationBuilder::detectAudioLosslessFromMime('AUDIO/FLAC'));
+        $this->assertSame([], $failures, \implode("\n", $failures));
     }
 }
