@@ -6,6 +6,7 @@ namespace Gisl\Sdk\Tests\Unit;
 
 use Gisl\Generated\OpenApi\Model\CapabilityProduces;
 use Gisl\Generated\OpenApi\Model\CreateBillingCheckoutSession422Response;
+use Gisl\Generated\OpenApi\Model\ProbeUpload422Response;
 use Gisl\Generated\OpenApi\Model\SseMultiOutputResultEntry;
 use Gisl\Generated\OpenApi\Model\SseOperationCompletionResult;
 use Gisl\Generated\OpenApi\Model\WorkflowSource;
@@ -52,6 +53,18 @@ final class GeneratedOneOfValidityTest extends TestCase
                 'violations' => [['field' => 'plan', 'message' => 'x']],
             ]),
             true,
+        ];
+
+        // e2CjJSMn: both probe 422 arms require the same fields, so only the branch
+        // check enforces their fixed `success: false`. (The probe_not_ready arm still
+        // fails valid() on the flattened single-value error_type enum: l5CXICgn.)
+        yield 'probe 422: probe_not_applicable branch' => [
+            new ProbeUpload422Response(['success' => false, 'error' => 'UNPROCESSABLE_ENTITY', 'error_type' => 'probe_not_applicable']),
+            true,
+        ];
+        yield 'probe 422: success true completes no branch' => [
+            new ProbeUpload422Response(['success' => true, 'error' => 'UNPROCESSABLE_ENTITY', 'error_type' => 'probe_not_applicable']),
+            false,
         ];
 
         // Every branch requires a DIFFERENT single property.
