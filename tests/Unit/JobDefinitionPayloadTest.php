@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Gisl\Sdk\Tests\Unit;
 
+use Gisl\Generated\OpenApi\Model\OperationDefinition;
 use Gisl\Sdk\JobDefinitionPayload;
 use Gisl\Sdk\OperationDef;
 use Gisl\Sdk\Sources;
@@ -11,6 +12,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 #[CoversClass(JobDefinitionPayload::class)]
+#[CoversClass(OperationDef::class)]
 final class JobDefinitionPayloadTest extends TestCase
 {
     public function testToWireMinimalSingleInputJob(): void
@@ -125,5 +127,26 @@ final class JobDefinitionPayloadTest extends TestCase
             ['type' => 'compress', 'options' => ['quality' => 75]],
             $opWithOpts->toWire(),
         );
+    }
+
+    public function testOperationDefToWireCarriesBase(): void
+    {
+        // Decision 720: a thumbnail defaults to the ORIGINAL; `processed_base`
+        // thumbnails the processed chain. The omitted case is pinned above.
+        $op = new OperationDef(type: 'thumbnail', base: OperationDefinition::BASE_PROCESSED_BASE);
+        self::assertSame(['type' => 'thumbnail', 'base' => 'processed_base'], $op->toWire());
+    }
+
+    public function testOperationDefCarriesEveryContractOperationField(): void
+    {
+        // A field the contract adds to OperationDefinition must fail here, not
+        // ship unreachable: `base` landed in spec v2.226.0 and no SDK could send
+        // it (otOQbZvq). The parameter names equal the wire keys today; a
+        // multi-word field would need a camelCase mapping when it arrives.
+        $sdkFields = \array_map(
+            static fn (\ReflectionParameter $param): string => $param->getName(),
+            (new \ReflectionMethod(OperationDef::class, '__construct'))->getParameters(),
+        );
+        self::assertEqualsCanonicalizing(\array_keys(OperationDefinition::openAPITypes()), $sdkFields);
     }
 }

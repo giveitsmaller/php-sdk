@@ -826,6 +826,7 @@ readonly property Gisl\Sdk\MultipartCheckpointState::$manifestExpiresAt : string
 readonly property Gisl\Sdk\MultipartCheckpointState::$totalParts : int
 readonly property Gisl\Sdk\MultipartCheckpointState::$uploadId : string
 readonly property Gisl\Sdk\MultipartCheckpointState::$uploadedPartNumbers : array
+readonly property Gisl\Sdk\OperationDef::$base : ?string
 readonly property Gisl\Sdk\OperationDef::$options : ?array
 readonly property Gisl\Sdk\OperationDef::$type : string
 readonly property Gisl\Sdk\PreflightClipError::$error : Throwable
