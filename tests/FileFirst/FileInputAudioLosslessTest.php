@@ -14,7 +14,7 @@ use PHPUnit\Framework\TestCase;
  * lossless-audio classification from the same hints the resolver uses for
  * media detection: the filename extension (path inputs) and the
  * `contentType`/`filename` hints (resource inputs, MIME-first). Mirrors the
- * TS `_detectAudioLossless` Blob/path branches.
+ * TS `_classifyAudioFormat` Blob/path branches.
  */
 #[CoversClass(FileInput::class)]
 final class FileInputAudioLosslessTest extends TestCase
@@ -68,6 +68,22 @@ final class FileInputAudioLosslessTest extends TestCase
         try {
             $input = FileInput::resource($stream, filename: 'clip.flac');
             self::assertTrue($input->compressAudioLosslessHint());
+        } finally {
+            \fclose($stream);
+        }
+    }
+
+    #[Test]
+    public function resource_with_an_unrecognised_audio_content_type_defers_to_the_filename(): void
+    {
+        // gK4TWEiZ: an audio contentType outside both MIME sets says nothing about
+        // the codec, so the filename decides; with no filename it is uncertain.
+        $stream = \fopen('php://temp', 'r+b');
+        self::assertIsResource($stream);
+        try {
+            $named = FileInput::resource($stream, filename: 'song.m4a', contentType: 'audio/x-m4a');
+            self::assertSame('lossy', $named->compressAudioFormatHint());
+            self::assertSame('uncertain', FileInput::resource($stream, contentType: 'audio/x-m4a')->compressAudioFormatHint());
         } finally {
             \fclose($stream);
         }

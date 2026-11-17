@@ -1226,7 +1226,7 @@ final class Recipe
             presetOverrides: OperationBuilder::normalisePresetOverrides($presetOverrides),
             optimize: $optimize,
             explicitOptions: $explicit,
-            audioLossless: $media === 'audio' ? $this->effectiveAudioLossless($uptoIndex) : null,
+            audioFormat: $media === 'audio' ? $this->effectiveAudioFormat($uptoIndex) : null,
         );
 
         return $resolved['wireOptions'];
@@ -1255,22 +1255,25 @@ final class Recipe
     }
 
     /**
-     * Whether the media a `compress` step at `$uptoIndex` operates on is lossless audio —
-     * from the most recent preceding `convert` target (flac/wav) when there is one, else
-     * the original input. Mirrors the TS Recipe.compressAudioLossless(uptoIndex).
+     * The audio format class (lossless / lossy / uncertain) of the media a `compress` step
+     * at `$uptoIndex` operates on — from the most recent preceding `convert` target
+     * (flac/wav -> lossless) when there is one, else the original input. Mirrors the TS
+     * Recipe.compressAudioFormat(uptoIndex).
+     *
+     * @return 'lossless'|'lossy'|'uncertain'
      */
-    private function effectiveAudioLossless(int $uptoIndex): bool
+    private function effectiveAudioFormat(int $uptoIndex): string
     {
         for ($i = $uptoIndex - 1; $i >= 0; $i--) {
             $step = $this->steps[$i];
             if ($step->opType === 'convert') {
                 $fmt = $step->options['output_format'] ?? null;
 
-                return \is_string($fmt) ? OperationBuilder::detectAudioLossless("f.{$fmt}") : false;
+                return \is_string($fmt) ? OperationBuilder::classifyAudioFormat("f.{$fmt}") : 'uncertain';
             }
         }
 
-        return $this->input->compressAudioLosslessHint();
+        return $this->input->compressAudioFormatHint();
     }
 
     /**

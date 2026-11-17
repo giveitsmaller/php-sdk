@@ -715,7 +715,7 @@ final class PresetResolverTest extends TestCase
     #[DataProvider('audioLevels')]
     public function testLossyAudioKeepsShippedBitrate(OptimizeFor $optimize, int $expectedBitrate, int $expectedSampleRate): void
     {
-        $out = PresetResolver::resolveCompress('audio', null, null, null, $optimize, [], audioLossless: false);
+        $out = PresetResolver::resolveCompress('audio', null, null, null, $optimize, [], audioFormat: 'lossy');
         $wire = $out['wireOptions'];
 
         $this->assertSame($expectedBitrate, $wire['bitrate']);
@@ -727,7 +727,7 @@ final class PresetResolverTest extends TestCase
     #[DataProvider('audioLevels')]
     public function testLosslessAudioDropsShippedBitrateButKeepsRest(OptimizeFor $optimize, int $unusedBitrate, int $expectedSampleRate): void
     {
-        $out = PresetResolver::resolveCompress('audio', null, null, null, $optimize, [], audioLossless: true);
+        $out = PresetResolver::resolveCompress('audio', null, null, null, $optimize, [], audioFormat: 'lossless');
         $wire = $out['wireOptions'];
 
         $this->assertArrayNotHasKey('bitrate', $wire);
@@ -741,7 +741,7 @@ final class PresetResolverTest extends TestCase
     public function testLosslessAudioOptimizeUnsetDoesNotCrash(): void
     {
         // No optimize ⇒ no sdkDefault layer ⇒ no bitrate to drop.
-        $out = PresetResolver::resolveCompress('audio', null, null, null, null, [], audioLossless: true);
+        $out = PresetResolver::resolveCompress('audio', null, null, null, null, [], audioFormat: 'lossless');
         $this->assertSame([], $out['wireOptions']);
     }
 
@@ -756,7 +756,7 @@ final class PresetResolverTest extends TestCase
             null,
             OptimizeFor::Size,
             ['bitrate' => AudioBitrate::_320],
-            audioLossless: true,
+            audioFormat: 'lossless',
         );
         $this->assertSame(320, $out['wireOptions']['bitrate']);
         $this->assertContains('bitrate', $out['resolvedOptions']->sources->explicit);
@@ -771,7 +771,7 @@ final class PresetResolverTest extends TestCase
             ['bitrate' => AudioBitrate::_192],
             OptimizeFor::Size,
             [],
-            audioLossless: true,
+            audioFormat: 'lossless',
         );
         $this->assertSame(192, $out['wireOptions']['bitrate']);
         $this->assertContains('bitrate', $out['resolvedOptions']->sources->callPresetOverride);
@@ -781,7 +781,7 @@ final class PresetResolverTest extends TestCase
     {
         $defaults = PresetDefaults::create()
             ->audioCompress(OptimizeFor::Size, new AudioCompressPresetOptions(bitrate: AudioBitrate::_320));
-        $out = PresetResolver::resolveCompress('audio', $defaults, null, null, OptimizeFor::Size, [], audioLossless: true);
+        $out = PresetResolver::resolveCompress('audio', $defaults, null, null, OptimizeFor::Size, [], audioFormat: 'lossless');
 
         $this->assertSame(320, $out['wireOptions']['bitrate']);
         $this->assertContains('bitrate', $out['resolvedOptions']->sources->clientDefault);
@@ -790,7 +790,7 @@ final class PresetResolverTest extends TestCase
     public function testAudioLosslessFlagInertForNonAudioMedia(): void
     {
         // Defensive: the flag does nothing for image (no bitrate concept).
-        $out = PresetResolver::resolveCompress('image', null, null, null, OptimizeFor::Size, [], audioLossless: true);
+        $out = PresetResolver::resolveCompress('image', null, null, null, OptimizeFor::Size, [], audioFormat: 'lossless');
         $this->assertSame(65, $out['wireOptions']['quality']);
         $this->assertArrayNotHasKey('bitrate', $out['wireOptions']);
     }

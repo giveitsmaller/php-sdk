@@ -147,26 +147,46 @@ final class FileInput
     }
 
     /**
-     * Best-effort LOSSLESS-audio classification (flac/wav) for the preset
-     * resolver, derived from the same hints as {@see compressMediaHint()}: the
-     * filename extension (path inputs) or the `contentType`/`filename` hints
-     * (resource inputs). MIME-first for resources, mirroring the TS
-     * `_detectAudioLossless` Blob branch. Returns false when the input carries
-     * no inferable signal — the worker stays authoritative on the bitrate.
+     * Whether the input is LOSSLESS audio (flac/wav).
+     *
+     * @deprecated The preset resolver reads the three-way audio format class
+     *             (lossless / lossy / uncertain) instead. This returns true only
+     *             for 'lossless'.
      */
     public function compressAudioLosslessHint(): bool
     {
+        return $this->compressAudioFormatHint() === 'lossless';
+    }
+
+    /**
+     * Best-effort audio-format classification for the preset resolver, derived
+     * from the same hints as {@see compressMediaHint()}: the filename extension
+     * (path inputs) or the `contentType`/`filename` hints (resource inputs). A
+     * recognised audio contentType wins; an unrecognised one defers to the
+     * filename, mirroring the TS `_classifyAudioFormat` Blob branch. 'uncertain'
+     * when nothing identifies the format: the resolver then drops the shipped
+     * bitrate, as for lossless (D569).
+     *
+     * @internal Read by {@see Recipe}; not part of the public API.
+     *
+     * @return 'lossless'|'lossy'|'uncertain'
+     */
+    public function compressAudioFormatHint(): string
+    {
         if ($this->kind === self::KIND_PATH && $this->path !== null) {
-            return OperationBuilder::detectAudioLossless($this->path);
+            return OperationBuilder::classifyAudioFormat($this->path);
         }
         if ($this->kind === self::KIND_RESOURCE) {
             if ($this->contentType !== null && \str_starts_with($this->contentType, 'audio/')) {
-                return OperationBuilder::detectAudioLosslessFromMime($this->contentType);
+                $fromMime = OperationBuilder::classifyAudioFormatFromMime($this->contentType);
+                if ($fromMime !== null) {
+                    return $fromMime;
+                }
             }
             if ($this->filename !== null) {
-                return OperationBuilder::detectAudioLossless($this->filename);
+                return OperationBuilder::classifyAudioFormat($this->filename);
             }
         }
-        return false;
+        return 'uncertain';
     }
 }

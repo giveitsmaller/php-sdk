@@ -249,10 +249,11 @@ final class PresetResolver
      *                                                          camelCase array.
      * @param OptimizeFor|null               $optimize        Preset level; null ⇒ no shipped/client/scoped layers.
      * @param array<string, mixed>           $explicitOptions Explicit per-call knobs (layer 5), camelCase.
-     * @param bool|null                      $audioLossless   Classifier result from media detection. When `true`
-     *                                                         on audio, the shipped-preset (sdkDefault) bitrate is
-     *                                                         dropped — the worker rejects `bitrate` on lossless
-     *                                                         outputs (flac/wav — contracts iakhSy3E).
+     * @param 'lossless'|'lossy'|'uncertain'|null $audioFormat Audio format class from media detection. When
+     *                                                         'lossless' or 'uncertain' on audio, the shipped-preset
+     *                                                         (sdkDefault) bitrate is dropped — the worker rejects
+     *                                                         `bitrate` on lossless outputs (flac/wav — contracts
+     *                                                         iakhSy3E), and an uncertain input may be one (D569).
      *
      * @return array{wireOptions: array<string, mixed>, resolvedOptions: ResolvedOptions}
      */
@@ -263,7 +264,7 @@ final class PresetResolver
         object|array|null $presetOverrides,
         ?OptimizeFor $optimize,
         array $explicitOptions,
-        ?bool $audioLossless = null,
+        ?string $audioFormat = null,
     ): array {
         if (!isset(self::MEDIA_FIELDS[$media])) {
             throw new GislConfigError(
@@ -359,11 +360,16 @@ final class PresetResolver
 
         // audio_compress bakes a bitrate (Size 96 / Balanced 192 / Quality 320);
         // the worker rejects `bitrate` on lossless outputs (flac/wav — contracts
-        // iakhSy3E). Drop ONLY the shipped-preset (sdkDefault) bitrate for
-        // clear-cut lossless audio; any user-supplied bitrate (client/scoped
+        // iakhSy3E). Drop ONLY the shipped-preset (sdkDefault) bitrate, for
+        // lossless audio and for audio whose format the input does not identify
+        // (it may be lossless, D569); any user-supplied bitrate (client/scoped
         // default, per-call override or explicit) is left for the worker to
         // reject — no silent-ignore. Mirrors preset_resolver.ts.
-        if ($media === 'audio' && $audioLossless === true && ($winners['bitrate'] ?? null) === 'sdkDefault') {
+        if (
+            $media === 'audio'
+            && ($audioFormat === 'lossless' || $audioFormat === 'uncertain')
+            && ($winners['bitrate'] ?? null) === 'sdkDefault'
+        ) {
             unset($merged['bitrate'], $winners['bitrate']);
         }
 

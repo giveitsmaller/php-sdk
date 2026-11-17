@@ -9,31 +9,33 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * 0Vcogefw — the LOSSLESS-audio classifiers used by the compress preset
- * resolver to drop the shipped-preset bitrate on flac/wav. PHP analogue of
- * the TS `_detectAudioLossless` unit block (`builder.test.ts`):
- *   - {@see OperationBuilder::detectAudioLossless()} — filename extension.
- *   - {@see OperationBuilder::detectAudioLosslessFromMime()} — 5-mime set.
+ * 0Vcogefw / gK4TWEiZ — the audio-format classifiers used by the compress
+ * preset resolver to drop the shipped-preset bitrate on lossless (flac/wav)
+ * and uncertain audio (D569). PHP analogue of the TS `_classifyAudioFormat`
+ * unit block (`builder.test.ts`):
+ *   - {@see OperationBuilder::classifyAudioFormat()} — filename extension.
+ *   - {@see OperationBuilder::classifyAudioFormatFromMime()} — lossless and
+ *     lossy MIME sets; null defers to the filename.
  */
 #[CoversClass(OperationBuilder::class)]
 final class OperationBuilderAudioLosslessTest extends TestCase
 {
-    public function testDetectAudioLosslessClassifiesByFilenameExtension(): void
+    public function testClassifyAudioFormatByFilenameExtension(): void
     {
         // label => [filename, expected]
         $cases = [
-            'song.flac' => ['song.flac', true],
-            'a.wav' => ['a.wav', true],
-            'uppercase path' => ['PATH/X.FLAC', true],
-            'mixed case wav' => ['audio/clip.WAV', true],
-            'mp3' => ['song.mp3', false],
-            'aac' => ['a.aac', false],
-            'm4a' => ['b.m4a', false],
-            'ogg' => ['c.ogg', false],
-            'oga' => ['d.oga', false],
-            'opus' => ['e.opus', false],
-            'unknown ext' => ['f.unknownext', false],
-            'no extension' => ['noextension', false],
+            'song.flac' => ['song.flac', 'lossless'],
+            'a.wav' => ['a.wav', 'lossless'],
+            'uppercase path' => ['PATH/X.FLAC', 'lossless'],
+            'mixed case wav' => ['audio/clip.WAV', 'lossless'],
+            'mp3' => ['song.mp3', 'lossy'],
+            'aac' => ['a.aac', 'lossy'],
+            'm4a' => ['b.m4a', 'lossy'],
+            'ogg' => ['c.ogg', 'lossy'],
+            'oga' => ['d.oga', 'lossy'],
+            'opus' => ['e.opus', 'lossy'],
+            'unknown ext' => ['f.unknownext', 'uncertain'],
+            'no extension' => ['noextension', 'uncertain'],
         ];
 
         self::assertNotSame([], $cases);
@@ -41,9 +43,9 @@ final class OperationBuilderAudioLosslessTest extends TestCase
         $failures = [];
         foreach ($cases as $label => [$input, $expected]) {
             try {
-                $actual = OperationBuilder::detectAudioLossless($input);
+                $actual = OperationBuilder::classifyAudioFormat($input);
                 if ($actual !== $expected) {
-                    $failures[] = "{$label}: detectAudioLossless('{$input}') returned " . \var_export($actual, true);
+                    $failures[] = "{$label}: classifyAudioFormat('{$input}') returned " . \var_export($actual, true);
                 }
             } catch (\Throwable $e) {
                 $failures[] = "{$label}: threw " . $e::class . ": {$e->getMessage()}";
@@ -53,23 +55,28 @@ final class OperationBuilderAudioLosslessTest extends TestCase
         $this->assertSame([], $failures, \implode("\n", $failures));
     }
 
-    public function testDetectAudioLosslessFromMimeClassifiesTheLosslessSet(): void
+    public function testClassifyAudioFormatFromMime(): void
     {
         // label => [mime, expected]
         $cases = [
-            'audio/flac' => ['audio/flac', true],
-            'audio/x-flac' => ['audio/x-flac', true],
-            'audio/wav' => ['audio/wav', true],
-            'audio/x-wav' => ['audio/x-wav', true],
-            'audio/wave' => ['audio/wave', true],
+            'audio/flac' => ['audio/flac', 'lossless'],
+            'audio/x-flac' => ['audio/x-flac', 'lossless'],
+            'audio/wav' => ['audio/wav', 'lossless'],
+            'audio/x-wav' => ['audio/x-wav', 'lossless'],
+            'audio/wave' => ['audio/wave', 'lossless'],
             // MIME parameters must be stripped before the exact-set lookup
             // (codex 18b6b684) — mirrors the TS Blob parameterised-MIME case.
-            'audio/flac; codecs=flac' => ['audio/flac; codecs=flac', true],
+            'audio/flac; codecs=flac' => ['audio/flac; codecs=flac', 'lossless'],
             // The lookup is case-insensitive.
-            'AUDIO/FLAC' => ['AUDIO/FLAC', true],
-            'audio/mpeg' => ['audio/mpeg', false],
-            'audio/ogg' => ['audio/ogg', false],
-            'image/png' => ['image/png', false],
+            'AUDIO/FLAC' => ['AUDIO/FLAC', 'lossless'],
+            'audio/mpeg' => ['audio/mpeg', 'lossy'],
+            'audio/aac' => ['audio/aac', 'lossy'],
+            'audio/ogg' => ['audio/ogg', 'lossy'],
+            'audio/mp4' => ['audio/mp4', 'lossy'],
+            'audio/opus' => ['audio/opus', 'lossy'],
+            // An unrecognised audio MIME says nothing about the codec (D569).
+            'audio/x-aiff' => ['audio/x-aiff', null],
+            'image/png' => ['image/png', null],
         ];
 
         self::assertNotSame([], $cases);
@@ -77,9 +84,9 @@ final class OperationBuilderAudioLosslessTest extends TestCase
         $failures = [];
         foreach ($cases as $label => [$mime, $expected]) {
             try {
-                $actual = OperationBuilder::detectAudioLosslessFromMime($mime);
+                $actual = OperationBuilder::classifyAudioFormatFromMime($mime);
                 if ($actual !== $expected) {
-                    $failures[] = "{$label}: detectAudioLosslessFromMime('{$mime}') returned " . \var_export($actual, true);
+                    $failures[] = "{$label}: classifyAudioFormatFromMime('{$mime}') returned " . \var_export($actual, true);
                 }
             } catch (\Throwable $e) {
                 $failures[] = "{$label}: threw " . $e::class . ": {$e->getMessage()}";

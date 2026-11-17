@@ -268,7 +268,7 @@ final class OperationBuilderSubmitTest extends TestCase
      * must lower to a wire payload WITHOUT `bitrate` (the worker rejects it
      * on lossless flac/wav), while `sample_rate` + `normalize` from the same
      * audio Size preset cell survive. Proves OperationBuilder.php:125 wires
-     * `detectAudioLossless` into the resolver — a regression severing that
+     * `classifyAudioFormat` into the resolver — a regression severing that
      * line (null, or dropping the `$media === 'audio'` guard) would keep the
      * baked bitrate and fail HERE. Mirrors the TS both-call-sites block
      * (builder.test.ts).

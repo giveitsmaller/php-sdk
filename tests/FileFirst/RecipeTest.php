@@ -501,6 +501,27 @@ final class RecipeTest extends TestCase
     }
 
     #[Test]
+    public function compress_on_an_uncertain_audio_resource_lowers_without_bitrate(): void
+    {
+        // gK4TWEiZ (D569): an audio contentType outside both the lossless and the
+        // known-lossy sets, with no filename, is audio of unknown codec. It may be
+        // FLAC/WAV, on which the API refuses `bitrate`, so the shipped bitrate goes.
+        $stream = \fopen('php://temp', 'r+b');
+        self::assertIsResource($stream);
+        try {
+            $ops = $this->operations(
+                (new Recipe(FileInput::resource($stream, contentType: 'audio/x-aiff')))->compress(OptimizeFor::Size),
+            );
+            $options = $ops[0]['options'];
+            self::assertIsArray($options);
+            self::assertArrayNotHasKey('bitrate', $options);
+            self::assertSame(44100, $options['sample_rate']);
+        } finally {
+            \fclose($stream);
+        }
+    }
+
+    #[Test]
     public function lowering_serialises_to_a_byte_stable_json_string(): void
     {
         // Cross-language byte parity: this MUST equal the literal string the TS
