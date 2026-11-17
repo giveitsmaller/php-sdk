@@ -254,6 +254,7 @@ internal Gisl\Sdk\Ergonomic\PresetResolver
 internal Gisl\Sdk\Ergonomic\ProbePendingRecovery
 internal Gisl\Sdk\Ergonomic\SequencePlan
 internal Gisl\Sdk\FileFirst\MultiInputUpload
+internal Gisl\Sdk\Generated\Capabilities\CompressAudioBitrate
 internal Gisl\Sdk\Http\CurlMultiPartUploader
 internal Gisl\Sdk\Http\Sleeper
 internal Gisl\Sdk\SdkVersion

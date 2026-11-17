@@ -8,6 +8,7 @@ use Gisl\Generated\OpenApi\Model\OperationDownload;
 use Gisl\Generated\OpenApi\Model\WorkflowStatusResponse;
 use Gisl\Sdk\Errors\GislConfigError;
 use Gisl\Sdk\Errors\GislTimeoutError;
+use Gisl\Sdk\Generated\Capabilities\CompressAudioBitrate;
 use Gisl\Sdk\Generated\SdkSpec\Enums\OptimizeFor;
 use Gisl\Sdk\GislClient;
 use Gisl\Sdk\JobDefinitionPayload;
@@ -65,6 +66,34 @@ use Gisl\Sdk\WorkflowConstants;
  */
 final class OperationBuilder
 {
+    /**
+     * File-type knowledge, not a lossless judgement: the audio extensions the
+     * SDK recognises and the canonical MIME each one names. Media detection
+     * reads the keys; the audio classifier maps through it to the contract's
+     * MIME sets. Mirrors `AUDIO_EXTENSION_MIME` in `builder.ts`.
+     */
+    private const AUDIO_EXTENSION_MIME = [
+        'mp3' => 'audio/mpeg',
+        'aac' => 'audio/aac',
+        'm4a' => 'audio/mp4',
+        'ogg' => 'audio/ogg',
+        'oga' => 'audio/ogg',
+        'opus' => 'audio/ogg', // Opus files are Ogg Opus (RFC 7845)
+        'flac' => 'audio/flac',
+        'wav' => 'audio/wav',
+    ];
+
+    /**
+     * Non-canonical audio MIMEs clients send, mapped to the canonical MIME the
+     * contract names. Mirrors `AUDIO_MIME_ALIAS` in `builder.ts`.
+     */
+    private const AUDIO_MIME_ALIAS = [
+        'audio/x-flac' => 'audio/flac',
+        'audio/x-wav' => 'audio/wav',
+        'audio/wave' => 'audio/wav',
+        'audio/opus' => 'audio/ogg',
+    ];
+
     /**
      * @param array<string, mixed> $opOptions Operation options. For compress these may include the
      *                                         ergonomic `optimize` (OptimizeFor|string) and
@@ -152,7 +181,7 @@ final class OperationBuilder
         if (\in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'avif', 'gif', 'tiff', 'tif', 'bmp', 'heic', 'heif'], true)) {
             return 'image';
         }
-        if (\in_array($ext, ['mp3', 'aac', 'm4a', 'ogg', 'oga', 'flac', 'wav', 'opus'], true)) {
+        if (isset(self::AUDIO_EXTENSION_MIME[$ext])) {
             return 'audio';
         }
         if (\in_array($ext, ['mp4', 'mov', 'mkv', 'webm', 'avi', 'wmv', 'flv', 'm4v'], true)) {
@@ -222,16 +251,16 @@ final class OperationBuilder
 
     /**
      * Best-effort classification of an audio path's format by filename
-     * extension: 'lossless' (flac/wav), 'lossy' (mp3, aac, m4a, ogg, oga,
-     * opus) or 'uncertain' (anything else). The worker rejects `bitrate` on
-     * lossless audio (compress.yaml / contracts iakhSy3E), so the preset
-     * resolver drops the shipped-preset bitrate for 'lossless' AND
-     * 'uncertain' inputs (D569): an uncertain input may be flac/wav.
+     * extension: 'lossless' (the contract refuses `bitrate` on it), 'lossy'
+     * (it accepts `bitrate`) or 'uncertain' (anything else). The sets come
+     * from the contract rule `compress.audio.bitrate.lossless_output`,
+     * generated at re-vendor into {@see CompressAudioBitrate} (ajEAKlkJ), so
+     * the preset resolver drops the shipped-preset bitrate for 'lossless' AND
+     * 'uncertain' inputs (D569): an uncertain input may be lossless.
      *
      * Detection is filename-only — it CANNOT probe the actual codec. The
-     * lossy extensions are exactly the non-lossless audio extensions
-     * {@see detectCompressMedia()} accepts, so a path detected as audio is
-     * never 'uncertain'. The worker stays authoritative: a user-supplied
+     * extension maps to its canonical MIME through the same table
+     * {@see detectCompressMedia()} reads. The worker stays authoritative: a user-supplied
      * bitrate on a lossless file still reaches the wire and earns a
      * deliberate 422. Filename-only PHP analogue of `_classifyAudioFormat`
      * (`builder.ts`); the MIME branch is {@see classifyAudioFormatFromMime()}.
@@ -244,23 +273,20 @@ final class OperationBuilder
     {
         $dot = \strrpos($input, '.');
         $ext = $dot === false ? '' : \strtolower(\substr($input, $dot + 1));
-        if (\in_array($ext, ['flac', 'wav'], true)) {
-            return 'lossless';
-        }
-        if (\in_array($ext, ['mp3', 'aac', 'm4a', 'ogg', 'oga', 'opus'], true)) {
-            return 'lossy';
-        }
-        return 'uncertain';
+        $extMime = self::AUDIO_EXTENSION_MIME[$ext] ?? null;
+
+        return ($extMime === null ? null : self::audioFormatOfMime($extMime)) ?? 'uncertain';
     }
 
     /**
      * Best-effort audio-format classification from a MIME type (the canonical
      * signal for a resource input carrying a `contentType` hint — preferred
      * over the filename extension). Mirrors the MIME branch of the TS
-     * `_classifyAudioFormat` (`builder.ts`): 'lossless' for the five lossless
-     * audio MIMEs, 'lossy' for the five recognised lossy ones, and null for
-     * anything else (an unrecognised audio MIME says nothing about the codec,
-     * so the caller defers to the filename).
+     * `_classifyAudioFormat` (`builder.ts`): an alias maps to its canonical
+     * MIME, then 'lossless' or 'lossy' from the contract's sets
+     * ({@see CompressAudioBitrate}), and null for anything else (an
+     * unrecognised audio MIME says nothing about the codec, so the caller
+     * defers to the filename).
      *
      * @internal Exposed for {@see \Gisl\Sdk\FileFirst\FileInput} + unit tests.
      *
@@ -271,10 +297,21 @@ final class OperationBuilder
         // Strip MIME parameters (`audio/flac; codecs=flac`) before the exact-set
         // lookup so a parameterised type still classifies (codex 18b6b684).
         $bareMime = \strtolower(\trim(\explode(';', $mime, 2)[0]));
-        if (\in_array($bareMime, ['audio/flac', 'audio/x-flac', 'audio/wav', 'audio/x-wav', 'audio/wave'], true)) {
+
+        return self::audioFormatOfMime(self::AUDIO_MIME_ALIAS[$bareMime] ?? $bareMime);
+    }
+
+    /**
+     * The contract's class for a canonical audio MIME; null when it names none.
+     *
+     * @return 'lossless'|'lossy'|null
+     */
+    private static function audioFormatOfMime(string $mime): ?string
+    {
+        if (\in_array($mime, CompressAudioBitrate::REFUSED_MIMES, true)) {
             return 'lossless';
         }
-        if (\in_array($bareMime, ['audio/mpeg', 'audio/aac', 'audio/ogg', 'audio/mp4', 'audio/opus'], true)) {
+        if (\in_array($mime, CompressAudioBitrate::ACCEPTED_MIMES, true)) {
             return 'lossy';
         }
         return null;
