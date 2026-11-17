@@ -19,8 +19,12 @@ use Gisl\Generated\OpenApi\Model\ProbePendingResponse;
  * The `Retry-After` response header (when present) suggests the delay
  * in seconds before the next poll/retry.
  *
- * `typedPayload->getJobRef()` identifies which job in a multi-job request
- * triggered the probe-pending rejection.
+ * `typedPayload->getJobRef()` is the workflow-local id of the job whose
+ * upload-probe has not landed. For a video merge it is the FEEDER job holding
+ * the pending upload, not the merge job. To recover by hand, wait on that
+ * job's upload with `GislClient::waitForProbe()`;
+ * `GislClient::createWorkflowAwaitingProbe()` does the job-to-upload lookup,
+ * the wait and the re-create for you.
  *
  * Mirrors `packages/typescript/src/errors.ts:GislProbePendingError`.
  */
