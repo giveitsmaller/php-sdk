@@ -399,9 +399,13 @@ final class WireKeyConformanceTest extends TestCase
 
     /**
      * MERGE_INTENTIONALLY_OMITTED: op-level contract merge options the SDK
-     * deliberately does NOT surface as a standalone MergeOptions field. Empty
-     * today — every op-level key is reachable via a builder field (`output_type`
-     * via output/outputType; `encoding_mode`+`target_size_bytes` via targetSize).
+     * deliberately does NOT surface as a standalone MergeOptions field. Every
+     * other op-level key is reachable via a builder field (`output_type` via
+     * output/outputType; `encoding_mode`+`target_size_bytes` via targetSize).
+     * Omitted: audio `audio_format` — contracts v2.245.0 declares it
+     * `availability: planned` with no default (4YyRIGB5); the worker keeps
+     * writing m4a until it ships. Expose it on MergeOptions when it leaves
+     * `planned`.
      * A FUTURE new contract merge option fails the reverse check below until it is
      * either exposed on MergeOptions (+ wireMergeOptions) or documented here.
      * Mirrors the TS `MERGE_INTENTIONALLY_OMITTED`.
@@ -410,7 +414,7 @@ final class WireKeyConformanceTest extends TestCase
      */
     private const MERGE_INTENTIONALLY_OMITTED = [
         'video' => [],
-        'audio' => [],
+        'audio' => ['audio_format'],
         'image' => [],
     ];
 
