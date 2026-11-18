@@ -340,9 +340,11 @@ class GislClient
      *
      * Three phases:
      *   1. POST /api/uploads/multipart/initiate with first 8 MiB as form-data.
-     *      Server returns `upload_id`, `presigned_urls` for parts 2..N, the
-     *      recommended chunk size, and the first-chunk etag (which it tracks
-     *      server-side; the SDK does NOT submit part 1 in the complete call).
+     *      Server returns `upload_id`, `presigned_urls` (the FIRST BATCH of
+     *      parts 2..N, at most 500; the rest are fetched through
+     *      {@see presignParts} in batches of 100), the recommended chunk size,
+     *      and the first-chunk etag (which it tracks server-side; the SDK does
+     *      NOT submit part 1 in the complete call).
      *   2. PUT each remaining chunk to its presigned S3 URL with bounded retry +
      *      full-jitter backoff per part. When an injected
      *      {@see Http\MultipartPartUploader} is present the PUTs run
@@ -428,18 +430,28 @@ class GislClient
         // The <=10k ceiling above only bounds the count; it does not catch an
         // initiate plan that is internally inconsistent BELOW the cap. Under
         // Model A a contract-compliant server computes total_parts from the
-        // same recommended_chunk_size it returns and emits exactly one
-        // presigned URL per remaining part (part 1 = initiate first chunk).
-        // If they disagree, proceeding would PUT the wrong number of ranges
-        // and fail opaquely at /multipart/complete — fail fast here instead.
-        if ($serverParts !== $computedParts || \count($presignedUrls) !== $computedParts - 1) {
-            throw new GislError(
-                'Multipart initiate plan is internally inconsistent: server '
-                . "total_parts={$serverParts}, client computed {$computedParts} "
-                . "from {$chunkSize}-byte chunks, presigned_urls count="
-                . \count($presignedUrls) . ' (expected ' . ($computedParts - 1)
-                . '). Refusing to upload a mismatched part plan.',
-            );
+        // same recommended_chunk_size it returns. If they disagree, proceeding
+        // would PUT the wrong number of ranges and fail opaquely at
+        // /multipart/complete — fail fast here instead.
+        //
+        // `presigned_urls` is only the FIRST BATCH (contract: "treat this
+        // array as the first batch"; the api sends at most 500, so a plan
+        // above ~48.8 GiB gets a partial one, Vq3J6soI). Fewer URLs than parts
+        // is valid — the tail comes from presignParts below. More URLs than
+        // parts, or an entry that names no usable part, is not.
+        $presignedCount = \count($presignedUrls);
+        $inconsistentPlan = static fn (string $detail): GislError => new GislError(
+            'Multipart initiate plan is internally inconsistent: server '
+            . "total_parts={$serverParts}, client computed {$computedParts} "
+            . "from {$chunkSize}-byte chunks, presigned_urls count={$presignedCount} "
+            . '(at most ' . ($computedParts - 1) . "); {$detail}. "
+            . 'Refusing to upload a mismatched part plan.',
+        );
+        if ($serverParts !== $computedParts) {
+            throw $inconsistentPlan('total_parts disagrees with the recompute');
+        }
+        if ($presignedCount > $computedParts - 1) {
+            throw $inconsistentPlan('more presigned URLs than parts');
         }
 
         // Resolve uploadId before the chunk loop so a terminal part failure
@@ -450,10 +462,8 @@ class GislClient
             throw new GislError('Multipart initiate response missing upload_id.');
         }
 
-        // Build lazy part descriptors (offset/length index into the file — no
-        // chunk is materialised until its PUT runs).
-        /** @var list<array{partNumber: int, url: string, offset: int, length: int}> $descriptors */
-        $descriptors = [];
+        /** @var array<int, string> $firstBatch partNumber => presigned url */
+        $firstBatch = [];
         foreach ($presignedUrls as $index => $part) {
             if (!$part instanceof PresignedUrlPart) {
                 throw new GislError("Multipart initiate response had a malformed presigned URL at index {$index}.");
@@ -466,9 +476,31 @@ class GislClient
             if (!\is_string($url) || $url === '') {
                 throw new GislError("Presigned URL at index {$index} (part {$partNumber}) missing url.");
             }
-            $start = $firstChunkSize + $index * $chunkSize;
-            $end = \min($start + $chunkSize, $totalSize);
-            $descriptors[] = ['partNumber' => $partNumber, 'url' => $url, 'offset' => $start, 'length' => $end - $start];
+            if ($partNumber < 2 || $partNumber > $computedParts || isset($firstBatch[$partNumber])) {
+                throw $inconsistentPlan("presigned_urls entry for part {$partNumber} is out of range or duplicated");
+            }
+            $firstBatch[$partNumber] = $url;
+        }
+        \ksort($firstBatch);
+
+        // Every part the first batch did not cover, ascending, in batches of
+        // at most 100 (the presign endpoint's cap, as in the resume path).
+        /** @var list<list<int>> $tailBatches */
+        $tailBatches = [];
+        /** @var list<int> $tailBatch */
+        $tailBatch = [];
+        for ($partNumber = 2; $partNumber <= $computedParts; $partNumber++) {
+            if (isset($firstBatch[$partNumber])) {
+                continue;
+            }
+            $tailBatch[] = $partNumber;
+            if (\count($tailBatch) === 100) {
+                $tailBatches[] = $tailBatch;
+                $tailBatch = [];
+            }
+        }
+        if ($tailBatch !== []) {
+            $tailBatches[] = $tailBatch;
         }
 
         // Progress fires after EACH successful part (concurrent or sequential).
@@ -477,6 +509,13 @@ class GislClient
             $this->fireProgress($options, $uploadedBytes, $totalSize);
         };
 
+        /** @var array<int, string> $etagByPart */
+        $etagByPart = [];
+        // PUT one group of parts (partNumber => url). Lazy descriptors: the
+        // offset/length index into the file follows the PART NUMBER (part 1
+        // is the initiate first chunk) — the resume path's formula — and no
+        // chunk is materialised until its PUT runs.
+        //
         // z9bDW2iH: when a concurrent uploader is injected (production via
         // Gisl::create on ext-curl), PUT parts with bounded fan-out; otherwise
         // the sequential PSR-18 loop — the default, and the path the
@@ -484,17 +523,39 @@ class GislClient
         // errors + per-part progress. A stream source is NOT concurrency-safe
         // (one shared cursor), so it always takes the sequential loop even when
         // a concurrent uploader is present (VOxtu0RZ-B4).
-        if ($this->partUploader !== null && $source->isConcurrencySafe()) {
-            $etagByPart = $this->partUploader->uploadParts(
-                $source->path(),
-                $descriptors,
-                $uploadId,
-                $this->config->multipartConcurrency,
-                $onPartComplete,
-            );
-        } else {
-            /** @var array<int, string> $etagByPart */
-            $etagByPart = [];
+        /** @param array<int, string> $urlByPart partNumber => presigned url */
+        $uploadGroup = function (array $urlByPart) use (
+            &$etagByPart,
+            $firstChunkSize,
+            $chunkSize,
+            $totalSize,
+            $source,
+            $uploadId,
+            $onPartComplete,
+        ): void {
+            /** @var list<array{partNumber: int, url: string, offset: int, length: int}> $descriptors */
+            $descriptors = [];
+            foreach ($urlByPart as $partNumber => $url) {
+                $start = $firstChunkSize + ($partNumber - 2) * $chunkSize;
+                $end = \min($start + $chunkSize, $totalSize);
+                $descriptors[] = ['partNumber' => $partNumber, 'url' => $url, 'offset' => $start, 'length' => $end - $start];
+            }
+            if ($descriptors === []) {
+                return;
+            }
+            if ($this->partUploader !== null && $source->isConcurrencySafe()) {
+                $etags = $this->partUploader->uploadParts(
+                    $source->path(),
+                    $descriptors,
+                    $uploadId,
+                    $this->config->multipartConcurrency,
+                    $onPartComplete,
+                );
+                foreach ($etags as $partNumber => $etag) {
+                    $etagByPart[$partNumber] = $etag;
+                }
+                return;
+            }
             foreach ($descriptors as $d) {
                 $etag = $this->putChunkWithRetry(
                     partNumber: $d['partNumber'],
@@ -507,6 +568,41 @@ class GislClient
                 $etagByPart[$d['partNumber']] = $etag;
                 $onPartComplete($d['partNumber'], $d['length']);
             }
+        };
+
+        // The first batch, then each tail batch, presigned immediately before
+        // its own PUTs (as the resume path does) so a tail URL is minted at
+        // most one batch ahead of use — a 100 GiB upload can outlast the 2 h
+        // presign TTL if the whole tail were minted up front.
+        $uploadGroup($firstBatch);
+        foreach ($tailBatches as $batch) {
+            $presigned = $this->presignParts($uploadId, $batch, $computedParts);
+            $requested = 'requested ' . $batch[0] . '..' . $batch[\count($batch) - 1];
+            // The contract promises one URL per requested part (presignParts
+            // already refuses an empty url). A part missing, repeated or
+            // unrequested is a gap no further request would fill.
+            /** @var array<int, string> $urlByPart */
+            $urlByPart = [];
+            foreach ($presigned['presignedUrls'] as $entry) {
+                $partNumber = $entry['partNumber'];
+                if (!\in_array($partNumber, $batch, true) || isset($urlByPart[$partNumber])) {
+                    throw new GislError(
+                        "presignParts returned an unusable entry for part {$partNumber} ({$requested}): "
+                        . 'not requested or duplicated. Refusing to upload a mismatched part plan.',
+                    );
+                }
+                $urlByPart[$partNumber] = $entry['url'];
+            }
+            foreach ($batch as $partNumber) {
+                if (!isset($urlByPart[$partNumber])) {
+                    throw new GislError(
+                        "presignParts returned no URL for part {$partNumber} ({$requested}). "
+                        . 'Refusing to upload a mismatched part plan.',
+                    );
+                }
+            }
+            \ksort($urlByPart);
+            $uploadGroup($urlByPart);
         }
 
         // Assemble the /multipart/complete part list in part_number-ascending

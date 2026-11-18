@@ -430,6 +430,119 @@ final class GislClientMultipartTest extends TestCase
             // Failed before any S3 PUT — only the initiate call happened.
             self::assertCount(1, $captured);
         }
+
+        // Vq3J6soI: fewer URLs than parts is a valid first batch now, but MORE
+        // URLs than parts is still inconsistent (2 parts, URLs for parts 2..3).
+        $tooMany = $this->initiateEnvelope(remainingChunks: 2, chunkSize: self::CHUNK_SIZE);
+        $tooMany['data']['total_parts'] = 2;
+        $http = $this->stubClient([$this->jsonResponse(200, $tooMany)], $captured);
+        try {
+            $this->makeClient($http)->uploadFile($filePath);
+            self::fail('Expected GislError for more presigned URLs than parts');
+        } catch (GislError $e) {
+            self::assertMatchesRegularExpression('/internally inconsistent.*more presigned URLs than parts/', $e->getMessage());
+            self::assertCount(1, $captured);
+        }
+    }
+
+    /**
+     * Vq3J6soI: `presigned_urls` is only the FIRST BATCH — the api presigns at
+     * most 500 parts at initiate. A 620-part plan PUTs parts 2..501, then
+     * presigns the tail in batches of <=100, each right before its PUTs.
+     * Driven through the concurrent-uploader seam so no part bytes are read
+     * from the (sparse, ~9.7 GiB) file.
+     */
+    public function testPartialFirstBatchFetchesTheTailThroughPresignInBatchesOf100(): void
+    {
+        $totalParts = 620;
+        $totalSize = self::FIRST_CHUNK_SIZE + ($totalParts - 1) * self::CHUNK_SIZE;
+        $filePath = $this->writeSparseFile($totalSize);
+
+        $initiate = $this->initiateEnvelope(remainingChunks: 500, chunkSize: self::CHUNK_SIZE);
+        $initiate['data']['total_parts'] = $totalParts;
+        $captured = [];
+        $http = $this->stubClient([
+            $this->jsonResponse(200, $initiate),
+            $this->jsonResponse(200, $this->presignEnvelope(\range(502, 601))),
+            $this->jsonResponse(200, $this->presignEnvelope(\range(602, 620))),
+            $this->jsonResponse(200, $this->completeEnvelope('completed')),
+        ], $captured);
+
+        $fake = new class implements MultipartPartUploader {
+            /** @var list<list<int>> part numbers of each uploadParts call */
+            public array $groups = [];
+            /** @var array<int, array{offset: int, length: int, url: string}> */
+            public array $byPart = [];
+
+            public function uploadParts(
+                string $filePath,
+                array $parts,
+                string $uploadId,
+                int $concurrency,
+                callable $onPartComplete,
+            ): array {
+                $group = [];
+                $etags = [];
+                foreach ($parts as $d) {
+                    $pn = $d['partNumber'];
+                    $group[] = $pn;
+                    $this->byPart[$pn] = ['offset' => $d['offset'], 'length' => $d['length'], 'url' => $d['url']];
+                    $etags[$pn] = "\"etag-{$pn}\"";
+                    $onPartComplete($pn, $d['length']);
+                }
+                $this->groups[] = $group;
+
+                return $etags;
+            }
+        };
+
+        $result = $this->makeClient($http, partUploader: $fake)->uploadFile($filePath);
+
+        self::assertSame(self::UPLOAD_ID, $result->getFileId());
+        self::assertSame([\range(2, 501), \range(502, 601), \range(602, 620)], $fake->groups);
+        foreach ($fake->byPart as $pn => $d) {
+            self::assertSame(self::FIRST_CHUNK_SIZE + ($pn - 2) * self::CHUNK_SIZE, $d['offset']);
+            self::assertSame(self::CHUNK_SIZE, $d['length']);
+            self::assertSame("https://s3.example.com/upload/{$pn}", $d['url']);
+        }
+        // initiate, two presigns, complete.
+        self::assertCount(4, $captured);
+        foreach ([[1, \range(502, 601)], [2, \range(602, 620)]] as [$i, $requested]) {
+            self::assertStringEndsWith('/api/uploads/multipart/' . self::UPLOAD_ID . '/presign', (string) $captured[$i]->getUri());
+            $body = \json_decode((string) $captured[$i]->getBody(), true, flags: \JSON_THROW_ON_ERROR);
+            self::assertSame(['part_numbers' => $requested], $body);
+        }
+        $complete = \json_decode((string) $captured[3]->getBody(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame(\range(2, 620), \array_column($complete['parts'], 'part_number'));
+    }
+
+    /**
+     * Vq3J6soI: a presign response that leaves a requested part without a URL
+     * is a gap no further request fills — refuse, and never /complete.
+     */
+    public function testPresignBatchMissingAPartIsRefusedBeforeComplete(): void
+    {
+        $filePath = $this->writeSparseFile(self::FIRST_CHUNK_SIZE + 3 * self::CHUNK_SIZE);
+
+        $initiate = $this->initiateEnvelope(remainingChunks: 1, chunkSize: self::CHUNK_SIZE);
+        $initiate['data']['total_parts'] = 4; // first batch carries part 2 only
+        $captured = [];
+        $http = $this->stubClient([
+            $this->jsonResponse(200, $initiate),
+            $this->s3Response('"etag-part-2"'),
+            // Asked for parts 3 and 4; the server answers for part 3 only.
+            $this->jsonResponse(200, $this->presignEnvelope([3])),
+        ], $captured);
+
+        try {
+            $this->makeClient($http)->uploadFile($filePath);
+            self::fail('Expected GislError for a presign batch with a gap');
+        } catch (GislError $e) {
+            self::assertMatchesRegularExpression('/no URL for part 4/', $e->getMessage());
+        }
+        // initiate, the part-2 PUT, the presign — no part 3 PUT, no /complete.
+        self::assertCount(3, $captured);
+        self::assertSame('https://s3.example.com/upload/2', (string) $captured[1]->getUri());
     }
 
     public function testTransportFailureRetriesAcrossAttempts(): void
@@ -766,6 +879,28 @@ final class GislClientMultipartTest extends TestCase
                     'max_duration_seconds' => 600,
                     'processing_class_pre_assignment' => 'short_form',
                 ],
+            ],
+        ];
+    }
+
+    /**
+     * @param list<int> $partNumbers
+     * @return array<string, mixed>
+     */
+    private function presignEnvelope(array $partNumbers): array
+    {
+        return [
+            'success' => true,
+            'data' => [
+                'upload_id' => self::UPLOAD_ID,
+                'presigned_urls' => \array_map(
+                    static fn (int $pn): array => [
+                        'part_number' => $pn,
+                        'url' => "https://s3.example.com/upload/{$pn}",
+                        'expires_at' => '2026-12-31T00:00:00Z',
+                    ],
+                    $partNumbers,
+                ),
             ],
         ];
     }
