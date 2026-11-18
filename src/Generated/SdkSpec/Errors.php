@@ -537,11 +537,11 @@ to a single artifact OR use .mapEach() to fan out.
             'code' => 'merge_over_limit',
             'category' => 'validation',
             'source' => 'ErrorEnvelope.error',
-            'status' => 'planned',
+            'status' => 'wired',
             'httpStatus' => 422,
             'retryable' => false,
             'sdkClass' => 'GislValidationError',
-            'description' => '422 — a video merge whose inputs are not concat-uniform (so only merge.video short_form_concat can run it) and whose measured total exceeds that class\'s max_total_duration (PT5M) or max_total_input_size_bytes (500 MiB). Wire `MERGE_OVER_LIMIT`; ValidationErrorEnvelope, one details[] entry whose `ceiling` (InputCeilingViolation) carries axis, actual, maximum, bound_by merge. The caller trims the clips or uses uniform ones; retrying does not help. `planned` until api ships the create-time refusal (xuVTM06N; owner decision 755).',
+            'description' => '422 — a merge whose measured combined total exceeds its ceiling: a video merge whose inputs are not concat-uniform (so only merge.video short_form_concat can run it) over that class\'s max_total_duration (PT5M) or max_total_input_size_bytes (500 MiB); or `merge.audio` over its group\'s max_total_duration (PT5M, the sum defined on the openapi field). Wire `MERGE_OVER_LIMIT`; ValidationErrorEnvelope, one details[] entry whose `ceiling` (InputCeilingViolation) carries axis, actual, maximum, bound_by merge. The caller trims the clips (a video set may instead use uniform ones); retrying does not help. Emitted for video since api 1.26.0 and for audio since api 1.30.0 (owner decision 755).',
             'metadataSchema' => [],
         ],
         'duration_unknown' => [

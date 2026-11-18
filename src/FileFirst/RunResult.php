@@ -79,6 +79,7 @@ final class RunResult
         'custom_luma',
         'image_watermark',
         'merge',
+        'passthrough',
         'split',
         'text_watermark',
         'video_text_watermark',

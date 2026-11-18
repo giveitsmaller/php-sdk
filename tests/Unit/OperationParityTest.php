@@ -82,6 +82,7 @@ final class OperationParityTest extends TestCase
         'application/pdf' => 'pdf',
         'application/vnd.oasis.opendocument.text' => 'odt',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+        'audio/mp4' => 'm4a',
         'audio/mpeg' => 'mp3',
         'image/avif' => 'avif',
         'image/bmp' => 'bmp',
@@ -92,6 +93,7 @@ final class OperationParityTest extends TestCase
         'image/tiff' => 'tiff',
         'image/webp' => 'webp',
         'video/mp4' => 'mp4',
+        'video/quicktime' => 'mov',
     ];
 
     /**
