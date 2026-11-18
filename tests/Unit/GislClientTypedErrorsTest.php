@@ -10,6 +10,7 @@ use Gisl\Generated\OpenApi\Model\BalanceExhaustedResponse;
 use Gisl\Generated\OpenApi\Model\FeatureNotAvailableResponse;
 use Gisl\Generated\OpenApi\Model\FeatureTierRestrictedResponse;
 use Gisl\Generated\OpenApi\Model\FeatureViolation;
+use Gisl\Generated\OpenApi\Model\InputCeilingViolation;
 use Gisl\Generated\OpenApi\Model\LongFormConcurrencyLimitResponse;
 use Gisl\Generated\OpenApi\Model\ProbePendingResponse;
 use Gisl\Generated\OpenApi\Model\TierRestrictionResponse;
@@ -1235,6 +1236,61 @@ final class GislClientTypedErrorsTest extends TestCase
             self::assertInstanceOf(ValidationErrorEnvelopeDetailsInner::class, $detail);
             self::assertSame('errors.validation.range', $detail->getMessageKey());
             self::assertSame(['min' => 1, 'max' => 100], $detail->getMessageParams());
+        }
+    }
+
+    /**
+     * MERGE_OVER_LIMIT (contracts v2.231.0, owner decision 755): the detail's
+     * `ceiling` hydrates as the generated InputCeilingViolation, with integer
+     * actual and maximum. The envelope is the 422 api 1.26.0-rc.5 returned on
+     * staging (hub decision 755 evidence); the TS twin is in client.test.ts.
+     */
+    public function testMergeOverLimitDetailCarriesATypedCeiling(): void
+    {
+        $ceiling = [
+            'axis' => 'duration_seconds',
+            'actual' => 301,
+            'maximum' => 300,
+            'bound_by' => 'merge',
+            'input_mime' => 'video/mp4',
+        ];
+        $http = $this->stubClient([
+            $this->jsonResponse(422, [
+                'success' => false,
+                'error' => 'MERGE_OVER_LIMIT',
+                'message' => 'These clips are too long to merge together.',
+                'message_key' => 'error.validation_failed',
+                'locale' => 'en-GB',
+                'error_type' => 'validation_error',
+                'failed_ref' => 'j1',
+                'details' => [
+                    [
+                        'operation' => 'merge',
+                        'field' => 'inputs',
+                        'message' => 'These clips are too long to merge together: 301 s in total, the limit is 300 s. Trim them to fit.',
+                        'message_key' => 'error.merge.combined_too_long',
+                        'message_params' => $ceiling,
+                        'ceiling' => $ceiling,
+                    ],
+                ],
+            ]),
+        ]);
+
+        try {
+            $this->makeClient($http)->getWorkflowStatus(self::HARNESS_WORKFLOW_ID);
+            self::fail('Expected GislValidationError');
+        } catch (GislValidationError $e) {
+            self::assertSame('MERGE_OVER_LIMIT', $e->errorCode);
+            $details = $e->typedPayload->getDetails();
+            self::assertIsArray($details);
+            self::assertSame('error.merge.combined_too_long', $details[0]->getMessageKey());
+            $typed = $details[0]->getCeiling();
+            self::assertInstanceOf(InputCeilingViolation::class, $typed);
+            self::assertSame('duration_seconds', $typed->getAxis());
+            self::assertSame(301, $typed->getActual());
+            self::assertSame(300, $typed->getMaximum());
+            self::assertSame('merge', $typed->getBoundBy());
+            self::assertSame('video/mp4', $typed->getInputMime());
         }
     }
 
