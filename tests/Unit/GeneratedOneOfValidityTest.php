@@ -6,9 +6,11 @@ namespace Gisl\Sdk\Tests\Unit;
 
 use Gisl\Generated\OpenApi\Model\CapabilityProduces;
 use Gisl\Generated\OpenApi\Model\CreateBillingCheckoutSession422Response;
+use Gisl\Generated\OpenApi\Model\CreateWorkflow403Response;
 use Gisl\Generated\OpenApi\Model\ProbeUpload422Response;
 use Gisl\Generated\OpenApi\Model\SseMultiOutputResultEntry;
 use Gisl\Generated\OpenApi\Model\SseOperationCompletionResult;
+use Gisl\Generated\OpenApi\Model\UploadFile403Response;
 use Gisl\Generated\OpenApi\Model\WorkflowSource;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -56,10 +58,35 @@ final class GeneratedOneOfValidityTest extends TestCase
         ];
 
         // e2CjJSMn: both probe 422 arms require the same fields, so only the branch
-        // check enforces their fixed `success: false`. (The probe_not_ready arm still
-        // fails valid() on the flattened single-value error_type enum: l5CXICgn.)
+        // check enforces their fixed `success: false`.
         yield 'probe 422: probe_not_applicable branch' => [
             new ProbeUpload422Response(['success' => false, 'error' => 'UNPROCESSABLE_ENTITY', 'error_type' => 'probe_not_applicable']),
+            true,
+        ];
+        // l5CXICgn: the flattened error_type enum held only the LAST arm's value.
+        yield 'probe 422: probe_not_ready branch' => [
+            new ProbeUpload422Response(['success' => false, 'error' => 'UNPROCESSABLE_ENTITY', 'error_type' => 'probe_not_ready']),
+            true,
+        ];
+        yield 'upload 403: tier_restriction branch' => [
+            new UploadFile403Response([
+                'success' => false,
+                'error' => 'FORBIDDEN',
+                'error_type' => 'tier_restriction',
+                'restriction_kind' => 'file_size',
+                'current_tier' => 'free',
+            ]),
+            true,
+        ];
+        // `error` is open in this arm; only the abuse arm pins it, so the flat check is gone.
+        yield 'workflow 403: tier_restriction branch with its own error code' => [
+            new CreateWorkflow403Response([
+                'success' => false,
+                'error' => 'FORBIDDEN',
+                'error_type' => 'tier_restriction',
+                'restriction_kind' => 'file_size',
+                'current_tier' => 'free',
+            ]),
             true,
         ];
         yield 'probe 422: success true completes no branch' => [
