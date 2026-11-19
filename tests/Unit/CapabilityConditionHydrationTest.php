@@ -109,4 +109,31 @@ final class CapabilityConditionHydrationTest extends TestCase
         self::assertSame(['h265', 'vp9', 'av1'], $leaf->getIn());
         self::assertTrue($compress->getProduces()?->getSameAsInput());
     }
+
+    /**
+     * A1YdQY5Q: a key no oneOf arm declares (a newer server's `matches` leaf, an unknown
+     * operator) was dropped on hydrate. It is now kept on the node and written back.
+     */
+    public function test_a_key_no_arm_declares_survives_hydrate_and_serialise(): void
+    {
+        $tree = [
+            'all' => [
+                ['field' => 'a', 'in' => [1]],
+                ['field' => 'compress.codec', 'matches' => '^h26'],
+                ['unknown_operator' => 1],
+            ],
+        ];
+        $node = ObjectSerializer::deserialize($tree, CapabilityCondition::class, []);
+        self::assertInstanceOf(CapabilityCondition::class, $node);
+        $leaves = $node->getAll() ?? [];
+        self::assertSame([], $leaves[0]->getUndeclaredProperties());
+        self::assertSame(['matches' => '^h26'], $leaves[1]->getUndeclaredProperties());
+        self::assertSame(['unknown_operator' => 1], $leaves[2]->getUndeclaredProperties());
+
+        $reencoded = \json_decode(
+            (string) \json_encode(ObjectSerializer::sanitizeForSerialization($node)),
+            true,
+        );
+        self::assertEquals($tree, self::withoutNullEquals($reencoded));
+    }
 }
